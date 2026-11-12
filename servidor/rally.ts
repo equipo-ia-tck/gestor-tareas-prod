@@ -2,6 +2,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import type { RallyCategory, RallyDetail, RallyFormOptions, RallyItem, RallyKind, RallyPick, RallyProject, RallyRef, RallyStatus } from '../src/domain/rally.ts';
 import { ApiError } from './api.ts';
 import type { TeamUser } from './auth.ts';
+import { SqliteRallyAccounts, type RallyAccounts } from './rallyAccounts.ts';
 
 /**
  * Conector de Rally (WSAPI v2) con la clave personal de cada usuario. La clave se guarda solo aquí (nunca vuelve
@@ -285,23 +286,21 @@ function tagNames(v: unknown): string[] {
 }
 
 export class Rally {
-  private db: DatabaseSync;
+  private accounts: RallyAccounts;
   private fetch: Fetch;
 
-  constructor(db: DatabaseSync, fetcher: Fetch = fetch) {
-    this.db = db;
+  /** `store`: la base de datos local (SQLite) o cualquier almacén de cuentas (en Vercel, Supabase cifrado). */
+  constructor(store: DatabaseSync | RallyAccounts, fetcher: Fetch = fetch) {
+    this.accounts = 'prepare' in store ? new SqliteRallyAccounts(store) : store;
     this.fetch = fetcher;
-    db.exec(`CREATE TABLE IF NOT EXISTS rally_accounts (user_id TEXT PRIMARY KEY, api_key TEXT NOT NULL, base_url TEXT NOT NULL,
-      rally_user_id TEXT NOT NULL, rally_user TEXT NOT NULL, updated_at TEXT NOT NULL)`);
   }
 
   private account(user: TeamUser) {
-    return this.db.prepare('SELECT * FROM rally_accounts WHERE user_id = ?').get(user.id) as
-      { api_key: string; base_url: string; rally_user_id: string; rally_user: string } | undefined;
+    return this.accounts.get(user.id);
   }
 
-  status(user: TeamUser): RallyStatus {
-    const a = this.account(user);
+  async status(user: TeamUser): Promise<RallyStatus> {
+    const a = await this.account(user);
     return a ? { connected: true, baseUrl: a.base_url, keyHint: a.api_key.slice(-4), rallyUser: a.rally_user }
       : { connected: false, baseUrl: DEFAULT_RALLY_URL, keyHint: null, rallyUser: null };
   }
@@ -353,27 +352,24 @@ export class Rally {
     const me = (await this.get(baseUrl, apiKey, '/user')).User as RallyObject | undefined;
     if (!me?.ObjectID) throw new ApiError(400, 'Rally no ha devuelto tu usuario con esa clave.');
     const name = String(me.DisplayName || me._refObjectName || me.UserName || '');
-    this.db.prepare(`INSERT INTO rally_accounts (user_id, api_key, base_url, rally_user_id, rally_user, updated_at) VALUES (?, ?, ?, ?, ?, ?)
-      ON CONFLICT(user_id) DO UPDATE SET api_key = excluded.api_key, base_url = excluded.base_url, rally_user_id = excluded.rally_user_id,
-      rally_user = excluded.rally_user, updated_at = excluded.updated_at`)
-      .run(user.id, apiKey, baseUrl, String(me.ObjectID), name, new Date().toISOString());
+    await this.accounts.set(user.id, { api_key: apiKey, base_url: baseUrl, rally_user_id: String(me.ObjectID), rally_user: name });
     return this.status(user);
   }
 
-  disconnect(user: TeamUser): RallyStatus {
-    this.db.prepare('DELETE FROM rally_accounts WHERE user_id = ?').run(user.id);
+  async disconnect(user: TeamUser): Promise<RallyStatus> {
+    await this.accounts.remove(user.id);
     return this.status(user);
   }
 
-  private connected(user: TeamUser) {
-    const a = this.account(user);
+  private async connected(user: TeamUser) {
+    const a = await this.account(user);
     if (!a) throw new ApiError(400, 'Conecta Rally con tu clave de API.');
     return a;
   }
 
   /** Proyectos abiertos a los que tiene acceso la clave: todos, de 200 en 200 (hasta 4.000). */
   async projects(user: TeamUser): Promise<RallyProject[]> {
-    const a = this.connected(user);
+    const a = await this.connected(user);
     const rows: RallyObject[] = [];
     for (let page = 0; page < MAX_PROJECT_PAGES; page++) {
       const params = new URLSearchParams({ query: '(State = "Open")', fetch: 'Name,ObjectID', order: 'Name', pagesize: String(PAGE), start: String(page * PAGE + 1) });
@@ -398,7 +394,7 @@ export class Rally {
   /** Como `items`, y además los tipos que no han cabido (más de 5.000), para avisar en la pantalla. */
   async itemsReport(user: TeamUser, days = 90, projects: string[] = [], tags: string[] = []):
     Promise<{ items: RallyItem[]; truncated: { kind: RallyKind; total: number; shown: number }[] }> {
-    const a = this.connected(user);
+    const a = await this.connected(user);
     const ids = projects.filter((p) => /^\d+$/.test(p));
     const owner = `(Owner.ObjectID = ${a.rally_user_id})`;
     const since = days > 0 ? new Date(Date.now() - Math.min(days, 3650) * 86_400_000).toISOString().slice(0, 10) : null;
@@ -432,7 +428,7 @@ export class Rally {
    * por tipo y se piden de 40 en 40 (la consulta va en la URL).
    */
   async lookup(user: TeamUser, input: { ids?: unknown }): Promise<RallyItem[]> {
-    const a = this.connected(user);
+    const a = await this.connected(user);
     const ids = [...new Set((Array.isArray(input.ids) ? input.ids : []).map((id) => String(id).replace(/-/g, '').toUpperCase()))]
       .filter((id) => !!kindOfId(id))
       .slice(0, 1000);
@@ -473,7 +469,7 @@ export class Rally {
    * que tocaría, para que la app pregunte por el analista (y se pueda cancelar) antes de mover de verdad.
    */
   async move(user: TeamUser, input: { id?: unknown; category?: unknown; dryRun?: unknown; blockedReason?: unknown; flow?: unknown }): Promise<RallyItem> {
-    const a = this.connected(user);
+    const a = await this.connected(user);
     const id = String(input.id ?? '').replace(/-/g, '').toUpperCase();
     const category = input.category as RallyCategory;
     const entry = kindOfId(id);
@@ -532,7 +528,7 @@ export class Rally {
    * analista: «@PO Guía bloqueada» + «Analista: @X». El texto es el de `MOVE_COMMENTS` o el que se haya escrito con el lápiz.
    */
   async moveCommentPost(user: TeamUser, input: { id?: unknown; text?: unknown; analyst?: unknown }): Promise<{ text: string; owner: string | null; analyst: string | null }> {
-    const a = this.connected(user);
+    const a = await this.connected(user);
     const id = String(input.id ?? '').replace(/-/g, '').toUpperCase();
     // El texto parte de MOVE_COMMENTS, pero se puede modificar en la ventana antes de publicarlo.
     const text = String(input.text ?? '').trim();
@@ -566,7 +562,7 @@ export class Rally {
    */
   async needReview(user: TeamUser, input: { id?: unknown; defectId?: unknown; text?: unknown; analyst?: unknown; reason?: unknown }):
     Promise<{ item: RallyItem; owner: string | null; analyst: string; commentError?: string }> {
-    const a = this.connected(user);
+    const a = await this.connected(user);
     const id = String(input.id ?? '').replace(/-/g, '').toUpperCase();
     const entry = kindOfId(id);
     if (!entry || entry[1].kind !== 'TS') throw new ApiError(400, 'Solo los TS pueden ir a Need Review.');
@@ -604,7 +600,7 @@ export class Rally {
    * el texto del comentario (sin menciones, `blockedReasonText`); al desbloquear se borra.
    */
   async flag(user: TeamUser, input: { id?: unknown; ready?: unknown; blocked?: unknown; reason?: unknown }): Promise<RallyItem> {
-    const a = this.connected(user);
+    const a = await this.connected(user);
     const id = String(input.id ?? '').replace(/-/g, '').toUpperCase();
     const entry = kindOfId(id);
     if (!entry) throw new ApiError(400, 'Elemento de Rally no válido.');
@@ -628,7 +624,7 @@ export class Rally {
 
   /** Publica un mensaje en la discusión con las personas elegidas en Rally mencionadas (`messageHtml`). */
   async messagePost(user: TeamUser, input: { id?: unknown; text?: unknown; mentions?: unknown }): Promise<{ mentioned: string[] }> {
-    const a = this.connected(user);
+    const a = await this.connected(user);
     const id = String(input.id ?? '').replace(/-/g, '').toUpperCase();
     const text = String(input.text ?? '').trim();
     const entry = kindOfId(id);
@@ -697,7 +693,7 @@ export class Rally {
 
   /** Opciones del formulario «New Item» para un tipo en un proyecto. */
   async formOptions(user: TeamUser, kind: unknown, projectId: unknown): Promise<RallyFormOptions> {
-    const a = this.connected(user);
+    const a = await this.connected(user);
     const entry = Object.entries(KINDS).find(([, info]) => info.kind === kind);
     if (!entry || !CREATABLE.includes(String(kind))) throw new ApiError(400, 'Tipo de Rally no válido.');
     if (!/^\d+$/.test(String(projectId))) throw new ApiError(400, 'Elige el proyecto de Rally.');
@@ -750,7 +746,7 @@ export class Rally {
 
   /** Personas de Rally por nombre, usuario o email (para Owner y Assignee), activas, como mucho 25. */
   async searchUsers(user: TeamUser, q: unknown): Promise<RallyRef[]> {
-    const a = this.connected(user);
+    const a = await this.connected(user);
     const text = searchText(q);
     if (text.length < 2) return [];
     const who = joinQuery([`(DisplayName contains "${text}")`, `(UserName contains "${text}")`, `(EmailAddress contains "${text}")`], 'OR');
@@ -764,7 +760,7 @@ export class Rally {
    */
   async searchArtifacts(user: TeamUser, input: { types?: unknown; q?: unknown; project?: unknown; release?: unknown; tag?: unknown; page?: unknown }):
     Promise<{ items: RallyPick[]; total: number }> {
-    const a = this.connected(user);
+    const a = await this.connected(user);
     const types = [...new Set(String(input.types ?? '').split(',').map((t) => PICK_TYPES[t]).filter(Boolean))];
     if (!types.length) throw new ApiError(400, 'Tipo de elemento no válido.');
     const text = searchText(input.q);
@@ -796,7 +792,7 @@ export class Rally {
 
   /** Etiquetas de Rally (hay miles): por nombre, de 50 en 50 y por orden alfabético. */
   async searchTags(user: TeamUser, input: { q?: unknown; page?: unknown }): Promise<{ items: RallyRef[]; total: number }> {
-    const a = this.connected(user);
+    const a = await this.connected(user);
     const text = searchText(input.q);
     const page = Math.max(1, Math.min(1000, Math.floor(Number(input.page) || 1)));
     const query = text ? joinQuery(['(Archived = false)', `(Name contains "${text}")`], 'AND') : '(Archived = false)';
@@ -854,7 +850,7 @@ export class Rally {
    * otro; el Assignee se pone con `assigneeRef` (o `assignToMe`) y, si el tipo no tiene ese campo, se crea sin él.
    */
   async create(user: TeamUser, input: Record<string, unknown>): Promise<RallyItem> {
-    const a = this.connected(user);
+    const a = await this.connected(user);
     const entry = Object.entries(KINDS).find(([, info]) => info.kind === input.kind);
     if (!entry || !CREATABLE.includes(String(input.kind))) throw new ApiError(400, 'Desde aquí se pueden crear User Stories, defectos, defect suites, test sets y tareas.');
     const [type, info] = entry;
@@ -993,7 +989,7 @@ export class Rally {
 
   /** Publica un comentario en la discusión de un elemento, como el usuario de la clave. */
   async comment(user: TeamUser, input: { kind?: unknown; objectId?: unknown; text?: unknown }): Promise<RallyDetail['discussion'][number]> {
-    const a = this.connected(user);
+    const a = await this.connected(user);
     const entry = Object.entries(KINDS).find(([, info]) => info.kind === input.kind);
     if (!entry || !/^\d+$/.test(String(input.objectId))) throw new ApiError(400, 'Elemento de Rally no válido.');
     const text = String(input.text ?? '').trim();
@@ -1014,7 +1010,7 @@ export class Rally {
    */
   async attach(user: TeamUser, input: { kind?: unknown; objectId?: unknown; name?: unknown; contentType?: unknown; content?: unknown }):
     Promise<RallyDetail['attachments'][number]> {
-    const a = this.connected(user);
+    const a = await this.connected(user);
     const entry = Object.entries(KINDS).find(([, info]) => info.kind === input.kind);
     if (!entry || !/^\d+$/.test(String(input.objectId))) throw new ApiError(400, 'Elemento de Rally no válido.');
     const name = String(input.name ?? '').split(/[\\/]/).pop()!.trim().slice(0, 250);
@@ -1062,7 +1058,7 @@ export class Rally {
 
   /** Ficha completa de un elemento: todos los campos con valor, textos, etiquetas, hijos, discusión y adjuntos. */
   async detail(user: TeamUser, kind: unknown, objectId: unknown): Promise<RallyDetail> {
-    const a = this.connected(user);
+    const a = await this.connected(user);
     const entry = Object.entries(KINDS).find(([, info]) => info.kind === kind);
     if (!entry || !/^\d+$/.test(String(objectId))) throw new ApiError(400, 'Elemento de Rally no válido.');
     const [type, info] = entry;

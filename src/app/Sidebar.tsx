@@ -1,4 +1,5 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
+import { LOCAL_SERVER } from '../data/serverApi';
 import { Calendar, ChevronDown, ChevronRight, ClipboardCheck, FileText, FolderOpen, ListChecks, History, Plus, Inbox, KanbanSquare, Layers, MessagesSquare, NotebookPen, Settings, Sun, Users, type LucideIcon } from 'lucide-react';
 import { Avatar } from '../components/ui/Badges';
 import { useApp } from './AppContext';
@@ -161,9 +162,12 @@ export function Sidebar({ route }: { route: Route }) {
       <NavItem icon={Calendar} href={routeHref({ view: 'calendar' })} active={is('calendar') || is('week')}>Calendario</NavItem>
       <NavItem icon={NotebookPen} href={routeHref({ view: 'notes' })} active={is('notes')}>Notas</NavItem>
       <NavItem icon={Layers} href={routeHref({ view: 'rally' })} active={is('rally')}>Rally</NavItem>
-      <NavItem icon={ListChecks} href={routeHref({ view: 'lista' })} active={is('lista')}>Lista</NavItem>
-      <NavItem icon={FileText} href={routeHref({ view: 'confluence' })} active={is('confluence')}>Confluence</NavItem>
-      <NavItem icon={MessagesSquare} href={routeHref({ view: 'chats' })} active={is('chats')}>Chats</NavItem>
+      {/* Lista, Confluence y Chats necesitan el servidor del Mac: en Vercel no se ven. */}
+      {LOCAL_SERVER && <>
+        <NavItem icon={ListChecks} href={routeHref({ view: 'lista' })} active={is('lista')}>Lista</NavItem>
+        <NavItem icon={FileText} href={routeHref({ view: 'confluence' })} active={is('confluence')}>Confluence</NavItem>
+        <NavItem icon={MessagesSquare} href={routeHref({ view: 'chats' })} active={is('chats')}>Chats</NavItem>
+      </>}
 
       <Heading action={
         <button type="button" onClick={() => setAddingProject(true)} title="Nuevo proyecto" className="rounded p-0.5 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-700">

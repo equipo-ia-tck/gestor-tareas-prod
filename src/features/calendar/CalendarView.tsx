@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { LOCAL_SERVER } from '../../data/serverApi';
 import { CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, PanelLeft, Plus, RefreshCw, Rocket } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
 import { useWideLayout } from '../../app/Layout';
@@ -100,7 +101,7 @@ export function CalendarView({ initial }: { initial?: 'week' | 'month' }) {
           <MiniMonth selected={mode === 'month' ? [] : days} cursor={cursor} onPick={setCursor} />
           <section>
             <h2 className="mb-1 px-1 text-sm font-semibold">Mis calendarios</h2>
-            {connected ? (
+            {!LOCAL_SERVER ? null : connected ? (
               <Toggle checked={showMeetings} onChange={setShowMeetings} color="#8b5cf6" label="Reuniones (Outlook)" />
             ) : (
               <a href={routeHref({ view: 'settings' })} className="flex items-center gap-2 rounded px-1 py-1 text-sm text-violet-600 hover:bg-zinc-100 dark:text-violet-400 dark:hover:bg-zinc-800">

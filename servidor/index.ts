@@ -13,6 +13,7 @@ import { Chats } from './chats.ts';
 import { Confluence } from './confluence.ts';
 import { MsList } from './msList.ts';
 import { Rally } from './rally.ts';
+import { rallyRoute } from './rallyRoutes.ts';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const DIST = join(ROOT, 'dist');
@@ -61,83 +62,10 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
   // La sesión es la de Supabase: el servidor solo comprueba quién eres para usar tus conectores.
   const user = await auth.userFor(bearerOf(req.headers.authorization));
   if (!user) throw new ApiError(401, 'Inicia sesión.');
+  if (url.pathname === '/api/rally' || url.pathname.startsWith('/api/rally/')) {
+    return send(res, 200, await rallyRoute(rally, user, req.method ?? 'GET', url.pathname, url.searchParams, () => readJson(req)));
+  }
   switch (route) {
-    case 'GET /api/rally':
-      return send(res, 200, rally.status(user));
-    case 'POST /api/rally/connect':
-      return send(res, 200, await rally.connect(user, await readJson(req)));
-    case 'POST /api/rally/disconnect':
-      return send(res, 200, rally.disconnect(user));
-    case 'GET /api/rally/projects':
-      return send(res, 200, { projects: await rally.projects(user) });
-    case 'POST /api/rally/move': {
-      const body = await readJson(req);
-      try {
-        const item = await rally.move(user, body);
-        if (body.dryRun !== true) console.log(`[Rally] ${user.login}: ${String(body.id)} → ${String(body.category)} · ahora "${item.state}" (${item.category})`);
-        return send(res, 200, { item });
-      } catch (e) {
-        console.log(`[Rally] ${user.login}: ${String(body.id)} → ${String(body.category)} · ERROR: ${(e as Error).message}`);
-        throw e;
-      }
-    }
-    case 'POST /api/rally/create': {
-      const body = await readJson(req);
-      try {
-        const item = await rally.create(user, body);
-        console.log(`[Rally] ${user.login}: creado ${item.id} "${item.name}"`);
-        return send(res, 200, { item });
-      } catch (e) {
-        console.log(`[Rally] ${user.login}: crear ${String(body.kind)} · ERROR: ${(e as Error).message}`);
-        throw e;
-      }
-    }
-    case 'POST /api/rally/flag': {
-      const body = await readJson(req);
-      const item = await rally.flag(user, body);
-      console.log(`[Rally] ${user.login}: ${String(body.id)} · Ready ${item.ready ? 'sí' : 'no'} · Blocked ${item.blocked ? 'sí' : 'no'}`);
-      return send(res, 200, { item });
-    }
-    case 'POST /api/rally/need-review': {
-      const body = await readJson(req);
-      const done = await rally.needReview(user, body);
-      console.log(`[Rally] ${user.login}: ${String(body.id)} → Need Review + Blocked (${String(body.defectId)})${done.commentError ? ` · comentario falló: ${done.commentError}` : ''}`);
-      return send(res, 200, done);
-    }
-    case 'POST /api/rally/message': {
-      const body = await readJson(req);
-      const done = await rally.messagePost(user, body);
-      console.log(`[Rally] ${user.login}: mensaje en ${String(body.id)}${done.mentioned.length ? ` · menciona a ${done.mentioned.join(', ')}` : ''}`);
-      return send(res, 200, done);
-    }
-    case 'POST /api/rally/move-comment': {
-      const body = await readJson(req);
-      const done = await rally.moveCommentPost(user, body);
-      console.log(`[Rally] ${user.login}: comentario de movimiento en ${String(body.id)}${done.analyst ? ` · analista ${done.analyst}` : ''}`);
-      return send(res, 200, done);
-    }
-    case 'POST /api/rally/comment': {
-      const body = await readJson(req);
-      try {
-        const post = await rally.comment(user, body);
-        console.log(`[Rally] ${user.login}: comentario en ${String(body.kind)} ${String(body.objectId)}`);
-        return send(res, 200, { post });
-      } catch (e) {
-        console.log(`[Rally] ${user.login}: comentario en ${String(body.kind)} ${String(body.objectId)} · ERROR: ${(e as Error).message}`);
-        throw e;
-      }
-    }
-    case 'POST /api/rally/attach': {
-      const body = await readJson(req);
-      try {
-        const file = await rally.attach(user, body);
-        console.log(`[Rally] ${user.login}: adjunto "${file.name}" en ${String(body.kind)} ${String(body.objectId)}`);
-        return send(res, 200, { file });
-      } catch (e) {
-        console.log(`[Rally] ${user.login}: adjunto en ${String(body.kind)} ${String(body.objectId)} · ERROR: ${(e as Error).message}`);
-        throw e;
-      }
-    }
     case 'GET /api/lista':
       return send(res, 200, msList.status(user));
     case 'POST /api/lista/link':
@@ -178,23 +106,6 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
       return send(res, 200, await calendar.events(user));
     case 'GET /api/calendar/ics':
       return send(res, 200, { ics: await calendar.ics(user, url.searchParams.get('fresh') === '1') });
-    case 'POST /api/rally/lookup':
-      return send(res, 200, { items: await rally.lookup(user, await readJson(req)) });
-    case 'GET /api/rally/users':
-      return send(res, 200, { users: await rally.searchUsers(user, url.searchParams.get('q')) });
-    case 'GET /api/rally/pick':
-      return send(res, 200, await rally.searchArtifacts(user, Object.fromEntries(url.searchParams)));
-    case 'GET /api/rally/tags':
-      return send(res, 200, await rally.searchTags(user, Object.fromEntries(url.searchParams)));
-    case 'GET /api/rally/form':
-      return send(res, 200, await rally.formOptions(user, url.searchParams.get('kind'), url.searchParams.get('project')));
-    case 'GET /api/rally/detail':
-      return send(res, 200, await rally.detail(user, url.searchParams.get('kind'), url.searchParams.get('id')));
-    case 'GET /api/rally/items': {
-      const projects = (url.searchParams.get('projects') ?? '').split(',').filter(Boolean);
-      const tags = url.searchParams.getAll('tag').filter(Boolean);
-      return send(res, 200, await rally.itemsReport(user, Number(url.searchParams.get('days') ?? 90) || 0, projects, tags));
-    }
   }
   throw new ApiError(404, 'No existe.');
 }

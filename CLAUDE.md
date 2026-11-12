@@ -669,6 +669,18 @@ Rama `cambios-prod` de `equipo-ia-tck/gestor-tareas-prod`, publicada en Vercel (
   columna en `task.board_column` (sin migración; zod pone `null`), que vale mientras la tarea siga en ese estado
   (`rallyColumnOf(…, chosen)`). Las enlazadas siguen yendo a su columna de Rally; Need Review en Rally sigue siendo solo de TS.
 
+- **Rally en Vercel** (sin el servidor del Mac): función `api/rally.ts` (formato `export default { fetch }`) con las mismas
+  rutas que el servidor local (`servidor/rallyRoutes.ts`, compartido). `vercel.json` lleva `/api/rally/<ruta>` a la función
+  con `?route=`. Las claves van por `RallyAccounts` (`servidor/rallyAccounts.ts`): SQLite en local y, en Vercel,
+  `SupabaseRallyAccounts` (`servidor/supabaseAccounts.ts`): cifradas con AES-256-GCM con `RALLY_SECRET` (variable secreta de
+  Vercel, nunca en el repo, que es público) en la tabla `connector_accounts` (migración 004; nadie la lee directamente y cada
+  persona solo lee la suya con su sesión). Si se cambia `RALLY_SECRET`, hay que volver a conectar Rally. Variables de Vercel:
+  `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (públicas) y `RALLY_SECRET`. Límite de Vercel: 4,5 MB por petición (adjuntos
+  grandes, solo en local).
+- **Solo en local** (`LOCAL_SERVER` en `data/serverApi.ts`: la app servida desde localhost): calendario de Outlook, chats, lista
+  y Confluence. En Vercel se ocultan (barra lateral, Ajustes, «Mis calendarios») y sus rutas muestran `LocalOnly`.
+- `tsconfig.json` incluye ahora `servidor` y `api` (el typecheck cubre el servidor).
+
 ### Más adelante
 
 - **Electron**: la app es web estática con rutas por hash y datos en IndexedDB, así que se puede empaquetar sin cambios

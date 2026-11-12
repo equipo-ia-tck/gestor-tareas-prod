@@ -121,7 +121,7 @@ describe('Rally: servidor', () => {
       'hierarchicalrequirement (FormattedID = "US1")', 'testset (FormattedID = "TS9")',
     ]);
 
-    expect(rally.disconnect(marta).connected).toBe(false);
+    expect((await rally.disconnect(marta)).connected).toBe(false);
   });
 
   it('explica una clave rechazada', async () => {
@@ -130,7 +130,7 @@ describe('Rally: servidor', () => {
     const marta = api.register({ login: 'marta@vml.com', name: 'Marta', password: 'contraseña-larga', code: api.teamCode }).user;
     const rally = new Rally(db, fakeRally([], 401).fetcher);
     await expect(rally.connect(marta, { apiKey: '_mala' })).rejects.toThrow(/no acepta la clave/);
-    expect(rally.status(marta).connected).toBe(false);
+    expect((await rally.status(marta)).connected).toBe(false);
   });
 });
 
