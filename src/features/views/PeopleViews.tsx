@@ -166,6 +166,7 @@ export function PersonView({ name }: { name: string }) {
           </a>
         )}
         <RenamePerson name={name} />
+        <DeletePerson name={name} />
         <button type="button" onClick={() => setMeeting(true)} title="Abre en Teams una reunión con esta persona ya rellenada"
           className="flex items-center gap-1 rounded-md border border-zinc-300 px-2.5 py-1 text-sm hover:bg-zinc-100 dark:border-zinc-600 dark:hover:bg-zinc-800">
           <Users className="size-4" />Nueva reunión
@@ -247,6 +248,25 @@ function MentionActions({ name, text, noteTitle, projectId }: { name: string; te
   );
 }
 
+/** Eliminar a la persona: sale de las tareas y de las menciones (pasan a texto) y se borra su ficha. Se puede deshacer. */
+function DeletePerson({ name }: { name: string }) {
+  const { tasks } = useApp();
+  const count = tasks.filter((t) => t.people.some((p) => nameKey(p) === nameKey(name))).length;
+  const remove = async () => {
+    const text = `¿Eliminar a ${name}?${count ? ` Saldrá de ${count} tarea${count === 1 ? '' : 's'} (las tareas se quedan).` : ''}`
+      + ' Sus menciones en notas pasan a texto normal y se borra su ficha. Puedes deshacerlo con Cmd+Z.';
+    if (!window.confirm(text)) return;
+    await repo.deletePerson(name);
+    navigate({ view: 'people' });
+  };
+  return (
+    <button type="button" onClick={() => void remove()}
+      className="flex items-center gap-1 rounded-md border border-zinc-300 px-2.5 py-1 text-sm hover:border-red-300 hover:bg-red-50 hover:text-red-700 dark:border-zinc-600 dark:hover:bg-red-950/40">
+      <Trash2 className="size-4" />Eliminar
+    </button>
+  );
+}
+
 /** Renombrar a la persona o unirla con otra (p. ej. "Diana Pérez" del calendario con "Diana"). */
 function RenamePerson({ name }: { name: string }) {
   const { tasks, notes, peopleCards } = useApp();
@@ -256,10 +276,10 @@ function RenamePerson({ name }: { name: string }) {
   const exact = others.find((p) => nameKey(p.name) === nameKey(value));
   async function apply(to: string, close: () => void) {
     if (!to.trim()) return;
-    await repo.renamePerson(name, to.trim());
+    const final = await repo.renamePerson(name, to.trim());
     close();
     setValue('');
-    navigate({ view: 'person', name: to.trim() });
+    navigate({ view: 'person', name: final });
   }
   return (
     <Popover align="right" width="w-72" trigger={(toggle) => (

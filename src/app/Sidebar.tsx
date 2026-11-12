@@ -1,6 +1,5 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
-import { LOCAL_SERVER } from '../data/serverApi';
-import { Calendar, ChevronDown, ChevronRight, ClipboardCheck, FileText, FolderOpen, ListChecks, History, Plus, Inbox, KanbanSquare, Layers, MessagesSquare, NotebookPen, Settings, Sun, Users, type LucideIcon } from 'lucide-react';
+import { Calendar, ChevronDown, ChevronRight, ClipboardCheck, FolderOpen, History, Plus, Inbox, KanbanSquare, Layers, NotebookPen, Settings, Sun, Users, type LucideIcon } from 'lucide-react';
 import { Avatar } from '../components/ui/Badges';
 import { useApp } from './AppContext';
 import { repo } from '../data/services';
@@ -104,24 +103,6 @@ function ProjectNav({ node, route }: { node: ProjectNode; route: Route }) {
   );
 }
 
-/** Proyectos archivados (plegados): para consultarlos o desarchivarlos. */
-function ArchivedProjects() {
-  const { allProjects } = useApp();
-  const [open, setOpen] = usePersistentState('sidebar-archived', false);
-  const archived = allProjects.filter((p) => p.archived).sort((a, b) => a.name.localeCompare(b.name, 'es'));
-  if (!archived.length) return null;
-  return (
-    <>
-      <button type="button" onClick={() => setOpen(!open)} className="px-2 py-1 text-left text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200">
-        {open ? '▾' : '▸'} Archivados ({archived.length})
-      </button>
-      {open && archived.map((p) => (
-        <a key={p.id} href={routeHref({ view: 'project', id: p.id })} className="block truncate py-0.5 pr-2 pl-6 text-xs text-zinc-400 hover:underline">{p.name}</a>
-      ))}
-    </>
-  );
-}
-
 /** Vistas de uso ocasional, plegadas para no ocupar sitio. */
 function MoreSection({ route }: { route: Route }) {
   const [open, setOpen] = usePersistentState('sidebar-more', false);
@@ -162,12 +143,6 @@ export function Sidebar({ route }: { route: Route }) {
       <NavItem icon={Calendar} href={routeHref({ view: 'calendar' })} active={is('calendar') || is('week')}>Calendario</NavItem>
       <NavItem icon={NotebookPen} href={routeHref({ view: 'notes' })} active={is('notes')}>Notas</NavItem>
       <NavItem icon={Layers} href={routeHref({ view: 'rally' })} active={is('rally')}>Rally</NavItem>
-      {/* Lista, Confluence y Chats necesitan el servidor del Mac: en Vercel no se ven. */}
-      {LOCAL_SERVER && <>
-        <NavItem icon={ListChecks} href={routeHref({ view: 'lista' })} active={is('lista')}>Lista</NavItem>
-        <NavItem icon={FileText} href={routeHref({ view: 'confluence' })} active={is('confluence')}>Confluence</NavItem>
-        <NavItem icon={MessagesSquare} href={routeHref({ view: 'chats' })} active={is('chats')}>Chats</NavItem>
-      </>}
 
       <Heading action={
         <button type="button" onClick={() => setAddingProject(true)} title="Nuevo proyecto" className="rounded p-0.5 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-700">
@@ -177,7 +152,6 @@ export function Sidebar({ route }: { route: Route }) {
       {addingProject && <NewProjectForm onDone={() => setAddingProject(false)} />}
       {projectTree(projects).map((node) => <ProjectNav key={node.project.id} node={node} route={route} />)}
       {projects.length === 0 && <p className="px-2 text-xs text-zinc-400">Crea uno con el +</p>}
-      <ArchivedProjects />
       {projects.length === 0 && <a href={routeHref({ view: 'projects' })} className="px-2 text-xs text-zinc-400 hover:underline">+ Crear proyecto</a>}
 
       <PeopleGroups route={route} />

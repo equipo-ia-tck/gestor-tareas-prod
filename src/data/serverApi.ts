@@ -2,13 +2,12 @@ import { sync } from './sync';
 
 /**
  * Si la app la sirve el servidor del Mac (localhost: 4173 o el 5173 de desarrollo). En Vercel solo existe Rally
- * (`api/rally.ts`); calendario, chats, lista y Confluence necesitan el servidor local y allí se ocultan.
+ * (`api/rally.ts`); el calendario de Outlook necesita el servidor local y allí se oculta.
  */
 export const LOCAL_SERVER = typeof location !== 'undefined' && ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
 
 /**
- * Llamada al servidor del equipo (servidor/), que hoy solo hace de puente con los conectores: Rally, Confluence,
- * calendario, chats y Microsoft List. Va con la sesión de Supabase (Bearer), y el servidor la comprueba con Supabase.
+ * Llamada al servidor del equipo (servidor/), que hace de puente con los conectores: Rally y el calendario de Outlook. Va con la sesión de Supabase (Bearer), y el servidor la comprueba con Supabase.
  */
 export async function serverCall<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
   const token = (await sync().supabase.auth.getSession()).data.session?.access_token;

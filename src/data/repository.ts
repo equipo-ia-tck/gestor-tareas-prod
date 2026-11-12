@@ -16,9 +16,10 @@ import {
 } from '../domain/types';
 import { doneState, equivalentState, findType, initialState, isDoneCategory, patchForState, stateOf, withAcceptedState } from '../domain/workflows';
 import { nameKey } from '../domain/text';
+import { withDescendants } from '../domain/projects';
 import { extractMentions } from '../domain/markdown';
 import { activityFor } from '../domain/activity';
-import { renameInList, renameMentions } from '../domain/people';
+import { dropMentions, renameInList, renameMentions } from '../domain/people';
 import { BACKUP_APP_ID, settingsSchema, type Backup } from '../domain/schemas';
 import type { Table } from 'dexie';
 import { formatDay, todayISO } from '../domain/dates';
@@ -85,6 +86,7 @@ export interface Repository {
   updateRelease(id: string, patch: Partial<Omit<Release, 'id'>>): Promise<void>;
   /** Elimina la release y la quita de sus tareas. */
   deleteRelease(id: string): Promise<void>;
+  deleteProject(id: string): Promise<{ tasks: number; notes: number }>;
 
   listLabels(): Promise<Label[]>;
   setLabelColor(name: string, color: string): Promise<void>;
@@ -108,7 +110,8 @@ export interface Repository {
    * Renombra a una persona en tareas, menciones de notas y ficha. Si ya existe otra con el nombre
    * nuevo, las une (la ficha resultante conserva los datos de las dos).
    */
-  renamePerson(from: string, to: string): Promise<void>;
+  renamePerson(from: string, to: string): Promise<string>;
+  deletePerson(name: string): Promise<number>;
   setPersonGroup(name: string, groupId: string | null): Promise<void>;
 
   getSettings(): Promise<Settings>;
@@ -451,6 +454,34 @@ export class DexieRepository implements Repository {
     this.emit();
   }
 
+  /**
+   * Elimina un proyecto con sus subproyectos. Sus tareas pasan a eliminadas (se pueden restaurar desde el Registro hasta que
+   * se purguen) y sus notas se quedan sin sección. Todo en un solo «Deshacer».
+   */
+  async deleteProject(id: string) {
+    const all = await this.db.projects.toArray();
+    const root = all.find((p) => p.id === id);
+    if (!root) return { tasks: 0, notes: 0 };
+    const ids = withDescendants(id, all);
+    let tasks = 0;
+    let notes = 0;
+    await this.batch(`Proyecto ${root.name} eliminado`, async () => {
+      for (const t of await this.db.tasks.toArray()) {
+        if (t.project_id && ids.has(t.project_id) && !t.deleted_at) { await this.patchTask(t.id, { deleted_at: now() }, '', false); tasks++; }
+      }
+      for (const n of await this.db.notes.toArray()) {
+        if (n.project_id && ids.has(n.project_id)) { await this.updateNote(n.id, { project_id: null }); notes++; }
+      }
+      for (const pid of ids) {
+        const before = await this.db.projects.get(pid);
+        if (!before) continue;
+        await this.db.projects.delete(pid);
+        this.record({ table: 'projects', key: pid, before, after: undefined }, '');
+      }
+    });
+    return { tasks, notes };
+  }
+
   // ---------- Tipos de elemento ----------
 
   async listItemTypes() {
@@ -622,9 +653,17 @@ export class DexieRepository implements Repository {
     await this.savePerson({ name, role: card?.role ?? '', notes: card?.notes ?? '', email: card?.email ?? '', group_id: groupId });
   }
 
-  async renamePerson(from: string, to: string) {
-    const target = to.trim();
-    if (!target || nameKey(from) === nameKey(target) && from === target) return;
+  /** Renombra a una persona o la une con otra que ya existe. Devuelve el nombre con el que queda. */
+  async renamePerson(from: string, to: string): Promise<string> {
+    const typed = to.trim();
+    if (!typed || nameKey(from) === nameKey(typed) && from === typed) return from;
+    // Si la persona de destino ya existe (ficha o tareas), se usa su nombre tal cual, aunque se escriba con otras
+    // mayúsculas o sin tildes: así no quedan dos «Diana» distintas.
+    const cardsNow = await this.db.people.toArray();
+    const sameKey = (n: string) => nameKey(n) === nameKey(typed) && nameKey(n) !== nameKey(from);
+    const target = cardsNow.find((c) => sameKey(c.name))?.name
+      ?? (await this.db.tasks.toArray()).flatMap((t) => t.people).find(sameKey)
+      ?? typed;
     await this.batch(`${from} → ${target}`, async () => {
       for (const t of await this.db.tasks.toArray()) {
         if (!t.people.some((p) => nameKey(p) === nameKey(from))) continue;
@@ -655,6 +694,33 @@ export class DexieRepository implements Repository {
       }
       this.emit();
     });
+    return target;
+  }
+
+  /**
+   * Elimina a una persona: sale de las tareas, sus menciones en notas pasan a texto normal y se borra su ficha. Las tareas
+   * y notas se quedan. Todo en un solo «Deshacer».
+   */
+  async deletePerson(name: string) {
+    let tasks = 0;
+    await this.batch(`${name} eliminada`, async () => {
+      for (const t of await this.db.tasks.toArray()) {
+        if (!t.people.some((p) => nameKey(p) === nameKey(name))) continue;
+        await this.patchTask(t.id, { people: t.people.filter((p) => nameKey(p) !== nameKey(name)) }, '', false);
+        tasks++;
+      }
+      for (const n of await this.db.notes.toArray()) {
+        const body = dropMentions(n.body, name);
+        if (body !== n.body) await this.updateNote(n.id, { body });
+      }
+      for (const card of await this.db.people.toArray()) {
+        if (nameKey(card.name) !== nameKey(name)) continue;
+        await this.db.people.delete(card.name);
+        this.record({ table: 'people', key: card.name, before: card, after: undefined }, '');
+      }
+      this.emit();
+    });
+    return tasks;
   }
 
   // ---------- Etiquetas ----------

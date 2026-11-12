@@ -2,7 +2,6 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import { repo } from '../data/services';
 import { labelColorMap } from '../domain/colors';
 import { postponeCounts } from '../domain/activity';
-import { isEffectivelyArchived } from '../domain/projects';
 import { withAcceptedState } from '../domain/workflows';
 import { knownPeople } from '../domain/selectors';
 import { matchesSpace, SPACES_ENABLED, spaceOf, spaceOfProject, type Space, type SpaceFilter } from '../domain/spaces';
@@ -96,7 +95,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     mentionables: [...new Set([...knownPeople(allTasks), ...team.map((u) => u.name)])],
     allProjects,
     // Activos (ni el proyecto ni sus antepasados archivados) y del espacio elegido.
-    projects: allProjects.filter((p) => !isEffectivelyArchived(p.id, projectMap) && matchesSpace(spaceOfProject(p.id, projectMap), spaceFilter)),
+    // Ya no se archiva (se elimina): los que estaban archivados vuelven a la lista para poder eliminarlos o seguir usándolos.
+    projects: allProjects.filter((p) => matchesSpace(spaceOfProject(p.id, projectMap), spaceFilter)),
     projectMap,
     itemTypes,
     releases,

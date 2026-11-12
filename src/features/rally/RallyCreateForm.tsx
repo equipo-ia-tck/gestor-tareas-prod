@@ -5,7 +5,7 @@ import {
   RALLY_COLORS, type RallyCreatableKind, type RallyCreateInput, type RallyFormOptions, type RallyItem, type RallyPick, type RallyProject, type RallyRef,
 } from '../../domain/rally';
 import { usePersistentState } from '../../hooks/usePersistentState';
-import { MAX_UPLOAD, rallyApi, toBase64 } from './rallyApi';
+import { MAX_UPLOAD, MAX_UPLOAD_LABEL, rallyApi, toBase64, tooBigMessage } from './rallyApi';
 import { localLoad, ParentField, PersonPicker, ValuesField } from './RallyPickers';
 import { fold } from '../../domain/text';
 
@@ -504,7 +504,7 @@ export function RallyCreateForm({ projects, defaultProjectId, defaultTags = [], 
                 {files.map((f, i) => (
                   <li key={`${f.name}-${i}`} className={`flex items-center gap-1.5 text-xs ${f.size > MAX_UPLOAD ? 'text-red-600' : 'text-zinc-600 dark:text-zinc-300'}`}>
                     <Paperclip className="size-3" /> <span className="truncate">{f.name}</span>
-                    {f.size > MAX_UPLOAD && <span>(más de 25 MB)</span>}
+                    {f.size > MAX_UPLOAD && <span title={tooBigMessage(f)}>(más de {MAX_UPLOAD_LABEL})</span>}
                     <button type="button" className="ml-auto" onClick={() => setFiles((list) => list.filter((_, j) => j !== i))} aria-label={`Quitar ${f.name}`}><X className="size-3" /></button>
                   </li>
                 ))}
@@ -532,6 +532,7 @@ export function RallyCreateForm({ projects, defaultProjectId, defaultTags = [], 
 
         <footer className="space-y-2 border-t border-zinc-200 bg-white px-6 py-3 text-sm dark:border-zinc-700 dark:bg-zinc-900">
           {error && <p className="rounded-md bg-red-50 px-2 py-1 text-xs text-red-700 dark:bg-red-950 dark:text-red-300">{error}</p>}
+          {tooBig && <p className="rounded-md bg-red-50 px-2 py-1 text-xs text-red-700 dark:bg-red-950 dark:text-red-300">{tooBigMessage(tooBig)}</p>}
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <label className="inline-flex items-center gap-1.5 whitespace-nowrap"><input type="checkbox" checked={addToGestor} onChange={(e) => setAddToGestor(e.target.checked)} /> Añadir también al gestor</label>
             <span className="ml-auto flex gap-2">

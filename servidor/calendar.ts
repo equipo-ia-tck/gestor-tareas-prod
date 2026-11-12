@@ -32,7 +32,7 @@ export interface CalendarStatus {
 
 /**
  * Archivo que escribe un flujo de Power Automate en `Gestor/<nombre>` de la carpeta de OneDrive sincronizada (o la ruta
- * de la variable de entorno `env`, para pruebas). También lo usan los chats (`servidor/chats.ts`).
+ * de la variable de entorno `env`, para pruebas).
  */
 export function findGestorFile(name: string, env: string, home = homedir()): string | null {
   const forced = process.env[env];

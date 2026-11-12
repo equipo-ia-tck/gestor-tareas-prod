@@ -1,5 +1,5 @@
 import type { RallyCategory, RallyCreatableKind, RallyCreateInput, RallyDetail, RallyFormOptions, RallyItem, RallyKind, RallyPick, RallyProject, RallyRef, RallyStatus } from '../../domain/rally';
-import { serverCall as call } from '../../data/serverApi';
+import { LOCAL_SERVER, serverCall as call } from '../../data/serverApi';
 
 
 /** Conector de Rally del servidor (`servidor/rally.ts`): la clave nunca llega al navegador. */
@@ -56,5 +56,15 @@ export const toBase64 = (file: File) => new Promise<string>((resolve, reject) =>
   reader.readAsDataURL(file);
 });
 
-/** Límite del servidor (`MAX_ATTACHMENT_BYTES` en servidor/rally.ts). */
-export const MAX_UPLOAD = 25 * 1024 * 1024;
+/**
+ * Tamaño máximo de un adjunto. En local, el del servidor (`MAX_ATTACHMENT_BYTES`, 25 MB). En Vercel cada petición admite
+ * 4,5 MB y el archivo viaja en base64 (un tercio más), así que 3 MB.
+ */
+export const MAX_UPLOAD = (LOCAL_SERVER ? 25 : 3) * 1024 * 1024;
+export const MAX_UPLOAD_LABEL = LOCAL_SERVER ? '25 MB' : '3 MB';
+
+const mb = (bytes: number) => `${(bytes / 1024 / 1024).toLocaleString('es-ES', { maximumFractionDigits: 1 })} MB`;
+
+/** Aviso de un adjunto demasiado grande: qué archivo, cuánto pesa y qué hacer. */
+export const tooBigMessage = (file: File) =>
+  `«${file.name}» pesa ${mb(file.size)} y aquí el máximo es ${MAX_UPLOAD_LABEL}: ${LOCAL_SERVER ? 'adjúntalo directamente en Rally' : 'adjúntalo en Rally o desde la versión local (localhost:4173)'}.`;

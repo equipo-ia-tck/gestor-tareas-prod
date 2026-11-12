@@ -64,7 +64,7 @@ function rangeLabel(mode: Mode, cursor: ISODate, days: ISODate[]): string {
  */
 export function CalendarView({ initial }: { initial?: 'week' | 'month' }) {
   useWideLayout('full');
-  const { tasks, releases, today } = useApp();
+  const { tasks, today } = useApp();
   const outlook = useOutlook();
   const { open } = useCommandCenter();
   const [mode, setMode] = usePersistentState<Mode>('calendar-mode', 'workweek');
@@ -74,7 +74,6 @@ export function CalendarView({ initial }: { initial?: 'week' | 'month' }) {
   const [sidebar, setSidebar] = usePersistentState('calendar-sidebar', true);
   const [showMeetings, setShowMeetings] = usePersistentState('calendar-meetings', true);
   const [showTasks, setShowTasks] = usePersistentState('calendar-tasks', true);
-  const [showReleases, setShowReleases] = usePersistentState('calendar-releases', true);
   const [showDone, setShowDone] = usePersistentState('calendar-done', false);
 
   const days = visibleDays(mode, cursor);
@@ -110,7 +109,6 @@ export function CalendarView({ initial }: { initial?: 'week' | 'month' }) {
             )}
             <Toggle checked={showTasks} onChange={setShowTasks} color="#4f46e5" label="Tareas" />
             {showTasks && <Toggle checked={showDone} onChange={setShowDone} color="#a1a1aa" label="Completadas" indent />}
-            <Toggle checked={showReleases} onChange={setShowReleases} color="#65a30d" label="Releases" />
           </section>
         </aside>
       )}
@@ -165,7 +163,7 @@ export function CalendarView({ initial }: { initial?: 'week' | 'month' }) {
             <MonthGrid
               cursor={cursor}
               tasksOn={showTasks ? tasksOn : () => []}
-              releasesOn={(day) => (showReleases ? releases.filter((r) => r.date === day && r.status !== 'cancelled') : [])}
+              releasesOn={() => []}
               meetings={meetings}
             />
           )}

@@ -48,6 +48,12 @@ export function renameMentions(body: string, from: string, to: string): string {
     (nameKey(token) === nameKey(from) ? target : m));
 }
 
+/** Quita las menciones a `name` de una nota: «@Diana-Pérez» pasa a ser texto normal («Diana Pérez»). */
+export function dropMentions(body: string, name: string): string {
+  return body.replace(/(?<![\p{L}\p{N}_.])@([\p{L}\p{N}_\-.]*[\p{L}\p{N}_])/gu, (m, token: string) =>
+    (nameKey(token) === nameKey(name) ? name : m));
+}
+
 /** Lista de personas de una tarea con `de` sustituida por `a` (sin duplicados). */
 export function renameInList(people: string[], from: string, to: string): string[] {
   const out: string[] = [];

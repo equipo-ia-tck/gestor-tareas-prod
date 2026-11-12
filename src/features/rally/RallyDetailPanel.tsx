@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ExternalLink, Paperclip, Plus, Send, Upload, X } from 'lucide-react';
 import type { RallyDetail, RallyItem } from '../../domain/rally';
 import type { Task } from '../../domain/types';
-import { MAX_UPLOAD, rallyApi, toBase64 } from './rallyApi';
+import { MAX_UPLOAD, rallyApi, toBase64, tooBigMessage } from './rallyApi';
 import { RallyFlags } from './RallyFlags';
 
 /** Campos que se ven primero (con el nombre que les da Rally); el resto va en "Más campos". */
@@ -326,7 +326,7 @@ function Attachments({ item, files }: { item: RallyItem; files: RallyDetail['att
   const upload = async (list: File[]) => {
     setError(null);
     for (const file of list) {
-      if (file.size > MAX_UPLOAD) { setError(`${file.name} pasa de 25 MB: adjúntalo directamente en Rally.`); continue; }
+      if (file.size > MAX_UPLOAD) { setError(tooBigMessage(file)); continue; }
       setUploading(file.name);
       try {
         const done = await rallyApi.attach(item, { name: file.name, contentType: file.type, content: await toBase64(file) });

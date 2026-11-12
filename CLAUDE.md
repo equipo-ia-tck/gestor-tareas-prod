@@ -680,6 +680,16 @@ Rama `cambios-prod` de `equipo-ia-tck/gestor-tareas-prod`, publicada en Vercel (
 - **Solo en local** (`LOCAL_SERVER` en `data/serverApi.ts`: la app servida desde localhost): calendario de Outlook, chats, lista
   y Confluence. En Vercel se ocultan (barra lateral, Ajustes, «Mis calendarios») y sus rutas muestran `LocalOnly`.
 - `tsconfig.json` incluye ahora `servidor` y `api` (el typecheck cubre el servidor).
+- **Fuera** (nov 2026, a petición de la usuaria): Lista (Microsoft List), Confluence y Chats, también del servidor; el botón
+  Releases del calendario; la vista **Resumen** del proyecto (queda Lista/Tablero; un `project-view` guardado como `summary`
+  abre el Tablero; «+ Subproyecto» pasa a la cabecera); y **archivar proyectos**: los archivados vuelven a la lista y el botón
+  es **Eliminar** (`repo.deleteProject`: el proyecto y sus subproyectos fuera, sus tareas eliminadas, restaurables desde el
+  Registro, y sus notas sin sección; un solo «Deshacer»).
+- **Personas**: «Eliminar» en la ficha (`repo.deletePerson`: sale de las tareas, sus menciones pasan a texto con
+  `dropMentions` y se borra la ficha). Unir (`renamePerson`) usa el nombre que ya existe aunque se escriba con otras mayúsculas
+  o sin tildes, y devuelve el nombre final.
+- **Adjuntos**: `MAX_UPLOAD` es 25 MB en local y 3 MB en Vercel (4,5 MB por petición en base64); `tooBigMessage` dice qué
+  archivo es, cuánto pesa y dónde subirlo.
 
 ### Más adelante
 

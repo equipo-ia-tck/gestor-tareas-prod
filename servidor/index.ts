@@ -1,5 +1,5 @@
 // Servidor del equipo: sirve la app compilada (dist/) en http://localhost:4173 y hace de puente con los conectores
-// (Rally, Confluence, calendario, chats y Microsoft List). Los datos y las cuentas del equipo están en Supabase; aquí
+// (Rally y calendario). Los datos y las cuentas del equipo están en Supabase; aquí
 // solo se guardan las claves de los conectores, en servidor/datos/equipo.sqlite (fuera de Git).
 // Uso: `npm start` (compila y arranca). Para abrirlo a la red local: GESTOR_HOST=0.0.0.0 npm start.
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
@@ -9,9 +9,6 @@ import { DatabaseSync } from 'node:sqlite';
 import { ApiError } from './api.ts';
 import { bearerOf, SupabaseAuth, supabaseConfig } from './auth.ts';
 import { Calendar } from './calendar.ts';
-import { Chats } from './chats.ts';
-import { Confluence } from './confluence.ts';
-import { MsList } from './msList.ts';
 import { Rally } from './rally.ts';
 import { rallyRoute } from './rallyRoutes.ts';
 
@@ -26,9 +23,6 @@ const db = new DatabaseSync(join(DATA, 'equipo.sqlite'));
 const auth = new SupabaseAuth(supabaseConfig(ROOT));
 const rally = new Rally(db);
 const calendar = new Calendar(db);
-const chats = new Chats(db);
-const confluence = new Confluence(db);
-const msList = new MsList(db);
 
 const TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -66,32 +60,6 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
     return send(res, 200, await rallyRoute(rally, user, req.method ?? 'GET', url.pathname, url.searchParams, () => readJson(req)));
   }
   switch (route) {
-    case 'GET /api/lista':
-      return send(res, 200, msList.status(user));
-    case 'POST /api/lista/link':
-      return send(res, 200, msList.link(user));
-    case 'POST /api/lista/unlink':
-      return send(res, 200, msList.unlink(user));
-    case 'GET /api/lista/items':
-      return send(res, 200, await msList.items(user));
-    case 'POST /api/lista/change':
-      return send(res, 200, await msList.change(user, await readJson(req)));
-    case 'GET /api/confluence':
-      return send(res, 200, confluence.status(user));
-    case 'POST /api/confluence/connect':
-      return send(res, 200, await confluence.connect(user, await readJson(req)));
-    case 'POST /api/confluence/disconnect':
-      return send(res, 200, confluence.disconnect(user));
-    case 'GET /api/confluence/tasks':
-      return send(res, 200, { tasks: await confluence.tasks(user, { done: url.searchParams.get('done') }) });
-    case 'GET /api/chats':
-      return send(res, 200, chats.status(user));
-    case 'POST /api/chats/link':
-      return send(res, 200, chats.link(user));
-    case 'POST /api/chats/unlink':
-      return send(res, 200, chats.unlink(user));
-    case 'GET /api/chats/data':
-      return send(res, 200, await chats.chats(user));
     case 'GET /api/calendar':
       return send(res, 200, calendar.status(user));
     case 'POST /api/calendar/connect':
@@ -146,7 +114,7 @@ for (const host of HOSTS) {
     .listen(PORT, host, () => {
       if (started++) return;
       console.log(`\n✓ Gestor del equipo en http://localhost:${PORT}`);
-      console.log('  Datos y cuentas en Supabase; aquí, los conectores (Rally, Confluence, calendario, chats, lista).');
+      console.log('  Datos y cuentas en Supabase; aquí, los conectores (Rally y calendario).');
       console.log('  Deja esta ventana abierta mientras uséis la app.\n');
     });
 }
