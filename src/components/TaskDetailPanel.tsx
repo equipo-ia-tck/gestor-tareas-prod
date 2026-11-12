@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode } from 'react';
 import {
-  AlarmClock, AlignLeft, Users as Users2, CalendarPlus, Sun, MessageSquare, MessageSquareText, Calendar, Check, History, CheckSquare, ExternalLink, Flag, Folder, GripVertical, Hash, Link2, Plus, Repeat, Rocket, Tag, Trash2, User, X,
+  AlarmClock, AlignLeft, Users as Users2, CalendarPlus, Sun, MessageSquare, MessageSquareText, Calendar, Check, History, CheckSquare, ExternalLink, Flag, Folder, GripVertical, Hash, Link2, Plus, Repeat, Tag, Trash2, User, X,
 } from 'lucide-react';
-import { externalUrl, releaseCountdown } from '../domain/releases';
+import { externalUrl } from '../domain/releases';
 import { notesForTask, notesLinkingTask } from '../domain/notes';
 import { TaskNotes } from '../features/notes/TaskNotes';
 import { RallyTaskSection } from '../features/rally/RallyTaskSection';
@@ -22,7 +22,7 @@ import { LABEL_COLORS, labelColor } from '../domain/colors';
 import { formatDay } from '../domain/dates';
 import { describeRule } from '../domain/recurrence';
 import { fuzzyScore, nameKey } from '../domain/text';
-import type { ChecklistItem, Priority, Task } from '../domain/types';
+import { TOPIC_TYPE_ID, type ChecklistItem, type Priority, type Task } from '../domain/types';
 import { findType, stateOf } from '../domain/workflows';
 import { isEditable } from '../features/command/CommandCenter';
 import { Avatar, LabelChip, PRIORITY_COLOR, PRIORITY_LABEL, StatePill } from './ui/Badges';
@@ -84,10 +84,17 @@ function PanelBody({ task, onClose }: { task: Task; onClose: () => void }) {
         >
           <Check className="size-3.5" />{task.status === 'done' ? 'Completada' : 'Marcar como completada'}
         </button>
-        <button type="button" onClick={() => void repo.batch(task.my_day === today ? 'Quitada de Mi día' : 'Añadida a Mi día', () => repo.updateTask(task.id, { my_day: task.my_day === today ? null : today }))}
-          className={`flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium ${task.my_day === today ? 'border-amber-400 bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300' : 'border-zinc-300 hover:border-amber-400 hover:text-amber-700 dark:border-zinc-600'}`}>
-          <Sun className="size-3.5" fill={task.my_day === today ? 'currentColor' : 'none'} />{task.my_day === today ? 'En Mi día' : 'Mi día'}
-        </button>
+        {task.type_id === TOPIC_TYPE_ID ? (
+          <span title="Los temas para hablar están siempre en Mi día hasta que se marcan como hablados"
+            className="flex items-center gap-1 rounded-md border border-amber-400 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+            <Sun className="size-3.5" fill="currentColor" />En Mi día
+          </span>
+        ) : (
+          <button type="button" onClick={() => void repo.batch(task.my_day === today ? 'Quitada de Mi día' : 'Añadida a Mi día', () => repo.updateTask(task.id, { my_day: task.my_day === today ? null : today }))}
+            className={`flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium ${task.my_day === today ? 'border-amber-400 bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300' : 'border-zinc-300 hover:border-amber-400 hover:text-amber-700 dark:border-zinc-600'}`}>
+            <Sun className="size-3.5" fill={task.my_day === today ? 'currentColor' : 'none'} />{task.my_day === today ? 'En Mi día' : 'Mi día'}
+          </button>
+        )}
         <div className="flex-1" />
         <button type="button" title="Eliminar" onClick={() => { void repo.deleteTask(task.id); onClose(); }}
           className="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-red-600 dark:hover:bg-zinc-800"><Trash2 className="size-4" /></button>
@@ -124,11 +131,11 @@ function PanelBody({ task, onClose }: { task: Task; onClose: () => void }) {
         <dl className="mt-3 grid grid-cols-[110px_1fr] items-center gap-x-2 gap-y-1 text-sm">
           <Prop icon={<Calendar className="size-4" />} label="Fecha"><DateField task={task} /></Prop>
           <Prop icon={<AlarmClock className="size-4" />} label="Recordatorio"><ReminderField task={task} /></Prop>
-          <Prop icon={<CalendarPlus className="size-4" />} label="Outlook"><OutlookButton task={task} /></Prop>
-          <Prop icon={<MessageSquare className="size-4" />} label="Mensaje"><MessageButton task={task} className={fieldBox} /></Prop>
+          {/* Para hablar, sin Outlook, Mensaje ni ID externo. La release se quitó del panel en todos los tipos (nov 2026). */}
+          {task.type_id !== TOPIC_TYPE_ID && <Prop icon={<CalendarPlus className="size-4" />} label="Outlook"><OutlookButton task={task} /></Prop>}
+          {task.type_id !== TOPIC_TYPE_ID && <Prop icon={<MessageSquare className="size-4" />} label="Mensaje"><MessageButton task={task} className={fieldBox} /></Prop>}
           <Prop icon={<Folder className="size-4" />} label="Proyecto"><ProjectField task={task} /></Prop>
-          <Prop icon={<Rocket className="size-4" />} label="Release"><ReleaseField task={task} /></Prop>
-          <Prop icon={<Hash className="size-4" />} label="ID externo"><ExternalIdField task={task} /></Prop>
+          {task.type_id !== TOPIC_TYPE_ID && <Prop icon={<Hash className="size-4" />} label="ID externo"><ExternalIdField task={task} /></Prop>}
           <Prop icon={<Link2 className="size-4" />} label="Enlace"><UrlField task={task} /></Prop>
           <Prop icon={<Flag className="size-4" />} label="Prioridad">
             <div className="flex gap-1">
@@ -308,52 +315,6 @@ function UrlField({ task }: { task: Task }) {
         if (v !== task.url) void repo.batch(v ? 'Enlace guardado' : 'Enlace quitado', () => repo.updateTask(task.id, { url: v }));
       }}
     />
-  );
-}
-
-function ReleaseField({ task }: { task: Task }) {
-  const { releases, releaseMap, today } = useApp();
-  const current = task.release_id ? releaseMap.get(task.release_id) : undefined;
-  const [query, setQuery] = useState('');
-  const open = releases.filter((r) => r.status === 'planned' || r.id === task.release_id);
-  const list = open.filter((r) => fuzzyScore(query, r.name) !== null);
-  const assign = (id: string | null, name: string) => repo.batch(id ? `Release ${name}` : 'Release quitada', () => repo.updateTask(task.id, { release_id: id }));
-  return (
-    <Popover width="w-64" trigger={(toggle) => (
-      <button type="button" className={`${fieldBox} flex w-full items-center gap-2 text-left`} onClick={toggle}>
-        {current
-          ? <>{current.name}{current.date && <span className="text-xs text-zinc-400">· {formatDay(current.date, today)} ({releaseCountdown(current, today)})</span>}</>
-          : <span className="text-zinc-400">Sin release</span>}
-      </button>
-    )}>
-      {(close) => (
-        <>
-          <input autoFocus className={`${inputBox} mb-1`} placeholder="Buscar o crear…" value={query} onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={async (e) => {
-              if (e.key !== 'Enter') return;
-              e.preventDefault();
-              if (list[0]) { await assign(list[0].id, list[0].name); close(); }
-              else if (query.trim()) {
-                await repo.batch(`Release ${query.trim()}`, async () => {
-                  const r = await repo.createRelease(query.trim(), { project_id: task.project_id });
-                  await repo.updateTask(task.id, { release_id: r.id });
-                });
-                close();
-              }
-            }} />
-          <div className="max-h-56 overflow-y-auto">
-            {!query && current && <MenuItem onClick={() => { close(); void assign(null, ''); }}><span className="text-zinc-400">Quitar release</span></MenuItem>}
-            {list.map((r) => (
-              <MenuItem key={r.id} active={r.id === task.release_id} onClick={() => { close(); void assign(r.id, r.name); }}>
-                <Rocket className="size-3.5 text-zinc-400" />{r.name}
-                {r.date && <span className="ml-auto text-xs text-zinc-400">{formatDay(r.date, today)}</span>}
-              </MenuItem>
-            ))}
-            {query.trim() && !list.length && <p className="px-2 py-1 text-xs text-zinc-400">Enter para crear «{query.trim()}»</p>}
-          </div>
-        </>
-      )}
-    </Popover>
   );
 }
 

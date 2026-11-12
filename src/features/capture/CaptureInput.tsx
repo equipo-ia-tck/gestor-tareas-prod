@@ -329,7 +329,6 @@ const HINTS: { label: string; insert: string; title: string }[] = [
   { label: '!1', insert: '!1 ', title: 'Prioridad: !1 urgente … !4 normal' },
   { label: '+etiqueta', insert: '+', title: 'Etiqueta' },
   { label: 'US-123', insert: 'US-', title: 'ID de Jira: US-123 crea una User Story, TS-55 un Test Scenario' },
-  { label: '^release', insert: '^', title: 'Release' },
   { label: 'cada lunes', insert: 'cada lunes ', title: 'Recurrencia: cada día, cada lunes, el 1 de cada mes…' },
   { label: 'recuérdame a las 9', insert: 'recuérdame a las 9 ', title: 'Recordatorio' },
 ];

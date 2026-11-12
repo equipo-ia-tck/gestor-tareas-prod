@@ -109,10 +109,9 @@ export function BoardControls({ tasks, filter, set, reset, mode, projectIds }: {
   mode: DisplayMode;
   projectIds?: Set<string>;
 }) {
-  const { itemTypes, labels, releases, mentionables } = useApp();
+  const { itemTypes, labels, mentionables } = useApp();
   const tags = [...new Set([...labels.map((l) => l.name), ...tasks.flatMap((t) => t.tags)])].sort((a, b) => a.localeCompare(b, 'es'));
   const people = projectIds ? [...new Set(tasks.flatMap((t) => t.people))].sort((a, b) => a.localeCompare(b, 'es')) : mentionables;
-  const ownReleases = projectIds ? releases.filter((r) => tasks.some((t) => t.release_id === r.id)) : releases;
   return (
     <>
       {/* Qué tipos ver */}
@@ -147,10 +146,6 @@ export function BoardControls({ tasks, filter, set, reset, mode, projectIds }: {
           options={people.map((p) => ({ value: p, label: p }))} />
         <Multi label="Etiqueta" selected={filter.tags} onChange={(v) => set({ tags: v })} searchable
           options={tags.map((t) => ({ value: t, label: t }))} />
-        {ownReleases.length > 0 && (
-          <Multi label="Release" selected={filter.releases} onChange={(v) => set({ releases: v })}
-            options={ownReleases.map((r) => ({ value: r.id, label: r.name }))} />
-        )}
         <Single label="Fecha" value={filter.due} options={DUE} onChange={(v) => set({ due: v as DueFilter })} />
         {mode === 'list' && (
           <label className="flex items-center gap-1.5 rounded-md border border-zinc-200 px-2 py-1 text-xs dark:border-zinc-700">

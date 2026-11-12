@@ -688,6 +688,12 @@ Rama `cambios-prod` de `equipo-ia-tck/gestor-tareas-prod`, publicada en Vercel (
 - **Personas**: «Eliminar» en la ficha (`repo.deletePerson`: sale de las tareas, sus menciones pasan a texto con
   `dropMentions` y se borra la ficha). Unir (`renamePerson`) usa el nombre que ya existe aunque se escriba con otras mayúsculas
   o sin tildes, y devuelve el nombre final.
+- **Para hablar en Mi día**: `inMyDay` incluye siempre los temas pendientes (`TOPIC_TYPE_ID`), sin `my_day`, hasta que se
+  marcan como hablados; en su panel y en las filas sale «En Mi día» fijo. Su panel no tiene Outlook, Mensaje ni ID externo.
+- **Release fuera de la vista** en todos los tipos: sin campo en el panel, sin filtro en el tablero y sin `^release` en la guía
+  ni en las pistas de captura (el dato y la sintaxis `^` siguen funcionando).
+- **Ajustes**: fuera Copia automática en archivo, Almacenamiento persistente y Capacidad y días laborables (los valores siguen
+  en `settings` con sus valores por defecto).
 - **Adjuntos**: `MAX_UPLOAD` es 25 MB en local y 3 MB en Vercel (4,5 MB por petición en base64); `tooBigMessage` dice qué
   archivo es, cuánto pesa y dónde subirlo.
 
