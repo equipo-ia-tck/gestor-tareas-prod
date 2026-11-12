@@ -69,3 +69,9 @@ export function useRoute(): Route {
   }, []);
   return route;
 }
+
+/** Abre el buscador (pantalla Buscar) y pone el cursor en su cuadro. */
+export function openSearch() {
+  if (!window.location.hash.startsWith('#/search/')) navigate({ view: 'search', q: '' });
+  requestAnimationFrame(() => setTimeout(() => document.getElementById('global-search')?.focus(), 0));
+}

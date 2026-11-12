@@ -6,7 +6,7 @@ import { downloadBackup } from '../../data/backup';
 import { repo } from '../../data/services';
 import { sync, useSync } from '../../data/sync';
 import { PROJECT_COLORS } from '../../domain/types';
-import type { Space } from '../../domain/spaces';
+import { SPACES_ENABLED, type Space } from '../../domain/spaces';
 
 const button = 'inline-flex items-center gap-1.5 rounded-md border border-zinc-300 px-2.5 py-1 text-sm hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800';
 const field = 'rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900';
@@ -28,6 +28,7 @@ export function SpacesCard() {
 
   return (
     <section className="mb-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-700">
+      {SPACES_ENABLED && <>
       <h2 className="mb-2 text-sm font-semibold">Espacios de equipo</h2>
       <p className="mb-3 text-sm text-zinc-500 dark:text-zinc-400">
         Lo tuyo es privado. Un proyecto que pones en un espacio (desde la página del proyecto) lo ven y editan todos sus
@@ -44,9 +45,10 @@ export function SpacesCard() {
         {isAdmin ? <CreateSpace run={run} /> : <p className="text-xs text-zinc-500">Los espacios nuevos los crean los administradores.</p>}
         <JoinSpace run={run} />
       </div>
+      </>}
       {error && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>}
 
-      <div className="mt-4 border-t border-zinc-200 pt-3 text-sm dark:border-zinc-700">
+      <div className={SPACES_ENABLED ? 'mt-4 border-t border-zinc-200 pt-3 text-sm dark:border-zinc-700' : 'text-sm'}>
         <h3 className="mb-2 text-xs font-semibold tracking-wide text-zinc-500 uppercase">Mi cuenta</h3>
         <div className="flex flex-wrap items-center gap-3">
           <span className="text-zinc-500">

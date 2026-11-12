@@ -5,7 +5,7 @@ import { postponeCounts } from '../domain/activity';
 import { isEffectivelyArchived } from '../domain/projects';
 import { withAcceptedState } from '../domain/workflows';
 import { knownPeople } from '../domain/selectors';
-import { matchesSpace, spaceOf, spaceOfProject, type Space, type SpaceFilter } from '../domain/spaces';
+import { matchesSpace, SPACES_ENABLED, spaceOf, spaceOfProject, type Space, type SpaceFilter } from '../domain/spaces';
 import { useSync } from '../data/sync';
 import { usePersistentState } from '../hooks/usePersistentState';
 import type { ActivityEntry, ISODate, ItemType, Label, Note, Person, Project, Release, Settings, Task } from '../domain/types';
@@ -61,7 +61,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // El filtro es de cada cuenta (en un navegador compartido no se hereda el de la anterior).
   const [storedFilter, setSpaceFilter] = usePersistentState<SpaceFilter>(`space-filter:${user?.id ?? ''}`, 'all');
   // Si dejo de estar en el espacio filtrado, se vuelve a "Todo".
-  const spaceFilter = storedFilter === 'all' || storedFilter === 'personal' || spaces.some((s) => s.id === storedFilter) ? storedFilter : 'all';
+  // Con los espacios apagados no se filtra nunca (un filtro guardado de antes ocultaría cosas).
+  const spaceFilter = !SPACES_ENABLED ? 'all' : storedFilter === 'all' || storedFilter === 'personal' || spaces.some((s) => s.id === storedFilter) ? storedFilter : 'all';
   const allNotes = useNotes();
   const itemTypes = useItemTypes();
   // Los tipos son comunes al equipo y solo los cambia un administrador: desde su sesión se añade "Accepted" a los

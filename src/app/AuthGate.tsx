@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { repo } from '../data/services';
 import { sync, type SessionState } from '../data/sync';
+import { SPACES_ENABLED } from '../domain/spaces';
 
 type Phase = 'loading' | 'down' | 'login' | 'forgot' | 'profile' | 'disabled' | 'confirm' | 'recovery' | 'ask-upload' | 'ready';
 
@@ -152,7 +153,7 @@ function LoginForm({ onDone, onForgot }: { onDone: (s: SessionState | 'confirm')
         <input {...field('password')} required type="password" minLength={mode === 'register' ? 8 : undefined}
           autoComplete={mode === 'login' ? 'current-password' : 'new-password'} className={input} />
       </label>
-      {mode === 'register' && <CodeField field={field('code')} />}
+      {mode === 'register' && SPACES_ENABLED && <CodeField field={field('code')} />}
       {error && <p className="text-red-600 dark:text-red-400">{error}</p>}
       <button type="submit" disabled={busy} className={primary}>
         {busy ? 'Un momento…' : mode === 'login' ? 'Entrar' : 'Crear cuenta y entrar'}
@@ -193,7 +194,7 @@ function ProfileForm({ onDone }: { onDone: (s: SessionState) => void }) {
     <form onSubmit={(e) => { e.preventDefault(); void run(async () => onDone(await sync().completeProfile(form.name, form.code))); }} className="space-y-3 text-sm">
       <p>Completa tu alta en el equipo.</p>
       <NameField field={field('name')} />
-      <CodeField field={field('code')} />
+      {SPACES_ENABLED && <CodeField field={field('code')} />}
       {error && <p className="text-red-600 dark:text-red-400">{error}</p>}
       <button type="submit" disabled={busy} className={primary}>{busy ? 'Un momento…' : 'Entrar'}</button>
       <button type="button" onClick={() => void sync().supabase.auth.signOut().then(() => location.reload())} className={secondary}>Usar otra cuenta</button>

@@ -1,5 +1,11 @@
 import type { Note, Project, Task } from './types';
 
+/**
+ * Espacios apagados a petición de la usuaria (nov 2026): todo el mundo entra sin invitación y no se ven en la barra lateral,
+ * Ajustes ni la página del proyecto. Lo ya compartido en espacios se sigue viendo. Para volver a encenderlos, `true`.
+ */
+export const SPACES_ENABLED = false;
+
 /** Espacio de equipo tal como lo devuelve el servidor. */
 export interface Space {
   id: string;

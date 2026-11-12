@@ -1,5 +1,5 @@
-import { useMemo } from 'react';
-import { FileText, FolderOpen, Users } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { FileText, FolderOpen, Search, Users } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
 import { routeHref } from '../../app/router';
 import { Section, TaskList } from '../../components/TaskList';
@@ -35,8 +35,9 @@ export function SearchView({ q }: { q: string }) {
     <>
       <ViewHeader
         title="Buscar"
-        subtitle={isEmptySearch(query) ? 'Escribe en el buscador de la izquierda (o pulsa /)' : `${total} resultado${total === 1 ? '' : 's'} para «${q}»`}
+        subtitle={isEmptySearch(query) ? 'Escribe lo que buscas (desde cualquier pantalla, pulsa /)' : `${total} resultado${total === 1 ? '' : 's'} para «${q}»`}
       />
+      <SearchBox q={q} />
       <p className="mb-4 text-xs text-zinc-500 dark:text-zinc-400">
         Busca en tareas, notas, personas y proyectos. Para tareas puedes filtrar con <code>#proyecto</code>, <code>@persona</code> o <code>+etiqueta</code>; añade <code>todas:</code> para incluir completadas.
       </p>
@@ -75,5 +76,24 @@ export function SearchView({ q }: { q: string }) {
       )}
       {!isEmptySearch(query) && total === 0 && <p className="text-sm text-zinc-400">Nada coincide.</p>}
     </>
+  );
+}
+
+/** Cuadro de búsqueda (antes estaba en la barra lateral). La consulta va en la dirección, así se puede volver atrás. */
+function SearchBox({ q }: { q: string }) {
+  const [value, setValue] = useState(q);
+  useEffect(() => setValue(q), [q]);
+  const change = (next: string) => {
+    setValue(next);
+    window.location.replace(routeHref({ view: 'search', q: next }));
+  };
+  return (
+    <div className="relative mb-3 max-w-xl">
+      <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-zinc-400" />
+      <input id="global-search" type="search" autoFocus value={value} onChange={(e) => change(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Escape') e.currentTarget.blur(); }}
+        placeholder="Buscar tareas, notas, personas y proyectos…" aria-label="Buscar"
+        className="w-full rounded-md border border-zinc-200 bg-white py-1.5 pr-2 pl-8 text-sm outline-none placeholder:text-zinc-400 focus:border-indigo-500 dark:border-zinc-700 dark:bg-zinc-900" />
+    </div>
   );
 }

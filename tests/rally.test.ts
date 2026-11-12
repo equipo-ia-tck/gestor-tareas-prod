@@ -395,6 +395,11 @@ describe('Rally: mover', () => {
     expect(rallyColumnOf('To Do', 'todo')).toBe('New');
     expect(rallyColumnOf('Desarrollo', 'doing')).toBe('In-Progress');
     expect(rallyColumnOf(undefined, 'accepted')).toBe('Accepted');
+    // Las que no están en Rally: la columna en la que se soltaron (si existe); el estado de Rally manda siempre.
+    expect(rallyColumnOf(undefined, 'todo', 'Defined')).toBe('Defined');
+    expect(rallyColumnOf(undefined, 'doing', 'Need Review')).toBe('Need Review');
+    expect(rallyColumnOf(undefined, 'todo', 'Inventada')).toBe('New');
+    expect(rallyColumnOf('Completed', 'done', 'Defined')).toBe('Completed');
   });
 
   it('Ready y Blocked se marcan sin cambiar de columna', async () => {

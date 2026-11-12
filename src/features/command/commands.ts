@@ -1,4 +1,4 @@
-import { navigate, type Route } from '../../app/router';
+import { navigate, openSearch, type Route } from '../../app/router';
 import { downloadBackup } from '../../data/backup';
 import { repo } from '../../data/services';
 import { addDays } from '../../domain/dates';
@@ -98,7 +98,7 @@ export function buildCommands(env: CommandEnv): Command[] {
     { id: 'sel-all', section: 'Selección', title: 'Seleccionar todas las visibles', shortcut: '⌘A', run: env.selectAll },
     { id: 'undo', section: 'Editar', title: 'Deshacer', shortcut: '⌘Z', run: () => void repo.undo() },
     { id: 'redo', section: 'Editar', title: 'Rehacer', shortcut: '⌘⇧Z', run: () => void repo.redo() },
-    { id: 'search', section: 'Ir a', title: 'Buscar tareas', shortcut: '/', keywords: 'encontrar filtrar', run: () => { setTimeout(() => document.getElementById('global-search')?.focus(), 0); } },
+    { id: 'search', section: 'Ir a', title: 'Buscar tareas', shortcut: '/', keywords: 'encontrar filtrar', run: () => openSearch() },
     { id: 'go-today', section: 'Ir a', title: 'Ir a Hoy', shortcut: 'G H', run: go({ view: 'today' }) },
     { id: 'go-week', section: 'Ir a', title: 'Ir a Calendario: semana', shortcut: 'G S', keywords: 'semana', run: go({ view: 'week' }) },
     { id: 'go-board', section: 'Ir a', title: 'Ir a Tablero', shortcut: 'G T', keywords: 'kanban trello columnas todo filtros us ts temas vista lista', run: go({ view: 'board' }) },

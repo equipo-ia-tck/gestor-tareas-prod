@@ -19,13 +19,14 @@ import { usePersistentState } from '../../hooks/usePersistentState';
 import { useTaskActions } from '../../hooks/useTaskActions';
 import { setDraggedTasks, useTaskDrop } from '../../hooks/useTaskDrop';
 import { parseCapture } from '../../parser/parseCapture';
-import { BoardContent, BoardControls, useBoardColumns, useBoardFilter } from '../board/BoardView';
+import { BoardContent, BoardControls, useBoardFilter } from '../board/BoardView';
 import { EMPTY_FILTER } from '../../domain/filters';
 import { submitCapture } from '../capture/submitCapture';
 import { ItemNotes } from '../notes/ItemNotes';
 import { useRallyOwners } from '../rally/rallyStore';
 import { ViewHeader } from '../views/ViewHeader';
 import { MoveProject, ProjectNotes, ProjectSpace } from '../views/ProjectViews';
+import { SPACES_ENABLED } from '../../domain/spaces';
 
 type Mode = 'summary' | 'list' | 'board';
 const CARD_TASKS = 6;
@@ -93,7 +94,7 @@ export function ProjectView({ id }: { id: string }) {
         actions={
           <>
             <ModeSwitch value={mode} onChange={setMode} />
-            <ProjectSpace id={id} />
+            {SPACES_ENABLED && <ProjectSpace id={id} />}
             <MoveProject id={id} />
             <ActionButton icon={<Pencil className="size-3.5" />} onClick={() => { setName(project.name); setRenaming(true); }}>Renombrar</ActionButton>
             <ActionButton icon={<Archive className="size-3.5" />} onClick={toggleArchive}>{project.archived ? 'Desarchivar' : 'Archivar'}</ActionButton>
@@ -428,12 +429,11 @@ function ProjectList({ project, tasks }: { project: Project; tasks: Task[] }) {
  */
 function ProjectBoard({ project, tasks, scope }: { project: Project; tasks: Task[]; scope: Set<string> }) {
   const { filter, set, setStored } = useBoardFilter(`project-board-filter:${project.id}`);
-  const [columnsBy, setColumnsBy] = useBoardColumns();
   return (
     <>
       <BoardControls tasks={tasks} filter={filter} set={set} reset={() => setStored({ ...EMPTY_FILTER, groupBy: filter.groupBy })}
-        mode="board" columnsBy={columnsBy} setColumnsBy={setColumnsBy} projectIds={scope} />
-      <BoardContent tasks={tasks} filter={filter} mode="board" columnsBy={columnsBy} defaults={{ project_id: project.id }} showProject={scope.size > 1} />
+        mode="board" projectIds={scope} />
+      <BoardContent tasks={tasks} filter={filter} mode="board" defaults={{ project_id: project.id }} showProject={scope.size > 1} />
     </>
   );
 }

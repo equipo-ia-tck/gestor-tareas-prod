@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useApp } from '../../app/AppContext';
-import { navigate } from '../../app/router';
+import { navigate, openSearch } from '../../app/router';
 import { useToast } from '../../components/Toast';
 import { fuzzyScore } from '../../domain/text';
 import type { NewTask } from '../../domain/types';
@@ -56,7 +56,7 @@ export function CommandCenterProvider({ children }: { children: ReactNode }) {
       pendingG.current = 0;
       if (key === 'g') { pendingG.current = Date.now(); return; }
       if (e.key === '?') { e.preventDefault(); setMode({ kind: 'shortcuts' }); return; }
-      if (e.key === '/') { e.preventDefault(); document.getElementById('global-search')?.focus(); return; }
+      if (e.key === '/') { e.preventDefault(); openSearch(); return; }
       if (key === 'n' || key === 'q') { e.preventDefault(); setMode({ kind: 'capture' }); }
     };
     window.addEventListener('keydown', onKey);

@@ -302,6 +302,7 @@ export class DexieRepository implements Repository {
       release_id: null,
       remind_at: null,
       my_day: null,
+      board_column: null,
       ...input,
       type_id: type.id,
       state_id: state.id,

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Ban, KeyRound, LogIn, RefreshCw, Shield, ShieldOff, UserCheck } from 'lucide-react';
 import { useToast } from '../../components/Toast';
 import { sync, useSync, type AdminSpace, type AdminUser } from '../../data/sync';
+import { SPACES_ENABLED } from '../../domain/spaces';
 
 const button = 'inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2 py-0.5 text-xs hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800';
 
@@ -44,8 +45,8 @@ export function AdminCard() {
     <section className="mb-4 rounded-lg border border-indigo-200 p-4 dark:border-indigo-900">
       <h2 className="mb-1 flex items-center gap-1.5 text-sm font-semibold"><Shield className="size-4 text-indigo-500" />Administración</h2>
       <p className="mb-3 text-sm text-zinc-500 dark:text-zinc-400">
-        Solo lo ven los administradores. Quien entra con la invitación de un espacio es usuario normal: usa la herramienta pero
-        no administra cuentas, espacios ni la configuración común (tipos, estados y colores de etiquetas).
+        Solo lo ven los administradores. Quien crea una cuenta entra como usuario normal: usa la herramienta pero no administra
+        cuentas ni la configuración común (tipos, estados y colores de etiquetas). Para hacer administrador a alguien, «Hacer admin».
       </p>
 
       <h3 className="mb-1 text-xs font-semibold tracking-wide text-zinc-500 uppercase">Cuentas · {users.length}</h3>
@@ -55,7 +56,7 @@ export function AdminCard() {
             <tr className="text-left text-xs text-zinc-500">
               <th className="py-1 pr-2 font-medium">Persona</th>
               <th className="py-1 pr-2 font-medium">Rol</th>
-              <th className="py-1 pr-2 font-medium">Espacios</th>
+              {SPACES_ENABLED && <th className="py-1 pr-2 font-medium">Espacios</th>}
               <th className="py-1 font-medium">Acciones</th>
             </tr>
           </thead>
@@ -71,7 +72,7 @@ export function AdminCard() {
                     : u.isAdmin ? <span className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2 py-0.5 text-xs text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300"><Shield className="size-3" />Administrador</span>
                     : <span className="text-xs text-zinc-500">Usuario</span>}
                 </td>
-                <td className="py-1.5 pr-2 text-xs text-zinc-600 dark:text-zinc-400">{u.spaces.map(spaceName).filter(Boolean).join(', ') || '—'}</td>
+                {SPACES_ENABLED && <td className="py-1.5 pr-2 text-xs text-zinc-600 dark:text-zinc-400">{u.spaces.map(spaceName).filter(Boolean).join(', ') || '—'}</td>}
                 <td className="py-1.5">
                   <div className="flex flex-wrap gap-1">
                     {!u.disabled && (u.isAdmin
@@ -110,6 +111,7 @@ export function AdminCard() {
         </div>
       )}
 
+      {SPACES_ENABLED && <>
       <h3 className="mb-1 text-xs font-semibold tracking-wide text-zinc-500 uppercase">Todos los espacios · {spaces.length}</h3>
       <ul className="mb-4 space-y-1 text-sm">
         {spaces.map((s) => {
@@ -139,6 +141,7 @@ export function AdminCard() {
         </button>
         <span className="text-xs text-zinc-500">Crea cuentas de administrador. No lo compartas: a la gente invítala a un espacio.</span>
       </p>
+      </>}
       {error && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>}
     </section>
   );

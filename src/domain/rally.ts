@@ -336,9 +336,13 @@ export const RALLY_COLUMNS: { name: string; category: RallyCategory; color: stri
 
 const columnKey = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, '');
 
-/** Columna de Rally de una tarea: la que tiene en Rally si es una de la lista; si no, la de su grupo en el gestor. */
-export function rallyColumnOf(rallyState: string | undefined, category: StateCategory): string {
+/**
+ * Columna de Rally de una tarea: la que tiene en Rally si es una de la lista; si no, `chosen` (la columna en la que se
+ * soltó, ya comprobada) o la de su grupo en el gestor.
+ */
+export function rallyColumnOf(rallyState: string | undefined, category: StateCategory, chosen?: string | null): string {
   const exact = rallyState && RALLY_COLUMNS.find((c) => columnKey(c.name) === columnKey(rallyState));
   if (exact) return exact.name;
+  if (chosen && RALLY_COLUMNS.some((c) => c.name === chosen)) return chosen;
   return (RALLY_COLUMNS.find((c) => c.home && c.category === category) ?? RALLY_COLUMNS[0]).name;
 }

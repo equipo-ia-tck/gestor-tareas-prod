@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
  * Prueba la base de datos de Supabase (supabase/migrations) en un Postgres de verdad (PGlite), imitando
  * lo mínimo de Supabase: roles anon/authenticated y auth.uid()/auth.email() de la sesión.
  */
-const MIGRATION = ['001_equipo.sql', '002_baja_y_contrasenas.sql'].map((f) => readFileSync(`supabase/migrations/${f}`, 'utf8')).join('\n');
+const MIGRATION = ['001_equipo.sql', '002_baja_y_contrasenas.sql', '003_alta_sin_invitacion.sql'].map((f) => readFileSync(`supabase/migrations/${f}`, 'utf8')).join('\n');
 let db: PGlite;
 
 const SUPABASE_STUB = `
@@ -59,7 +59,6 @@ describe('base de datos del equipo en Supabase', () => {
     expect(me.isAdmin).toBe(true);
     const spaces = await rpc(marta, 'create_space', { p_name: 'Excelencia', p_color: '#f00' }) as { inviteCode: string }[];
     const mark = await newUser('mark@vml.com');
-    await expect(rpc(mark, 'register_profile', { p_name: 'Mark Ruiz', p_code: 'MAL' })).rejects.toThrow(/invitación/);
     const markMe = await rpc(mark, 'register_profile', { p_name: 'Mark Ruiz', p_code: spaces[0].inviteCode.toLowerCase() }) as { isAdmin: boolean; spaces: unknown[] };
     expect(markMe.isAdmin).toBe(false);
     expect(markMe.spaces).toHaveLength(1);
@@ -191,5 +190,16 @@ describe('base de datos del equipo en Supabase', () => {
     await db.query('reset role');
     const ok = await db.query<{ ok: boolean }>('select encrypted_password = extensions.crypt($1, encrypted_password) as ok from auth.users where id = $2', [password, mark.id]);
     expect(ok.rows[0].ok).toBe(true);
+  });
+
+  it('sin invitación se entra como usuario normal, sin espacio', async () => {
+    const marta = await newUser('marta@vml.com');
+    await rpc(marta, 'register_profile', { p_name: 'Marta García', p_code: '' });
+    const ana = await newUser('ana@vml.com');
+    const me = await rpc(ana, 'register_profile', { p_name: 'Ana', p_code: '' }) as { isAdmin: boolean; spaces: unknown[] };
+    expect(me.isAdmin).toBe(false);
+    expect(me.spaces).toHaveLength(0);
+    const uri = await newUser('uri@vml.com');
+    expect((await rpc(uri, 'register_profile', { p_name: 'Uri', p_code: 'NO-VALE' }) as { isAdmin: boolean }).isAdmin).toBe(false);
   });
 });

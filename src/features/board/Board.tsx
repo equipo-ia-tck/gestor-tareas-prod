@@ -7,7 +7,7 @@ import { tint } from '../../domain/colors';
 import { diffDays, formatDay } from '../../domain/dates';
 import { sortTasks } from '../../domain/selectors';
 import type { ItemType, NewTask, StateCategory, Task } from '../../domain/types';
-import { findType, stateOf } from '../../domain/workflows';
+import { findType, stateForCategory, stateOf } from '../../domain/workflows';
 import { setDraggedTasks, useTaskDrop } from '../../hooks/useTaskDrop';
 import { parseCapture } from '../../parser/parseCapture';
 import { submitCapture } from '../capture/submitCapture';
@@ -103,7 +103,12 @@ export function RallyBoard({ tasks, defaults, showProject = true }: Omit<Props, 
   const toast = useToast();
   const columns = useMemo<ColumnDef[]>(() => {
     const visible = tasks.filter((t) => boardable(t, today));
-    const columnOf = new Map(visible.map((t) => [t.id, rallyColumnOf(rallyOf(t.external_id)?.state, stateOf(itemTypes, t).category)]));
+    // La columna elegida al soltar (tareas que no están en Rally) vale mientras la tarea siga en el grupo de esa columna.
+    const chosen = (t: Task) => {
+      const col = RALLY_COLUMNS.find((c) => c.name === t.board_column);
+      return col && stateForCategory(findType(itemTypes, t.type_id), col.category).id === stateOf(itemTypes, t).id ? col.name : null;
+    };
+    const columnOf = new Map(visible.map((t) => [t.id, rallyColumnOf(rallyOf(t.external_id)?.state, stateOf(itemTypes, t).category, chosen(t))]));
     return RALLY_COLUMNS.map(({ name, category, color }) => ({
       id: name,
       label: name,
@@ -111,30 +116,27 @@ export function RallyBoard({ tasks, defaults, showProject = true }: Omit<Props, 
       tasks: sortTasks(visible.filter((t) => columnOf.get(t.id) === name)),
       onDrop: (ids) => {
         let dropped = ids.map((id) => tasks.find((x) => x.id === id)).filter((t): t is Task => !!t && columnOf.get(t.id) !== name);
-        // Need Review es solo para TS (se abre defecto, se bloquea y se comenta, todo a la vez).
-        if (name === NEED_REVIEW) {
-          const isTs = (t: Task) => (rallyOf(t.external_id)?.kind ?? findType(itemTypes, t.type_id).short?.toUpperCase()) === 'TS';
-          if (dropped.some((t) => !isTs(t))) toast('Solo los TS pueden ir a Need Review');
-          dropped = dropped.filter(isTs);
-          for (const t of dropped) {
-            if (isRallyId(t.external_id) && rallyOf(t.external_id)) void moveToNeedReview(t, toast);
-            else toast(`${t.external_id ?? t.title}: no está en Rally, no se puede llevar a Need Review`);
-          }
-          return;
-        }
         const inRally = dropped.filter((t) => isRallyId(t.external_id) && rallyOf(t.external_id));
-        for (const t of inRally) void moveToRallyColumn(t, name, category, toast);
+        // En Rally, Need Review es solo para TS (se abre defecto, se bloquea y se comenta, todo a la vez).
+        if (name === NEED_REVIEW) {
+          const isTs = (t: Task) => rallyOf(t.external_id)?.kind === 'TS';
+          if (inRally.some((t) => !isTs(t))) toast('En Rally, solo los TS pueden ir a Need Review');
+          for (const t of inRally.filter(isTs)) void moveToNeedReview(t, toast);
+        } else {
+          for (const t of inRally) void moveToRallyColumn(t, name, category, toast);
+        }
+        // Las que no están en Rally van a cualquier columna: pasan al estado de ese grupo y recuerdan la columna.
         const local = dropped.filter((t) => !inRally.includes(t));
         if (!local.length) return;
         void repo.batch(moveLabel(local.length, name), async () => {
           for (const t of local) {
-            const state = findType(itemTypes, t.type_id).states.find((st) => st.category === category)
-              ?? (category === 'accepted' ? findType(itemTypes, t.type_id).states.find((st) => st.category === 'done') : undefined);
-            if (state) await repo.setState(t.id, state.id);
+            const state = stateForCategory(findType(itemTypes, t.type_id), category);
+            if (state.id !== t.state_id) await repo.setState(t.id, state.id);
+            await repo.updateTask(t.id, { board_column: name });
           }
         });
       },
-      add: { label: name, defaults: { ...defaults }, category },
+      add: { label: name, defaults: { ...defaults, board_column: name }, category },
     }));
   }, [tasks, itemTypes, today, defaults, rallyOf, toast]);
   return <BoardColumns columns={columns} showProject={showProject} />;
@@ -242,8 +244,8 @@ function AddCard({ add }: { add: ColumnDef['add'] }) {
       // En el tablero mixto, cada tarjeta nueva va al primer estado de la columna dentro de su propio tipo.
       if (add.category) {
         for (const t of created) {
-          const state = findType(itemTypes, t.type_id).states.find((st) => st.category === add.category);
-          if (state && state.id !== t.state_id) await repo.setState(t.id, state.id);
+          const state = stateForCategory(findType(itemTypes, t.type_id), add.category);
+          if (state.id !== t.state_id) await repo.setState(t.id, state.id);
         }
       }
     });
