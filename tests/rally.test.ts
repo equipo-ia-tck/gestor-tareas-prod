@@ -232,7 +232,7 @@ describe('Rally: mover', () => {
       }
       // Buscar un usuario por ObjectID (para su ObjectUUID); sin consulta, es la comprobación de la clave.
       const results = path === '/user'
-        ? (u.searchParams.has('query') ? [{ _refObjectUUID: 'BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB' }] : null)
+        ? (u.searchParams.has('query') ? [{ _refObjectUUID: 'BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB', EmailAddress: `u${u.searchParams.get('query')!.replace(/\D/g, '')}@wpp.com` }] : null)
         : path === '/flowstate' ? flows : [row];
       return new Response(JSON.stringify(results ? { QueryResult: { Errors: [], Results: results, TotalResultCount: results.length } } : { User: { ObjectID: 42, DisplayName: 'Marta' } }));
     }) as unknown as typeof fetch;
@@ -264,7 +264,9 @@ describe('Rally: mover', () => {
     expect(item.comment).toBe(MOVE_COMMENTS.defined);
 
     const r = await nueva.rally.moveCommentPost(nueva.marta, { id: 'US-1', text: item.comment, analyst: { ref: '/user/77', name: 'Luis <QA>' } });
-    expect(r).toEqual({ text: MOVE_COMMENTS.defined, owner: 'Pepa PO', analyst: 'Luis <QA>' });
+    expect(r).toEqual({ text: MOVE_COMMENTS.defined, owner: 'Pepa PO', analyst: 'Luis <QA>',
+      // Con su email de Rally, para invitarlas a la reunión de entrega.
+      people: [{ name: 'Pepa PO', email: 'u55@wpp.com' }, { name: 'Luis <QA>', email: 'u77@wpp.com' }] });
     expect(comments(nueva.posts)).toEqual([{
       Artifact: '/hierarchicalrequirement/111',
       // Como el editor de Rally: <span class="mention" data-mention="ObjectUUID">, que es lo que hace que avise por correo.

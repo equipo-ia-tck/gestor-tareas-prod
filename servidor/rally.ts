@@ -198,6 +198,9 @@ export function parseUserRef(v: unknown): RallyRef | null {
   return typeof ref === 'string' && /^\/user\/\d+$/.test(ref) && n ? { ref, name: n } : null;
 }
 
+/** Persona mencionada en un comentario, con su email de Rally (para invitarla a una reunión). */
+export interface MentionedPerson { name: string; email: string | null }
+
 /** Persona que se menciona: nombre visible y su ObjectUUID en Rally (sin UUID, Rally no la reconoce ni avisa). */
 export interface Mention { name: string; uuid: string | null }
 
@@ -527,7 +530,7 @@ export class Rally {
    * Publica en la discusión el comentario de un movimiento, mencionando al Owner (el PO) y, si se ha elegido, al
    * analista: «@PO Guía bloqueada» + «Analista: @X». El texto es el de `MOVE_COMMENTS` o el que se haya escrito con el lápiz.
    */
-  async moveCommentPost(user: TeamUser, input: { id?: unknown; text?: unknown; analyst?: unknown }): Promise<{ text: string; owner: string | null; analyst: string | null }> {
+  async moveCommentPost(user: TeamUser, input: { id?: unknown; text?: unknown; analyst?: unknown }): Promise<{ text: string; owner: string | null; analyst: string | null; people: MentionedPerson[] }> {
     const a = await this.connected(user);
     const id = String(input.id ?? '').replace(/-/g, '').toUpperCase();
     // El texto parte de MOVE_COMMENTS, pero se puede modificar en la ventana antes de publicarlo.
@@ -539,20 +542,28 @@ export class Rally {
     const [type] = entry;
     const [o] = await this.query(a, type, `(FormattedID = "${id}")`);
     if (!o) throw new ApiError(404, `${id} no existe en Rally.`);
-    const owner = await this.postMoveComment(a, type, o, text, analyst);
-    return { text, owner, analyst: analyst?.name ?? null };
+    const { owner, people } = await this.postMoveComment(a, type, o, text, analyst);
+    return { text, owner, analyst: analyst?.name ?? null, people };
   }
 
-  /** Publica «@PO texto» + «Analista: @X» en la discusión de `o`. Devuelve el nombre del Owner mencionado. */
-  private async postMoveComment(a: { base_url: string; api_key: string }, type: string, o: RallyObject, text: string, analyst: RallyRef | null): Promise<string | null> {
+  /**
+   * Publica «@PO texto» + «Analista: @X» en la discusión de `o`. Devuelve el nombre del Owner mencionado y las personas
+   * mencionadas con su email (para convocar la reunión de entrega desde la app).
+   */
+  private async postMoveComment(a: { base_url: string; api_key: string }, type: string, o: RallyObject, text: string, analyst: RallyRef | null): Promise<{ owner: string | null; people: MentionedPerson[] }> {
     const ownerRef = o.Owner && typeof o.Owner === 'object' ? o.Owner as RallyObject : null;
     const ownerId = refId(ownerRef);
-    const owner: Mention | null = ownerRef && ownerId && /^\d+$/.test(ownerId)
-      ? { name: refName(ownerRef) ?? 'Owner', uuid: typeof ownerRef._refObjectUUID === 'string' ? ownerRef._refObjectUUID : await this.userUuid(a, ownerId) }
+    const ownerInfo = ownerRef && ownerId && /^\d+$/.test(ownerId) ? await this.userInfo(a, ownerId) : null;
+    const owner: Mention | null = ownerRef && ownerInfo
+      ? { name: refName(ownerRef) ?? 'Owner', uuid: typeof ownerRef._refObjectUUID === 'string' ? ownerRef._refObjectUUID : ownerInfo.uuid }
       : null;
-    const analystMention: Mention | null = analyst ? { name: analyst.name, uuid: await this.userUuid(a, analyst.ref.split('/').pop()!) } : null;
+    const analystInfo = analyst ? await this.userInfo(a, analyst.ref.split('/').pop()!) : null;
+    const analystMention: Mention | null = analyst ? { name: analyst.name, uuid: analystInfo?.uuid ?? null } : null;
     await this.post(a, '/conversationpost/create', { ConversationPost: { Artifact: `/${type}/${o.ObjectID}`, Text: moveCommentHtml(text, owner, analystMention) } });
-    return owner?.name ?? null;
+    const people: MentionedPerson[] = [];
+    if (owner) people.push({ name: owner.name, email: ownerInfo?.email ?? null });
+    if (analystMention) people.push({ name: analystMention.name, email: analystInfo?.email ?? null });
+    return { owner: owner?.name ?? null, people };
   }
 
   /**
@@ -588,7 +599,7 @@ export class Rally {
     const updated = await this.post(a, `/${type}/${o.ObjectID}?fetch=${FETCH}`, { [info.typeName]: { FlowState: flow.ref, Blocked: true, BlockedReason: reason } });
     const item = toRallyItem({ _type: type, ...updated }, a.base_url, a.rally_user_id)!;
     try {
-      const owner = await this.postMoveComment(a, type, o, text, analyst);
+      const { owner } = await this.postMoveComment(a, type, o, text, analyst);
       return { item, owner, analyst: analyst.name };
     } catch (e) {
       return { item, owner: null, analyst: analyst.name, commentError: (e as Error).message };
@@ -637,18 +648,22 @@ export class Rally {
     const [type] = entry;
     const [o] = await this.query(a, type, `(FormattedID = "${id}")`);
     if (!o) throw new ApiError(404, `${id} no existe en Rally.`);
-    const mentions = await Promise.all(used.map(async (r) => ({ name: r.name, uuid: await this.userUuid(a, r.ref.split('/').pop()!) })));
+    const mentions = await Promise.all(used.map(async (r) => ({ name: r.name, uuid: (await this.userInfo(a, r.ref.split('/').pop()!))?.uuid ?? null })));
     await this.post(a, '/conversationpost/create', { ConversationPost: { Artifact: `/${type}/${o.ObjectID}`, Text: messageHtml(text, mentions) } });
     return { mentioned: used.map((r) => r.name) };
   }
 
-  /** ObjectUUID de un usuario de Rally por su ObjectID (lo necesita la mención para que Rally avise). */
-  private async userUuid(a: { base_url: string; api_key: string }, objectId: string): Promise<string | null> {
+  /**
+   * ObjectUUID (lo necesita la mención para que Rally avise) y email de un usuario de Rally por su ObjectID.
+   * Null si el id no es válido.
+   */
+  private async userInfo(a: { base_url: string; api_key: string }, objectId: string): Promise<{ uuid: string | null; email: string | null } | null> {
     if (!/^\d+$/.test(objectId)) return null;
-    const [u] = await this.list(a, '/user', { query: `(ObjectID = ${objectId})`, fetch: 'ObjectUUID', pagesize: '1' });
+    const [u] = await this.list(a, '/user', { query: `(ObjectID = ${objectId})`, fetch: 'ObjectUUID,EmailAddress', pagesize: '1' });
     // Rally lo devuelve en `_refObjectUUID` (el campo ObjectUUID no viene aunque se pida).
     const uuid = u?._refObjectUUID ?? u?.ObjectUUID;
-    return typeof uuid === 'string' ? uuid : null;
+    const email = u?.EmailAddress;
+    return { uuid: typeof uuid === 'string' ? uuid : null, email: typeof email === 'string' && email.includes('@') ? email : null };
   }
 
   /** Caché de las opciones que cambian poco (etiquetas, milestones, valores permitidos): 10 minutos. */

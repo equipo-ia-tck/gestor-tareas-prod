@@ -37,7 +37,7 @@ export const rallyApi = {
     call<{ item: RallyItem; owner: string | null; analyst: string; commentError?: string }>('POST', '/api/rally/need-review', input),
   /** Comentario de un movimiento con el Owner (PO) y, si se elige, el analista. */
   moveComment: (id: string, text: string, analyst: RallyRef | null) =>
-    call<{ text: string; owner: string | null; analyst: string | null }>('POST', '/api/rally/move-comment', { id, text, analyst }),
+    call<{ text: string; owner: string | null; analyst: string | null; people?: { name: string; email: string | null }[] }>('POST', '/api/rally/move-comment', { id, text, analyst }),
   comment: (item: RallyItem, text: string) =>
     call<{ post: RallyDetail['discussion'][number] }>('POST', '/api/rally/comment', { kind: item.kind, objectId: item.objectId, text }).then((r) => r.post),
   attach: (item: RallyItem, file: { name: string; contentType: string; content: string }) =>

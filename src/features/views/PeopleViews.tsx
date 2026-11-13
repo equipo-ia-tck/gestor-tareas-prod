@@ -16,17 +16,11 @@ import { isActive, samePerson, sortTasks } from '../../domain/selectors';
 import { nameKey } from '../../domain/text';
 import { PROJECT_COLORS, TOPIC_TYPE_ID, type PersonGroup } from '../../domain/types';
 import { createGroup, deleteGroup, GroupPicker, moveGroup, movePersonToGroup, setDraggedPerson, updateGroup, usePersonDrop } from './groups';
-import { NewMeeting } from '../calendar/NewMeeting';
+import { NewMeeting, nextSlot } from '../calendar/NewMeeting';
 import { useRallyOwners } from '../rally/rallyStore';
 import { teamsLinkProps, useTeamsApp } from '../../hooks/useTeamsApp';
 import { ViewHeader } from './ViewHeader';
 
-/** Próxima media hora en punto (hora local, "HH:MM"), para proponer la reunión. */
-function nextSlot(now = new Date()): string {
-  const m = now.getHours() * 60 + now.getMinutes();
-  const next = Math.min(Math.ceil((m + 1) / 30) * 30, 23 * 60 + 30);
-  return `${String(Math.floor(next / 60)).padStart(2, '0')}:${String(next % 60).padStart(2, '0')}`;
-}
 
 export function PeopleView() {
   const { tasks, notes, peopleCards, settings } = useApp();

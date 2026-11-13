@@ -6,6 +6,7 @@ import { rallyApi } from './rallyApi';
 import { askAnalyst } from './AnalystPrompt';
 import { askNeedReview } from './NeedReviewPrompt';
 import { DONE_COMMENT } from './doneComment';
+import { askMeeting } from './MeetingPrompt';
 import { rallyItem, rememberRally } from './rallyStore';
 
 let running = false;
@@ -103,6 +104,8 @@ async function moveInRally(id: string, category: RallyCategory, flow: string | u
       // El texto que se haya escrito en la ventana (lápiz) manda sobre el previsto.
       const r = await rallyApi.moveComment(item.id, text ?? item.comment, analyst);
       notify(`${id} en Rally: ${item.state} · comentado${r.owner ? ` para ${r.owner}` : ''}${r.analyst ? ` · analista ${r.analyst}` : ''}`);
+      // Entrega (a Completed): «Os mando la convocatoria» → se abre la reunión nueva con las personas mencionadas.
+      if (category === 'done') askMeeting({ title: `Entrega de la guía · ${item.id} ${item.name}`, invite: r.people ?? [] });
     } catch (e) {
       notify(`${id} en Rally: ${item.state}, pero no se ha podido comentar: ${(e as Error).message}`);
     }

@@ -7,6 +7,7 @@ import { CalendarView } from '../features/calendar/CalendarView';
 import { NotesView } from '../features/notes/NotesView';
 import { RallyView } from '../features/rally/RallyView';
 import { NeedReviewPrompt } from '../features/rally/NeedReviewPrompt';
+import { MeetingPrompt } from '../features/rally/MeetingPrompt';
 import { AnalystPrompt } from '../features/rally/AnalystPrompt';
 import { RallySync } from '../features/rally/RallySync';
 import { LogView } from '../features/log/LogView';
@@ -64,6 +65,7 @@ function Main({ route }: { route: Route }) {
         <RallySync />
         <AnalystPrompt />
         <NeedReviewPrompt />
+        <MeetingPrompt />
         <WideContext.Provider value={setWide}>
           {/* Siempre el mismo envoltorio: así la vista no se vuelve a montar al cambiar de modo. */}
           <div className={full ? 'min-h-0 flex-1' : undefined}><View route={route} /></div>
