@@ -6,11 +6,16 @@
 //   npm run subir -- --una-vez    sube una vez y termina
 //   npm run subir -- --instalar   lo deja en marcha siempre (al iniciar sesión en el Mac), con un LaunchAgent
 //   npm run subir -- --desinstalar
+//   (versión suelta: node subir-calendario.mjs gsub_… --instalar, y lo mismo con las demás opciones)
 //
 // Solo sube la lista de reuniones ya recortada (`trimOutlookEvents`: título, horas, asistentes, lugar, enlace y un
 // resumen de la descripción). La clave se guarda en servidor/datos/subida.json (fuera de Git).
+//
+// Versión suelta, para quien no tiene el repositorio: al compilar, `scripts/build-subida.mjs` lo empaqueta en un solo
+// archivo (`dist/subir-calendario.mjs`, se descarga en Ajustes) con la configuración de Supabase dentro
+// (`globalThis.GESTOR_EMBEDDED`). Así guarda la clave y se instala en ~/Library/Application Support/Gestor.
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -18,8 +23,14 @@ import { fileURLToPath } from 'node:url';
 import { trimOutlookEvents } from '../src/domain/outlookEvents.ts';
 import { findOutlookFile } from '../servidor/calendar.ts';
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const DATA_DIR = resolve(ROOT, process.env.GESTOR_DATOS ?? 'servidor/datos');
+/** Configuración de Supabase que lleva dentro la versión suelta (null en el repositorio). */
+const EMBEDDED = (globalThis as { GESTOR_EMBEDDED?: { url: string; key: string } }).GESTOR_EMBEDDED ?? null;
+const SELF = fileURLToPath(import.meta.url);
+const ROOT = resolve(dirname(SELF), '..');
+const APP_DIR = join(homedir(), 'Library', 'Application Support', 'Gestor');
+const DATA_DIR = process.env.GESTOR_DATOS ? resolve(process.env.GESTOR_DATOS) : EMBEDDED ? APP_DIR : join(ROOT, 'servidor', 'datos');
+/** Cómo se lanza, para los mensajes. */
+const CMD = EMBEDDED ? 'node subir-calendario.mjs' : 'npm run subir --';
 const TOKEN_FILE = join(DATA_DIR, 'subida.json');
 const LOG_FILE = join(DATA_DIR, 'subida.log');
 const AGENT = 'com.gestor-tareas.subir';
@@ -31,6 +42,7 @@ type Fetch = typeof fetch;
 
 /** Lee VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY del entorno o del .env del proyecto (la clave anon es pública). */
 export function supabaseConfig(env: NodeJS.ProcessEnv = process.env, envFile = join(ROOT, '.env')): { url: string; key: string } {
+  if (EMBEDDED && !env.VITE_SUPABASE_URL) return EMBEDDED;
   const vars: Record<string, string> = {};
   if (existsSync(envFile)) {
     for (const line of readFileSync(envFile, 'utf8').split(/\r?\n/)) {
@@ -108,7 +120,7 @@ async function watch(token: string, once: boolean) {
       if (msg !== lastError) log(`Error: ${msg}`);
       lastError = msg;
       if (once || /Clave de subida no válida|migración/.test(msg)) {
-        if (!once) log('Me paro: genera una clave nueva en Ajustes → Calendario de Outlook y vuelve a lanzar «npm run subir -- <clave>».');
+        if (!once) log('Me paro: genera una clave nueva en Ajustes → Calendario de Outlook y vuelve a lanzar «${CMD} <clave>».');
         process.exitCode = 1;
         return false;
       }
@@ -116,7 +128,9 @@ async function watch(token: string, once: boolean) {
     return true;
   };
   if (!(await run()) || once) return;
-  log('Vigilando OneDrive/Gestor/calendario.json. Déjalo abierto (o usa «npm run subir -- --instalar»). Ctrl+C para parar.');
+  log(process.stdout.isTTY
+    ? `Vigilando OneDrive/Gestor/calendario.json. Déjalo abierto (o usa «${CMD} --instalar»). Ctrl+C para parar.`
+    : 'Vigilando OneDrive/Gestor/calendario.json.');
   const timer = setInterval(() => { void run().then((ok) => { if (!ok) clearInterval(timer); }); }, EVERY_MS);
 }
 
@@ -124,10 +138,16 @@ const xml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 
 function install() {
   if (process.platform !== 'darwin') throw new Error('--instalar solo funciona en macOS.');
-  if (!savedToken()) throw new Error('Primero guarda la clave: npm run subir -- <clave>');
-  const args = [process.execPath, fileURLToPath(import.meta.url)];
+  if (!savedToken()) throw new Error(`Primero guarda la clave: ${CMD} <clave> --instalar`);
   mkdirSync(dirname(AGENT_FILE), { recursive: true });
   mkdirSync(DATA_DIR, { recursive: true });
+  // La versión suelta se copia a su carpeta fija: así da igual dónde se descargó (y se puede borrar de Descargas).
+  let script = SELF;
+  if (EMBEDDED) {
+    script = join(APP_DIR, 'subir-calendario.mjs');
+    if (resolve(SELF) !== script) copyFileSync(SELF, script);
+  }
+  const args = [process.execPath, script];
   writeFileSync(AGENT_FILE, `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -159,22 +179,30 @@ function uninstall() {
 
 async function main(argv: string[]) {
   if (argv.includes('--desinstalar')) return uninstall();
-  if (argv.includes('--instalar')) return install();
   const given = argv.find((a) => a.startsWith('gsub_'));
   if (given) {
     saveToken(given.trim());
     console.log(`Clave guardada en ${TOKEN_FILE}.`);
   }
+  // Con la clave y --instalar a la vez: se guarda, se prueba una subida (así los errores se ven aquí) y se instala.
+  if (argv.includes('--instalar')) {
+    const token = given ?? savedToken();
+    if (token) {
+      await watch(token, true);
+      if (process.exitCode) return console.error('No lo instalo hasta que la subida funcione.');
+    }
+    return install();
+  }
   const token = given ?? savedToken();
   if (!token) {
-    console.error('Falta la clave de subida. En la app: Ajustes → Calendario de Outlook → «Generar clave de subida», y después:\n  npm run subir -- <clave>');
+    console.error(`Falta la clave de subida. En la app: Ajustes → Calendario de Outlook → «Generar clave de subida», y después:\n  ${CMD} <clave>`);
     process.exitCode = 1;
     return;
   }
   await watch(token, argv.includes('--una-vez'));
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (process.argv[1] && resolve(process.argv[1]) === SELF) {
   main(process.argv.slice(2)).catch((e: Error) => {
     console.error(e.message);
     process.exitCode = 1;

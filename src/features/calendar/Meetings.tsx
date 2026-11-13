@@ -151,8 +151,11 @@ export function OutlookSettings() {
   );
 }
 
+/** Programa de subida suelto, generado al compilar en `dist/` (scripts/build-subida.mjs). */
+const UPLOADER = 'subir-calendario.mjs';
+
 /**
- * Subida desde el Mac (`npm run subir`): lleva a Supabase las reuniones de OneDrive/Gestor/calendario.json, para verlas
+ * Subida desde el Mac (`npm run subir` o el programa suelto): lleva a Supabase las reuniones de OneDrive/Gestor/calendario.json, para verlas
  * en la app publicada (Vercel), que no ve las carpetas del Mac. Va con una clave de subida, no con la contraseña.
  */
 function UploadSettings() {
@@ -182,7 +185,8 @@ function UploadSettings() {
     setInfo(await uploadTokenApi.info());
     await loadOutlook(true);
   });
-  const command = token ? `npm run subir -- ${token}` : '';
+  // La versión suelta (`dist/subir-calendario.mjs`, ver scripts/build-subida.mjs): no hace falta el repositorio.
+  const command = token ? `node ~/Downloads/${UPLOADER} ${token} --instalar` : '';
   const copy = async () => {
     try { await navigator.clipboard.writeText(command); setCopied(true); } catch { /* se puede copiar a mano */ }
   };
@@ -192,28 +196,42 @@ function UploadSettings() {
     <section>
       <h3 className="font-medium">Subida desde el Mac <span className="font-normal text-zinc-500">(para la app publicada)</span></h3>
       <p className="mt-1 text-zinc-600 dark:text-zinc-400">
-        La app publicada no ve las carpetas de tu Mac. Un pequeño proceso del Mac sube tus reuniones de
-        {' '}<code>OneDrive/Gestor/calendario.json</code> a tu cuenta cada vez que el flujo lo actualiza. Solo tú las ves.
+        La app publicada no ve las carpetas de tu Mac. Un pequeño programa del Mac sube tus reuniones de
+        {' '}<code>OneDrive/Gestor/calendario.json</code> (lo escribe tu flujo de Power Automate) a tu cuenta cada vez que
+        cambia. Solo tú las ves. Genera la clave y sigue los pasos.
       </p>
       {cloud && (
         <p className={`mt-1 text-xs ${stale ? 'text-amber-600' : 'text-zinc-500'}`}>
           ✓ {cloud.events.length} reuniones subidas el {clock(cloud.uploadedAt)}
-          {stale ? ': hace más de una hora. ¿Está el Mac encendido y «npm run subir» en marcha?' : '.'}
+          {stale ? ': hace más de una hora. ¿Está el Mac encendido y el flujo de Power Automate activo?' : '.'}
         </p>
       )}
       {token ? (
-        <div className="mt-2 rounded-md border border-indigo-200 bg-indigo-50 p-2 text-xs dark:border-indigo-900 dark:bg-indigo-950/40">
-          <p>Copia esta orden y ejecútala en la carpeta del gestor, en la Terminal del Mac. <b>La clave solo se ve ahora.</b></p>
-          <div className="mt-1.5 flex gap-2">
-            <code className="min-w-0 flex-1 truncate rounded bg-white px-2 py-1 dark:bg-zinc-900" title={command}>{command}</code>
-            <button type="button" onClick={() => void copy()} className="rounded-md border border-zinc-300 px-2 py-1 hover:bg-white dark:border-zinc-600 dark:hover:bg-zinc-800">
-              {copied ? 'Copiada' : 'Copiar'}
-            </button>
-          </div>
-          <p className="mt-1.5 text-zinc-500">
-            Se queda vigilando el archivo. Para que siga solo aunque cierres la Terminal: <code>npm run subir -- --instalar</code>.
-          </p>
-        </div>
+        <ol className="mt-2 list-decimal space-y-1.5 rounded-md border border-indigo-200 bg-indigo-50 py-2 pr-2 pl-6 text-xs dark:border-indigo-900 dark:bg-indigo-950/40">
+          <li>
+            Necesitas <b>Node.js</b> (la versión LTS de{' '}
+            <a href="https://nodejs.org" target="_blank" rel="noreferrer" className="text-indigo-600 underline dark:text-indigo-400">nodejs.org</a>).
+            Para saber si ya lo tienes, escribe <code>node -v</code> en la Terminal.
+          </li>
+          <li>
+            <a href={`/${UPLOADER}`} download className="font-medium text-indigo-600 underline dark:text-indigo-400">Descarga el programa de subida</a>{' '}
+            (se guarda en Descargas).
+          </li>
+          <li>
+            Abre la Terminal, pega esta orden y pulsa Enter. <b>La clave solo se ve ahora.</b>
+            <div className="mt-1 flex gap-2">
+              <code className="min-w-0 flex-1 truncate rounded bg-white px-2 py-1 dark:bg-zinc-900" title={command}>{command}</code>
+              <button type="button" onClick={() => void copy()} className="rounded-md border border-zinc-300 px-2 py-1 hover:bg-white dark:border-zinc-600 dark:hover:bg-zinc-800">
+                {copied ? 'Copiada' : 'Copiar'}
+              </button>
+            </div>
+          </li>
+          <li className="text-zinc-500">
+            Prueba una subida y se queda instalado: sigue subiendo solo cada vez que el flujo actualiza el archivo, también después
+            de reiniciar el Mac. Si macOS pregunta si «node» puede acceder a OneDrive, di que sí. Ya puedes borrar el archivo de
+            Descargas. (Con el repositorio: <code>npm run subir -- &lt;clave&gt; --instalar</code>.)
+          </li>
+        </ol>
       ) : null}
       <div className="mt-2 flex gap-2">
         <button type="button" onClick={() => void generate()} disabled={busy || !info}

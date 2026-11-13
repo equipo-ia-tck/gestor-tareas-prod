@@ -715,6 +715,12 @@ En Vercel no hay servidor que lea la carpeta de OneDrive del Mac, así que el Ma
   servidor local; si no hay, lo subido; si no, el ICS. `status.cloud` cuenta para `hasCalendar`. Ajustes → Calendario de
   Outlook: «Subida desde el Mac» (generar clave con la orden para copiar, quitar, última subida) y, sin servidor local, se
   ocultan el archivo vinculado y el enlace ICS.
+- **Programa suelto** (para quien no tiene el repositorio, que solo tienen las administradoras): `npm run build` acaba con
+  `scripts/build-subida.mjs`, que empaqueta el script con Vite (SSR, `node18`) en `dist/subir-calendario.mjs` (~12 KB, solo
+  módulos de Node) y le pone delante `globalThis.GESTOR_EMBEDDED` con la URL y la clave anon. En Ajustes, tras generar la
+  clave, salen los pasos: Node LTS, «Descarga el programa» y `node ~/Downloads/subir-calendario.mjs <clave> --instalar`.
+  Suelto, guarda la clave en `~/Library/Application Support/Gestor/` y, al instalar, se copia allí (el LaunchAgent apunta a
+  esa copia). `--instalar` con clave prueba antes una subida y no instala si falla. En `npm run dev` no existe el archivo.
 - Chats y Microsoft List siguen necesitando el servidor local (la Lista escribe en OneDrive).
 
 ### Más adelante
