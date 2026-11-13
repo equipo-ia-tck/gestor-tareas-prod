@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { LOCAL_SERVER } from '../../data/serverApi';
 import { useApp } from '../../app/AppContext';
 import { Modal } from '../../components/Modal';
 import { useToast } from '../../components/Toast';
@@ -72,11 +71,9 @@ export function SettingsView() {
 
       <SpacesCard />
 
-      {LOCAL_SERVER && (
-        <Card title="Calendario de Outlook / Teams">
-          <OutlookSettings />
-        </Card>
-      )}
+      <Card title="Calendario de Outlook / Teams">
+        <OutlookSettings />
+      </Card>
 
       <Card title="Copia de seguridad">
         <p className="mb-3 text-sm text-zinc-500 dark:text-zinc-400">

@@ -4,6 +4,7 @@ import { outlookToCalendar, type OutlookEvent } from '../../domain/outlookEvents
 import { nameKey } from '../../domain/text';
 import type { ISODate } from '../../domain/types';
 import { LOCAL_SERVER, serverCall as call } from '../../data/serverApi';
+import { sync } from '../../data/sync';
 
 export interface CalendarStatus {
   /** Enlace ICS publicado (solo disponibilidad en WPP). */
@@ -11,10 +12,49 @@ export interface CalendarStatus {
   host: string | null;
   /** Archivo de Power Automate en OneDrive (reuniones con título). */
   file: { linked: boolean; found: boolean };
+  /** Hay reuniones subidas a Supabase desde el Mac (`npm run subir`): lo que usa la app publicada. Lo pone la app. */
+  cloud?: boolean;
 }
 
-/** Hay alguna fuente de reuniones: el archivo del flujo o el enlace ICS. */
-export const hasCalendar = (s: CalendarStatus | null) => !!s && (s.connected || s.file.linked);
+/** Hay alguna fuente de reuniones: el archivo del flujo, las subidas a Supabase o el enlace ICS. */
+export const hasCalendar = (s: CalendarStatus | null) => !!s && (s.connected || s.file.linked || !!s.cloud);
+
+/** Sin servidor local (p. ej. en Vercel): ninguna fuente del servidor. */
+const NO_SERVER: CalendarStatus = { connected: false, host: null, file: { linked: false, found: false } };
+
+/** Reuniones subidas a Supabase por `scripts/subir-onedrive.ts`. */
+export interface CloudCalendar {
+  events: OutlookEvent[];
+  fileAt: string | null;
+  uploadedAt: string;
+}
+
+/** Lo subido a Supabase (null si no hay nada o falta la migración 005). Cada persona solo ve lo suyo (RLS). */
+async function cloudCalendar(): Promise<CloudCalendar | null> {
+  const { data, error } = await sync().supabase.from('connector_uploads')
+    .select('data, file_at, uploaded_at').eq('kind', 'calendario').maybeSingle();
+  if (error || !data) return null;
+  const row = data as { data: OutlookEvent[]; file_at: string | null; uploaded_at: string };
+  return { events: Array.isArray(row.data) ? row.data : [], fileAt: row.file_at, uploadedAt: row.uploaded_at };
+}
+
+/** Clave de subida para `npm run subir` (funciones de la migración 005). */
+export const uploadTokenApi = {
+  info: async () => {
+    const { data, error } = await sync().supabase.rpc('upload_token_info');
+    if (error) throw new Error(/upload_token_info/.test(error.message) ? 'Falta aplicar en Supabase la migración 005_calendario_subido.sql.' : error.message);
+    return data as { hasToken: boolean; createdAt: string | null };
+  },
+  create: async () => {
+    const { data, error } = await sync().supabase.rpc('create_upload_token');
+    if (error) throw new Error(error.message);
+    return data as string;
+  },
+  revoke: async () => {
+    const { error } = await sync().supabase.rpc('revoke_upload_token');
+    if (error) throw new Error(error.message);
+  },
+};
 
 
 /** Calendario de Outlook del servidor (`servidor/calendar.ts`): el enlace ICS nunca llega al navegador. */
@@ -38,6 +78,10 @@ interface OutlookState {
   /** Reuniones del archivo de Power Automate (mandan sobre el .ics) y cuándo lo escribió el flujo. */
   events: OutlookEvent[] | null;
   fileAt: string | null;
+  /** Lo subido a Supabase desde el Mac (se usa si el servidor local no tiene el archivo vinculado). */
+  cloud: CloudCalendar | null;
+  /** Hay servidor local (npm start): sin él no se pueden vincular archivos ni el enlace ICS. */
+  server: boolean;
   loading: boolean;
   error: string | null;
   /** Hora de la última descarga correcta. */
@@ -45,7 +89,7 @@ interface OutlookState {
 }
 
 /** Estado compartido por todas las vistas: una sola descarga para Semana, Mes y Ajustes. */
-let state: OutlookState = { status: null, ics: null, events: null, fileAt: null, loading: false, error: null, at: null };
+let state: OutlookState = { status: null, ics: null, events: null, fileAt: null, cloud: null, server: false, loading: false, error: null, at: null };
 const listeners = new Set<() => void>();
 const set = (patch: Partial<OutlookState>) => {
   state = { ...state, ...patch };
@@ -58,21 +102,29 @@ let stop: (() => void) | null = null;
 /** Lee el estado y, si está conectado, el calendario (`fresh` salta la caché del servidor). */
 export function loadOutlook(fresh = false): Promise<void> {
   if (inflight) return inflight;
-  // Las reuniones de Outlook salen de un archivo de OneDrive que solo lee el servidor del Mac.
-  if (!LOCAL_SERVER) return Promise.resolve();
   inflight = (async () => {
     set({ loading: true });
     try {
-      const status = await calendarApi.status();
-      set({ status });
-      // El archivo del flujo trae los títulos; el .ics (solo disponibilidad) se usa si no hay archivo o falla.
-      let file: { events: OutlookEvent[]; updatedAt: string } | null = null;
+      // El servidor local (npm start) y lo subido a Supabase, a la vez. En Vercel no hay servidor: solo cuenta lo subido.
+      const [serverRes, cloudRes] = await Promise.allSettled([
+        LOCAL_SERVER ? calendarApi.status() : Promise.reject(new Error('Sin servidor local.')),
+        cloudCalendar(),
+      ]);
+      const cloud = cloudRes.status === 'fulfilled' ? cloudRes.value : null;
+      const server = serverRes.status === 'fulfilled';
+      const status: CalendarStatus = { ...(server ? serverRes.value : NO_SERVER), cloud: !!cloud };
+      set({ status, server, cloud });
+      // El archivo del flujo trae los títulos (el del servidor local, o si no, el subido); el .ics (solo
+      // disponibilidad) se usa si no hay ninguno o falla.
+      let file: { events: OutlookEvent[]; updatedAt: string | null } | null = null;
       let fileError: string | null = null;
       if (status.file.linked) {
         try { file = await calendarApi.events(); } catch (e) { fileError = (e as Error).message; }
       }
+      if (!file && cloud) file = { events: cloud.events, updatedAt: cloud.fileAt ?? cloud.uploadedAt };
       const ics = status.connected && !file ? await calendarApi.ics(fresh) : null;
-      set({ events: file?.events ?? null, fileAt: file?.updatedAt ?? null, ics, error: fileError, at: hasCalendar(status) ? Date.now() : null });
+      const serverError = serverRes.status === 'rejected' && LOCAL_SERVER ? (serverRes.reason as Error).message : null;
+      set({ events: file?.events ?? null, fileAt: file?.updatedAt ?? null, ics, error: file ? null : fileError ?? serverError, at: hasCalendar(status) ? Date.now() : null });
       prunePending();
     } catch (e) {
       set({ error: (e as Error).message });

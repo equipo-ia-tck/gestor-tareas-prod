@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
  * Prueba la base de datos de Supabase (supabase/migrations) en un Postgres de verdad (PGlite), imitando
  * lo mínimo de Supabase: roles anon/authenticated y auth.uid()/auth.email() de la sesión.
  */
-const MIGRATION = ['001_equipo.sql', '002_baja_y_contrasenas.sql', '003_alta_sin_invitacion.sql', '004_claves_conectores.sql'].map((f) => readFileSync(`supabase/migrations/${f}`, 'utf8')).join('\n');
+const MIGRATION = ['001_equipo.sql', '002_baja_y_contrasenas.sql', '003_alta_sin_invitacion.sql', '004_claves_conectores.sql', '005_calendario_subido.sql'].map((f) => readFileSync(`supabase/migrations/${f}`, 'utf8')).join('\n');
 let db: PGlite;
 
 const SUPABASE_STUB = `
@@ -214,5 +214,42 @@ describe('base de datos del equipo en Supabase', () => {
     await expect(as(ana, 'select * from connector_accounts')).rejects.toThrow();
     await rpc(ana, 'delete_my_connector', { p_connector: 'rally' });
     expect(await rpc(marta, 'my_connector', { p_connector: 'rally' })).not.toBeNull();
+  });
+
+  it('calendario subido: con la clave de subida, sin sesión, y cada uno solo ve lo suyo', async () => {
+    const marta = await newUser('marta@vml.com');
+    await rpc(marta, 'register_profile', { p_name: 'Marta García', p_code: '' });
+    const mark = await newUser('mark@vml.com');
+    const spaces = await rpc(marta, 'create_space', { p_name: 'Excelencia', p_color: '#f00' }) as { inviteCode: string }[];
+    await rpc(mark, 'register_profile', { p_name: 'Mark Ruiz', p_code: spaces[0].inviteCode });
+
+    const token = await rpc(marta, 'create_upload_token') as string;
+    expect(token).toMatch(/^gsub_[0-9a-f]{48}$/);
+    expect(await rpc(marta, 'upload_token_info')).toMatchObject({ hasToken: true });
+
+    // El proceso del Mac llama sin sesión (anon).
+    const upload = async (t: string, data: unknown) => {
+      await db.exec("reset role; select set_config('test.uid', '', false); set role anon;");
+      return (await db.query<{ r: string }>('select public.upload_connector_file($1, $2, $3, $4) as r', [t, 'calendario', JSON.stringify(data), '2026-11-13T09:00:00Z'])).rows[0].r;
+    };
+    expect(await upload(token, [{ uid: 'a', title: 'Daily' }])).toBe('Marta García');
+    await expect(upload('gsub_mal', [])).rejects.toThrow(/Clave de subida no válida/);
+    await expect(upload(token, { no: 'lista' })).rejects.toThrow(/lista de reuniones/);
+    await db.exec('reset role; set role anon;');
+    await expect(db.query('select * from connector_uploads')).rejects.toThrow();
+
+    const own = await as<{ data: { title: string }[] }>(marta, 'select data from connector_uploads');
+    expect(own[0].data[0].title).toBe('Daily');
+    expect(await as(mark, 'select * from connector_uploads')).toEqual([]);
+    await expect(as(marta, "insert into connector_uploads (owner, kind, data) values ($1, 'calendario', '[]')", [marta.id])).rejects.toThrow();
+    await expect(as(marta, 'select * from upload_tokens')).rejects.toThrow(/permission denied/);
+
+    // Una clave nueva invalida la anterior; quitarla borra lo subido.
+    const second = await rpc(marta, 'create_upload_token') as string;
+    await expect(upload(token, [])).rejects.toThrow(/no válida/);
+    await upload(second, []);
+    await rpc(marta, 'revoke_upload_token');
+    await expect(upload(second, [])).rejects.toThrow(/no válida/);
+    expect(await as(marta, 'select * from connector_uploads')).toEqual([]);
   });
 });

@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { CalendarClock, FileText, MapPin, RefreshCw, Users, Video } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
 import { navigate, routeHref } from '../../app/router';
@@ -7,7 +7,7 @@ import { repo } from '../../data/services';
 import type { CalendarEvent } from '../../domain/ics';
 import { teamsLinkProps, useTeamsApp } from '../../hooks/useTeamsApp';
 import { createMeetingNote, meetingNoteFor } from '../notes/IcsImport';
-import { connectOutlook, disconnectOutlook, hasCalendar, isPendingMeeting, removePendingMeeting, linkOutlookFile, loadOutlook, unlinkOutlookFile, useOutlook } from './outlook';
+import { connectOutlook, disconnectOutlook, hasCalendar, isPendingMeeting, removePendingMeeting, linkOutlookFile, loadOutlook, unlinkOutlookFile, uploadTokenApi, useOutlook } from './outlook';
 
 export const timeRange = (e: CalendarEvent) => (e.time ? `${e.time}${e.end ? `–${e.end}` : ''}` : 'Todo el día');
 
@@ -131,12 +131,101 @@ const clock = (iso: string | number) => new Date(iso).toLocaleString('es-ES', { 
 
 /** Ajustes → Calendario de Outlook: el archivo de Power Automate (con títulos) y el enlace ICS publicado (disponibilidad). */
 export function OutlookSettings() {
+  const { server, status } = useOutlook();
   return (
     <div className="space-y-5 text-sm">
-      <FlowSettings />
-      <IcsSettings />
+      <UploadSettings />
+      {server ? (
+        <>
+          <FlowSettings />
+          <IcsSettings />
+        </>
+      ) : status && (
+        <p className="text-xs text-zinc-500">
+          Sin el servidor local (<code>npm start</code>) no se puede vincular el archivo directamente ni el enlace ICS: en la app
+          publicada, las reuniones llegan con la subida desde el Mac.
+        </p>
+      )}
       <TeamsAppSetting />
     </div>
+  );
+}
+
+/**
+ * Subida desde el Mac (`npm run subir`): lleva a Supabase las reuniones de OneDrive/Gestor/calendario.json, para verlas
+ * en la app publicada (Vercel), que no ve las carpetas del Mac. Va con una clave de subida, no con la contraseña.
+ */
+function UploadSettings() {
+  const { cloud } = useOutlook();
+  const [info, setInfo] = useState<{ hasToken: boolean; createdAt: string | null } | null>(null);
+  const [token, setToken] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { uploadTokenApi.info().then(setInfo, (e: Error) => setError(e.message)); }, []);
+
+  const run = async (fn: () => Promise<void>) => {
+    setBusy(true);
+    setError(null);
+    try { await fn(); } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+  };
+  const generate = () => run(async () => {
+    if (info?.hasToken && !confirm('La clave anterior dejará de valer: tendrás que poner la nueva en el Mac. ¿Seguir?')) return;
+    setToken(await uploadTokenApi.create());
+    setCopied(false);
+    setInfo(await uploadTokenApi.info());
+  });
+  const revoke = () => run(async () => {
+    if (!confirm('Se borra la clave y las reuniones subidas. El Mac dejará de subirlas. ¿Seguir?')) return;
+    await uploadTokenApi.revoke();
+    setToken(null);
+    setInfo(await uploadTokenApi.info());
+    await loadOutlook(true);
+  });
+  const command = token ? `npm run subir -- ${token}` : '';
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(command); setCopied(true); } catch { /* se puede copiar a mano */ }
+  };
+  const stale = cloud && Date.now() - new Date(cloud.uploadedAt).getTime() > 60 * 60_000;
+
+  return (
+    <section>
+      <h3 className="font-medium">Subida desde el Mac <span className="font-normal text-zinc-500">(para la app publicada)</span></h3>
+      <p className="mt-1 text-zinc-600 dark:text-zinc-400">
+        La app publicada no ve las carpetas de tu Mac. Un pequeño proceso del Mac sube tus reuniones de
+        {' '}<code>OneDrive/Gestor/calendario.json</code> a tu cuenta cada vez que el flujo lo actualiza. Solo tú las ves.
+      </p>
+      {cloud && (
+        <p className={`mt-1 text-xs ${stale ? 'text-amber-600' : 'text-zinc-500'}`}>
+          ✓ {cloud.events.length} reuniones subidas el {clock(cloud.uploadedAt)}
+          {stale ? ': hace más de una hora. ¿Está el Mac encendido y «npm run subir» en marcha?' : '.'}
+        </p>
+      )}
+      {token ? (
+        <div className="mt-2 rounded-md border border-indigo-200 bg-indigo-50 p-2 text-xs dark:border-indigo-900 dark:bg-indigo-950/40">
+          <p>Copia esta orden y ejecútala en la carpeta del gestor, en la Terminal del Mac. <b>La clave solo se ve ahora.</b></p>
+          <div className="mt-1.5 flex gap-2">
+            <code className="min-w-0 flex-1 truncate rounded bg-white px-2 py-1 dark:bg-zinc-900" title={command}>{command}</code>
+            <button type="button" onClick={() => void copy()} className="rounded-md border border-zinc-300 px-2 py-1 hover:bg-white dark:border-zinc-600 dark:hover:bg-zinc-800">
+              {copied ? 'Copiada' : 'Copiar'}
+            </button>
+          </div>
+          <p className="mt-1.5 text-zinc-500">
+            Se queda vigilando el archivo. Para que siga solo aunque cierres la Terminal: <code>npm run subir -- --instalar</code>.
+          </p>
+        </div>
+      ) : null}
+      <div className="mt-2 flex gap-2">
+        <button type="button" onClick={() => void generate()} disabled={busy || !info}
+          className="rounded-md bg-indigo-600 px-3 py-1 font-medium text-white hover:bg-indigo-500 disabled:opacity-40">
+          {info?.hasToken ? 'Generar otra clave' : 'Generar clave de subida'}
+        </button>
+        {info?.hasToken && (
+          <button type="button" onClick={() => void revoke()} disabled={busy} className="rounded-md px-3 py-1 text-red-600 hover:bg-red-50 dark:hover:bg-red-950">Quitar</button>
+        )}
+      </div>
+      {error && <p className="mt-2 rounded-md bg-red-50 px-2 py-1 text-xs text-red-700 dark:bg-red-950 dark:text-red-300">{error}</p>}
+    </section>
   );
 }
 

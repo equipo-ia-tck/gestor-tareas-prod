@@ -677,8 +677,9 @@ Rama `cambios-prod` de `equipo-ia-tck/gestor-tareas-prod`, publicada en Vercel (
   persona solo lee la suya con su sesión). Si se cambia `RALLY_SECRET`, hay que volver a conectar Rally. Variables de Vercel:
   `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (públicas) y `RALLY_SECRET`. Límite de Vercel: 4,5 MB por petición (adjuntos
   grandes, solo en local).
-- **Solo en local** (`LOCAL_SERVER` en `data/serverApi.ts`: la app servida desde localhost): calendario de Outlook, chats, lista
-  y Confluence. En Vercel se ocultan (barra lateral, Ajustes, «Mis calendarios») y sus rutas muestran `LocalOnly`.
+- **Solo en local** (`LOCAL_SERVER` en `data/serverApi.ts`: la app servida desde localhost): chats, lista
+  y Confluence. En Vercel se ocultan (barra lateral) y sus rutas muestran `LocalOnly`. El calendario de Outlook llega a
+  Vercel con la subida desde el Mac (fase 27).
 - `tsconfig.json` incluye ahora `servidor` y `api` (el typecheck cubre el servidor).
 - **Fuera** (nov 2026, a petición de la usuaria): Lista (Microsoft List), Confluence y Chats, también del servidor; el botón
   Releases del calendario; la vista **Resumen** del proyecto (queda Lista/Tablero; un `project-view` guardado como `summary`
@@ -696,6 +697,25 @@ Rama `cambios-prod` de `equipo-ia-tck/gestor-tareas-prod`, publicada en Vercel (
   en `settings` con sus valores por defecto).
 - **Adjuntos**: `MAX_UPLOAD` es 25 MB en local y 3 MB en Vercel (4,5 MB por petición en base64); `tooBigMessage` dice qué
   archivo es, cuánto pesa y dónde subirlo.
+
+## Fase 27: calendario en la app publicada (subida desde el Mac)
+
+En Vercel no hay servidor que lea la carpeta de OneDrive del Mac, así que el Mac sube las reuniones a Supabase.
+
+- **Supabase** (`supabase/migrations/005_calendario_subido.sql`, después de 001 a 004): `connector_uploads` (dueño, `kind`
+  = `calendario`, `data` jsonb con la lista ya recortada, `file_at`, `uploaded_at`; cada uno lee lo suyo por RLS) y
+  `upload_tokens` (solo la huella sha256). `create_upload_token` (la clave `gsub_…` se ve una vez y reemplaza a la anterior),
+  `revoke_upload_token` (borra clave y subidas), `upload_token_info` y `upload_connector_file`, que llama el Mac **sin
+  sesión** (rol anon) solo con la clave. Máx. 5 MB. Tests en `tests/supabase.test.ts`.
+- **Mac** (`scripts/subir-onedrive.ts`, `npm run subir`): `npm run subir -- gsub_…` guarda la clave en
+  `servidor/datos/subida.json` y vigila `calendario.json` (cada minuto mira el mtime; sube solo si cambia, pasado por
+  `trimOutlookEvents`). `--una-vez`; `--instalar`/`--desinstalar` dejan un LaunchAgent (`com.gestor-tareas.subir`, registro
+  en `servidor/datos/subida.log`). Con la clave no válida o sin migración se para.
+- **App** (`features/calendar/outlook.ts`): pide a la vez el servidor local (solo si `LOCAL_SERVER`) y lo subido. Manda el archivo vinculado en el
+  servidor local; si no hay, lo subido; si no, el ICS. `status.cloud` cuenta para `hasCalendar`. Ajustes → Calendario de
+  Outlook: «Subida desde el Mac» (generar clave con la orden para copiar, quitar, última subida) y, sin servidor local, se
+  ocultan el archivo vinculado y el enlace ICS.
+- Chats y Microsoft List siguen necesitando el servidor local (la Lista escribe en OneDrive).
 
 ### Más adelante
 

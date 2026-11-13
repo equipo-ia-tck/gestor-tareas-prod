@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "servidor": "node servidor/index.ts"
+    "servidor": "node servidor/index.ts",
+    "subir": "node scripts/subir-onedrive.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.117.2",
