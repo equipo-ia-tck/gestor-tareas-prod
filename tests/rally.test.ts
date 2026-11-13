@@ -719,6 +719,9 @@ describe('Rally: gestor', () => {
       item({ state: 'Defined', stateOrder: 2, iteration: 'Sprint 14', assignee: 'Ana' }),
     ];
     expect(groupRally(list, 'state').map((g) => g.key)).toEqual(['New', 'Defined', 'Need Review']);
+    // Como en el Tablero: siempre las 7 columnas; un estado que no es columna va a la de su grupo (Completed para Done).
+    const cols = groupRally([item({ state: 'Defined', category: 'todo' }), item({ state: 'Done', category: 'done' }), item({ state: 'In-Progress', category: 'blocked' })], 'column');
+    expect(cols.map((g) => `${g.key}:${g.items.length}`)).toEqual(['New:0', 'Defined:1', 'Blocked:0', 'In-Progress:1', 'Need Review:0', 'Completed:1', 'Accepted:0']);
     const byCategory = groupRally([item({ category: 'accepted' }), item({ category: 'blocked' }), item({ category: 'accepted' })], 'category');
     expect(byCategory.map((g) => `${g.key} ${g.items.length}`)).toEqual(['Por hacer 0', 'Bloqueado 1', 'En curso 0', 'Hecho 0', 'Accepted 2']);
     expect(groupRally(list, 'iteration').map((g) => g.key)).toEqual(['Sprint 14', 'Sprint 9', null]);

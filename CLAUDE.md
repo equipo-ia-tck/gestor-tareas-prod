@@ -537,7 +537,8 @@ Petición de la usuaria (oct 2026): traer Rally al gestor sin tocar el resto (en
   defecto elegido, `DE12345`, y se puede cambiar). Todo es obligatorio y se hace a la vez
   en el servidor (`needReview`: FlowState Need Review + Blocked + BlockedReason en un solo cambio y después el comentario); el
   motivo no va a la discusión. Cerrar en cualquier paso cancela todo.
-- **Pantalla Rally** (`features/rally/`): proyectos elegibles (banner), agrupación por categoría, columna, iteración o persona,
+- **Pantalla Rally** (`features/rally/`): proyectos elegibles (banner), agrupación por estado del tablero (por defecto: las 7
+  columnas del Tablero con `boardColumnOf`, y la columna «Estado» enseña ese mismo nombre; el de Rally en el título), categoría, estado exacto, iteración o persona,
   «solo lo mío», ficha lateral con todos los campos, discusión (con caja para comentar) y adjuntos (con subida). La misma ficha
   sale en el panel de una tarea enlazada (`RallyTaskSection`).
 - **Owner**: `rallyStore.ts` recuerda en memoria el último estado de cada elemento y los Owners en localStorage. El Tablero muestra

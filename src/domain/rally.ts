@@ -149,7 +149,7 @@ export interface RallyDetail {
   attachments: { name: string; size: number }[];
 }
 
-export type RallyGroupBy = 'category' | 'state' | 'iteration' | 'assignee' | 'tag';
+export type RallyGroupBy = 'column' | 'category' | 'state' | 'iteration' | 'assignee' | 'tag';
 
 export interface RallyStatus {
   connected: boolean;
@@ -301,11 +301,14 @@ const nullsLast = (a: string | null, b: string | null, cmp: (a: string, b: strin
   a === null ? (b === null ? 0 : 1) : b === null ? -1 : cmp(a, b);
 
 /**
- * Agrupa por categoría (Por hacer, Bloqueado, En curso, Hecho, Accepted, aunque estén vacías), por columna del tablero
+ * Agrupa por columna del tablero del gestor (las 7 de `RALLY_COLUMNS`, aunque estén vacías, como en el Tablero), por categoría (Por hacer, Bloqueado, En curso, Hecho, Accepted, aunque estén vacías), por columna del tablero
  * de Rally (en su orden), por iteración (la más reciente primero), por persona o por etiqueta (alfabético). Lo que no
  * tiene iteración, persona o etiqueta va al final. Por etiqueta, un elemento con varias sale en cada una.
  */
 export function groupRally(items: RallyItem[], by: RallyGroupBy): { key: string | null; items: RallyItem[] }[] {
+  if (by === 'column') {
+    return RALLY_COLUMNS.map(({ name }) => ({ key: name, items: items.filter((it) => boardColumnOf(it) === name) }));
+  }
   if (by === 'category') {
     return RALLY_CATEGORIES.map(({ category, label }) => ({ key: label, items: items.filter((it) => it.category === category) }));
   }
@@ -333,6 +336,9 @@ export const RALLY_COLUMNS: { name: string; category: RallyCategory; color: stri
   { name: 'Completed', category: 'done', color: '#22c55e', home: true },
   { name: 'Accepted', category: 'accepted', color: '#047857', home: true },
 ];
+
+/** Columna del Tablero en la que sale un elemento de Rally (la misma que usa el Tablero para una tarea enlazada). */
+export const boardColumnOf = (it: Pick<RallyItem, 'state' | 'category'>) => rallyColumnOf(it.state, it.category);
 
 const columnKey = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, '');
 

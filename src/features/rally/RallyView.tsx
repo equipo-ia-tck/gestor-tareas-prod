@@ -7,7 +7,7 @@ import { ProjectOptions } from '../../components/ui/ProjectOptions';
 import { inputClass } from '../../components/ui/styles';
 import { repo } from '../../data/services';
 import {
-  groupRally, linkedTask, RALLY_KINDS, taskFromRally, tasksByRallyId,
+  boardColumnOf, groupRally, linkedTask, RALLY_COLUMNS, RALLY_KINDS, taskFromRally, tasksByRallyId,
   type RallyGroupBy, type RallyItem, type RallyKind, type RallyProject, type RallyRef, type RallyStatus,
 } from '../../domain/rally';
 import { usePersistentState } from '../../hooks/usePersistentState';
@@ -192,7 +192,7 @@ function ProjectChips({ projects, selected, onToggle, pinned, onPin }: {
     </>
   );
 }
-const GROUP_LABEL: Record<RallyGroupBy, string> = { category: 'categoría', state: 'columna de Rally', iteration: 'iteración', assignee: 'persona', tag: 'etiqueta' };
+const GROUP_LABEL: Record<RallyGroupBy, string> = { column: 'estado del tablero', category: 'categoría', state: 'estado exacto de Rally', iteration: 'iteración', assignee: 'persona', tag: 'etiqueta' };
 const NO_GROUP: Partial<Record<RallyGroupBy, string>> = { iteration: 'Sin iteración', assignee: 'Sin asignar', tag: 'Sin etiqueta' };
 
 function RallyItems() {
@@ -212,7 +212,7 @@ function RallyItems() {
   const [hideDone, setHideDone] = usePersistentState('rally-hide-done', false);
   const [onlyMine, setOnlyMine] = usePersistentState('rally-only-mine', false);
   const [person, setPerson] = useState('');
-  const [groupBy, setGroupBy] = usePersistentState<RallyGroupBy>('rally-group-by', 'category');
+  const [groupBy, setGroupBy] = usePersistentState<RallyGroupBy>('rally-group-by-v2', 'column');
   const [days, setDays] = usePersistentState('rally-days-v2', 0);
   const [projectId, setProjectId] = usePersistentState('rally-project', '');
   // Elemento abierto en el panel de la derecha.
@@ -422,12 +422,19 @@ function RallyItems() {
                     {it.owner ? <><Avatar name={it.owner} size={18} /><span className="truncate">{it.owner}</span></> : <span className="text-zinc-400">Sin owner</span>}
                   </span>
                   <span className="flex w-36 shrink-0 justify-end">
-                    {(groupBy !== 'state' || it.blocked) && (
-                      <span className={`truncate rounded-full px-2 py-0.5 text-xs ${it.blocked ? 'bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300' : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300'}`}
-                        title={it.blocked ? `Bloqueada · ${it.state}` : it.state}>
-                        {it.blocked ? (groupBy === 'state' ? 'Bloqueada' : `Bloqueada · ${it.state}`) : it.state}
-                      </span>
-                    )}
+                    {(() => {
+                      // El estado con el nombre de la columna del Tablero (así se busca igual en los dos sitios).
+                      const col = boardColumnOf(it);
+                      const color = RALLY_COLUMNS.find((c) => c.name === col)?.color;
+                      const flagged = it.blocked && col !== 'Blocked';
+                      return (
+                        <span className={`inline-flex items-center gap-1 truncate rounded-full px-2 py-0.5 text-xs ${flagged ? 'bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300' : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300'}`}
+                          title={`En Rally: ${it.state || '—'}${it.blocked ? ' · Blocked' : ''}`}>
+                          <span className="size-2 shrink-0 rounded-full" style={{ background: color }} />
+                          {flagged ? `Bloqueada · ${col}` : col}
+                        </span>
+                      );
+                    })()}
                   </span>
                   {task ? (
                     <button type="button" onClick={() => openTask(task)} className="w-24 shrink-0 rounded-md px-2 py-0.5 text-xs text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950">
