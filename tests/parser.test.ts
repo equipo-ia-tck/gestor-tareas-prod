@@ -270,6 +270,13 @@ describe('claves externas y releases (fase 7)', () => {
     expect(one7('revisar TS-55 mañana')).toMatchObject({ external_id: 'TS-55', type_id: 'ts', due_date: '2026-10-06' });
   });
 
+  it('F/FE → Feature y DE → Defect (tipos de Rally)', () => {
+    const rally = { ...ctx7, types: [...ctx7.types!, { id: 'fe', short: 'FE' }, { id: 'de', short: 'DE' }] };
+    expect(parseCapture('F12345 nueva home', rally)[0]).toMatchObject({ external_id: 'F12345', type_id: 'fe' });
+    expect(parseCapture('FE-12 nueva home', rally)[0]).toMatchObject({ type_id: 'fe' });
+    expect(parseCapture('DE998877 login roto', rally)[0]).toMatchObject({ type_id: 'de' });
+  });
+
   it('otras claves se guardan sin cambiar el tipo', () => {
     expect(one7('mirar QA-17')).toMatchObject({ external_id: 'QA-17', type_id: null });
   });

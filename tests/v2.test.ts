@@ -25,11 +25,11 @@ describe('migración v1 → v2', () => {
     const tasks = await db.tasks.toArray();
     expect(tasks.find((t) => t.id === 'a')).toMatchObject({ type_id: 'task', state_id: 'task-todo', checklist: [] });
     expect(tasks.find((t) => t.id === 'b')).toMatchObject({ state_id: 'task-done' });
-    expect((await db.item_types.toArray()).map((t) => t.id).sort()).toEqual(['task', 'topic', 'ts', 'us']);
+    expect((await db.item_types.toArray()).map((t) => t.id).sort()).toEqual(['de', 'ds', 'fe', 'ta', 'task', 'topic', 'ts', 'us']);
   });
 
   it('una base de datos nueva trae los tipos por defecto', async () => {
-    expect((await repo.listItemTypes()).map((t) => t.short)).toEqual(['', 'US', 'TS', 'HABLAR']);
+    expect((await repo.listItemTypes()).map((t) => t.short)).toEqual(['', 'US', 'TS', 'HABLAR', 'FE', 'DE', 'DS', 'TA']);
   });
 });
 
@@ -124,7 +124,7 @@ describe('copias', () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.backup.tasks[0]).toMatchObject({ type_id: 'task', state_id: 'task-done', checklist: [] });
-    expect(r.backup.item_types).toHaveLength(4);
+    expect(r.backup.item_types).toHaveLength(8);
     expect(r.backup.labels).toEqual([]);
   });
 
@@ -136,6 +136,6 @@ describe('copias', () => {
     const r = parseBackup(JSON.stringify(snap));
     if (r.ok) await other.replaceAll(r.backup);
     expect(await other.listLabels()).toEqual([{ name: 'casa', color: '#111111' }]);
-    expect(await other.listItemTypes()).toHaveLength(4);
+    expect(await other.listItemTypes()).toHaveLength(8);
   });
 });

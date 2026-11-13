@@ -1,6 +1,7 @@
 import { firstOccurrence } from '../domain/recurrence';
 import { nameKey } from '../domain/text';
 import { resolveProjectToken } from '../domain/projects';
+import { typeForPrefix } from '../domain/workflows';
 import type { ISODate, Priority, RecurrenceRule } from '../domain/types';
 import { estimateMinutes, findDate, findRecurrence, findReminder, SYMBOL_PATTERNS, type Match } from './patterns';
 import { addDays } from '../domain/dates';
@@ -84,7 +85,7 @@ function parseSegment(seg: string, offset: number, ctx: CaptureContext): ParsedT
         if (!tags.includes(value)) tags.push(value);
       } else if (kind === 'key') {
         externalId = m[0];
-        typeId = ctx.types?.find((t) => t.short && t.short.toUpperCase() === value)?.id ?? null;
+        typeId = ctx.types ? typeForPrefix(ctx.types, value)?.id ?? null : null;
       } else if (kind === 'release') {
         const found = ctx.releases?.find((r) => nameKey(r.name) === nameKey(value));
         release = found ? { id: found.id, name: found.name } : { id: null, name: value };

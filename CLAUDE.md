@@ -490,6 +490,10 @@ Petición de la usuaria (oct 2026): traer Rally al gestor sin tocar el resto (en
   (`/portfolioitem` por FormattedID; el buscador abre en «Todos los proyectos»). Se crea en `/portfolioitem/feature/create`.
 - **Etiquetas por defecto al crear**: si la pantalla Rally tiene etiquetas en el filtro, «Nuevo elemento» (cualquier tipo)
   las trae ya puestas en Tags (`defaultTags`); se pueden quitar o añadir más.
+- **Tipos de Rally en el gestor** (`RALLY_TYPE_IDS`): además de US y TS (Test Set de Rally, «Test Scenario»), Feature (FE),
+  Defect (DE), Defect Suite (DS) y Task (TA), con estados por categoría y Accepted. Desde la sesión de una administradora
+  `repo.ensureRallyTypes` añade los que falten (por id o abreviatura; si se eliminan, vuelven) y, en cualquier sesión, pasa a
+  su tipo las tareas que siguen como Tarea con un ID de Rally (`typeForPrefix`: «F» = FE). Los TC siguen siendo Tarea.
 - **Asignación**: se usa el campo personalizado `c_Assignee` (el Owner suele ser quien lo pidió). `mine` = Assignee u Owner soy yo.
 - **Categorías** (`rallyCategory`): todo · blocked · doing · done · **accepted**. El gestor tiene ahora la categoría de estado
   `accepted` (cuenta como completada, `isDoneCategory`); la sesión de un administrador añade el estado «Accepted» a Tarea, US y TS

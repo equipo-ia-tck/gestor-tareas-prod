@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import { repo } from '../data/services';
 import { labelColorMap } from '../domain/colors';
 import { postponeCounts } from '../domain/activity';
-import { withAcceptedState } from '../domain/workflows';
+import { missingRallyTypes, RALLY_TYPE_IDS, withAcceptedState } from '../domain/workflows';
 import { knownPeople } from '../domain/selectors';
 import { matchesSpace, SPACES_ENABLED, spaceOf, spaceOfProject, type Space, type SpaceFilter } from '../domain/spaces';
 import { useSync } from '../data/sync';
@@ -68,6 +68,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // tipos de serie que aún no lo tienen, y la sincronización lo lleva a los demás.
   const needsAccepted = isAdmin && itemTypes.some((t) => withAcceptedState(t));
   useEffect(() => { if (needsAccepted) void repo.ensureAcceptedStates(); }, [needsAccepted]);
+  // Tipos de Rally (Feature, Defect…): una administradora los añade si faltan, y las tareas con su ID dejan de ser «Tarea».
+  const rallyTypesMissing = isAdmin && missingRallyTypes(itemTypes).length > 0;
+  const rallyTypeIds = itemTypes.filter((t) => RALLY_TYPE_IDS.includes(t.id)).map((t) => t.id).join();
+  useEffect(() => { if (itemTypes.length) void repo.ensureRallyTypes(rallyTypesMissing); }, [rallyTypesMissing, rallyTypeIds]); // eslint-disable-line react-hooks/exhaustive-deps
   // Con un espacio elegido en el filtro, los proyectos nuevos (desde cualquier sitio) van a ese espacio.
   // Y las tareas sin proyecto, al proyecto con el nombre del espacio.
   const filterSpace = spaces.find((s) => s.id === spaceFilter);

@@ -1,5 +1,5 @@
 import { DEFAULT_TYPE_ID, type ItemType, type NewTask, type StateCategory, type Task } from './types';
-import { findType, stateOf } from './workflows';
+import { findType, stateOf, typeForPrefix } from './workflows';
 
 /**
  * Tipo de Rally: FE (feature; su ID empieza por FE o F), US (historia), DE (defecto), DS (defect suite), TA (tarea),
@@ -278,7 +278,7 @@ export function rallyPushes(changes: RecordChange[], undo: boolean, types: ItemT
 
 /** Tarea nueva a partir de un elemento de Rally: el tipo sale del prefijo (US, TS…) si existe uno con esa abreviatura. */
 export function taskFromRally(item: RallyItem, types: ItemType[], projectId: string | null): NewTask {
-  const type = types.find((t) => t.short && t.short.toUpperCase() === item.kind);
+  const type = typeForPrefix(types, item.kind);
   return {
     title: item.name,
     external_id: item.id,

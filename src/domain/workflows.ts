@@ -43,7 +43,64 @@ export const DEFAULT_ITEM_TYPES: ItemType[] = [
       { id: 'topic-done', name: 'Hablado', color: '#22c55e', category: 'done' },
     ],
   },
+  {
+    id: 'fe', name: 'Feature', short: 'FE', color: '#7c3aed', order: 4,
+    states: [
+      { id: 'fe-todo', name: 'Por hacer', color: '#94a3b8', category: 'todo' },
+      { id: 'fe-doing', name: 'En curso', color: '#3b82f6', category: 'doing' },
+      { id: 'fe-blocked', name: 'Bloqueada', color: '#ef4444', category: 'blocked' },
+      { id: 'fe-done', name: 'Hecha', color: '#22c55e', category: 'done' },
+      { id: 'fe-accepted', name: 'Accepted', color: '#047857', category: 'accepted' },
+    ],
+  },
+  {
+    id: 'de', name: 'Defect', short: 'DE', color: '#dc2626', order: 5,
+    states: [
+      { id: 'de-todo', name: 'Abierto', color: '#94a3b8', category: 'todo' },
+      { id: 'de-doing', name: 'En curso', color: '#3b82f6', category: 'doing' },
+      { id: 'de-blocked', name: 'Bloqueado', color: '#ef4444', category: 'blocked' },
+      { id: 'de-done', name: 'Corregido', color: '#22c55e', category: 'done' },
+      { id: 'de-accepted', name: 'Accepted', color: '#047857', category: 'accepted' },
+    ],
+  },
+  {
+    id: 'ds', name: 'Defect Suite', short: 'DS', color: '#ea580c', order: 6,
+    states: [
+      { id: 'ds-todo', name: 'Abierta', color: '#94a3b8', category: 'todo' },
+      { id: 'ds-doing', name: 'En curso', color: '#3b82f6', category: 'doing' },
+      { id: 'ds-blocked', name: 'Bloqueada', color: '#ef4444', category: 'blocked' },
+      { id: 'ds-done', name: 'Hecha', color: '#22c55e', category: 'done' },
+      { id: 'ds-accepted', name: 'Accepted', color: '#047857', category: 'accepted' },
+    ],
+  },
+  {
+    id: 'ta', name: 'Task', short: 'TA', color: '#64748b', order: 7,
+    states: [
+      { id: 'ta-todo', name: 'Por hacer', color: '#94a3b8', category: 'todo' },
+      { id: 'ta-doing', name: 'En curso', color: '#3b82f6', category: 'doing' },
+      { id: 'ta-blocked', name: 'Bloqueada', color: '#ef4444', category: 'blocked' },
+      { id: 'ta-done', name: 'Hecha', color: '#22c55e', category: 'done' },
+      { id: 'ta-accepted', name: 'Accepted', color: '#047857', category: 'accepted' },
+    ],
+  },
 ];
+
+/** Tipos que corresponden a elementos de Rally (por su prefijo: FE, US, DE, DS, TS, TA). TS es el Test Set de Rally. */
+export const RALLY_TYPE_IDS = ['fe', 'us', 'de', 'ds', 'ts', 'ta'];
+
+/** Tipos de Rally de serie que todavía no existen (ni con su id ni con su abreviatura): los añade una administradora. */
+export const missingRallyTypes = (types: ItemType[]): ItemType[] =>
+  DEFAULT_ITEM_TYPES.filter((d) => RALLY_TYPE_IDS.includes(d.id)
+    && !types.some((t) => t.id === d.id || (t.short && t.short.toUpperCase() === d.short)));
+
+/** Tipo por el prefijo de un ID de Rally («US», «DE»…; «F» es Feature, como «FE»). */
+export const typeForPrefix = <T extends Pick<ItemType, 'short'>>(types: T[], prefix: string): T | undefined => {
+  const p = prefix.toUpperCase() === 'F' ? 'FE' : prefix.toUpperCase();
+  return types.find((t) => t.short && t.short.toUpperCase() === p);
+};
+
+/** Prefijo de un ID de Rally («F123» → «F», «US-12» → «US»). */
+export const rallyPrefix = (id: string) => /^([A-Za-z]+)-?\d/.exec(id.trim())?.[1] ?? null;
 
 export const TOPIC_TYPE = DEFAULT_ITEM_TYPES.find((t) => t.id === TOPIC_TYPE_ID)!;
 

@@ -131,6 +131,22 @@ describe('configurar tipos', () => {
     await repo.deleteItemType('ts');
     expect(await repo.getTask(task.id)).toMatchObject({ type_id: 'task', state_id: 'task-doing' });
     await repo.deleteItemType('task');
-    expect((await repo.listItemTypes()).map((t) => t.id)).toEqual(['task', 'us', 'topic']);
+    expect((await repo.listItemTypes()).map((t) => t.id)).toEqual(['task', 'us', 'topic', 'fe', 'de', 'ds', 'ta']);
+  });
+});
+
+describe('tipos de Rally', () => {
+  it('una administradora añade los que faltan y las tareas con ID de Rally pasan a su tipo', async () => {
+    for (const id of ['fe', 'de', 'ds', 'ta']) await repo.deleteItemType(id);
+    const fe = await repo.createTask({ title: 'Feature', external_id: 'F12345' });
+    const de = await repo.createTask({ title: 'Defecto', external_id: 'DE-77' });
+    const tc = await repo.createTask({ title: 'Caso', external_id: 'TC1' });
+    await repo.ensureRallyTypes(false);
+    expect((await repo.getTask(fe.id))!.type_id).toBe('task');
+    await repo.ensureRallyTypes(true);
+    expect((await repo.listItemTypes()).map((t) => t.short)).toEqual(['', 'US', 'TS', 'HABLAR', 'FE', 'DE', 'DS', 'TA']);
+    expect(await repo.getTask(fe.id)).toMatchObject({ type_id: 'fe', state_id: 'fe-todo' });
+    expect((await repo.getTask(de.id))!.type_id).toBe('de');
+    expect((await repo.getTask(tc.id))!.type_id).toBe('task');
   });
 });

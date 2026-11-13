@@ -704,7 +704,12 @@ describe('Rally: gestor', () => {
     const t = taskFromRally(item({ project: 'Caixa', iteration: 'Sprint 14' }), DEFAULT_ITEM_TYPES, 'p1');
     expect(t).toMatchObject({ title: 'Uno', external_id: 'US1', url: `${BASE}/#/detail/userstory/1`, type_id: us.id, project_id: 'p1' });
     expect(t.notes).toBe('Proyecto en Rally: Caixa\nIteración: Sprint 14');
-    expect(taskFromRally(item({ kind: 'DE' }), DEFAULT_ITEM_TYPES, null).type_id).toBe('task');
+    expect(taskFromRally(item({ kind: 'DE' }), DEFAULT_ITEM_TYPES, null).type_id).toBe('de');
+    expect(taskFromRally(item({ kind: 'FE' }), DEFAULT_ITEM_TYPES, null).type_id).toBe('fe');
+    expect(taskFromRally(item({ kind: 'DS' }), DEFAULT_ITEM_TYPES, null).type_id).toBe('ds');
+    expect(taskFromRally(item({ kind: 'TA' }), DEFAULT_ITEM_TYPES, null).type_id).toBe('ta');
+    // Los test cases no tienen tipo propio: Tarea.
+    expect(taskFromRally(item({ kind: 'TC' }), DEFAULT_ITEM_TYPES, null).type_id).toBe('task');
   });
 
   it('agrupa por categoría (siempre las cinco), por columna (en el orden del tablero), por iteración (la más reciente primero) o por persona', () => {

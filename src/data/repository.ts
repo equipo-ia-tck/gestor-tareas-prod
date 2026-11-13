@@ -14,7 +14,8 @@ import {
   type Task,
   type TaskPatch,
 } from '../domain/types';
-import { doneState, equivalentState, findType, initialState, isDoneCategory, patchForState, stateOf, withAcceptedState } from '../domain/workflows';
+import { isRallyId } from '../domain/rally';
+import { doneState, equivalentState, findType, initialState, isDoneCategory, missingRallyTypes, patchForState, rallyPrefix, stateOf, typeForPrefix, withAcceptedState } from '../domain/workflows';
 import { nameKey } from '../domain/text';
 import { withDescendants } from '../domain/projects';
 import { extractMentions } from '../domain/markdown';
@@ -78,6 +79,11 @@ export interface Repository {
    * actualización de los tipos comunes, así que solo la lanza un administrador (se sincroniza al resto del equipo).
    */
   ensureAcceptedStates(): Promise<void>;
+  /**
+   * Tipos de Rally (Feature, Defect, Defect Suite, Task…): con `addTypes` (administradora) añade los que falten y, para
+   * cualquiera, pasa a su tipo las tareas que siguen como Tarea con un ID de Rally de ese prefijo. Sin historial.
+   */
+  ensureRallyTypes(addTypes: boolean): Promise<void>;
   /** Elimina un tipo (no el de Tarea); sus tareas pasan a Tarea. */
   deleteItemType(id: string): Promise<void>;
 
@@ -511,6 +517,26 @@ export class DexieRepository implements Repository {
     for (const type of await this.listItemTypes()) {
       const next = withAcceptedState(type);
       if (next) await this.db.item_types.put(next);
+    }
+  }
+
+  async ensureRallyTypes(addTypes: boolean) {
+    let types = await this.listItemTypes();
+    if (addTypes) {
+      const order = Math.max(0, ...types.map((t) => t.order)) + 1;
+      const missing = missingRallyTypes(types).map((t, i) => ({ ...t, order: order + i }));
+      if (missing.length) {
+        await this.db.item_types.bulkPut(missing);
+        types = await this.listItemTypes();
+      }
+    }
+    const tasks = (await this.db.tasks.where('type_id').equals(DEFAULT_TYPE_ID).toArray())
+      .filter((t) => !t.deleted_at && t.external_id && isRallyId(t.external_id));
+    for (const t of tasks) {
+      const prefix = rallyPrefix(t.external_id!);
+      const to = prefix ? typeForPrefix(types, prefix) : undefined;
+      if (!to || to.id === DEFAULT_TYPE_ID) continue;
+      await this.db.tasks.update(t.id, { type_id: to.id, state_id: equivalentState(stateOf(types, t), to).id });
     }
   }
 
