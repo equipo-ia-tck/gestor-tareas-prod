@@ -652,6 +652,51 @@ espacios y roles sigue valiendo, pero ahora lo aplica Postgres.
   siguiente ocurrencia de una recurrente ni a "Añadir desde archivo".
 - Prueba local: `equipo-prueba` (servidor en 4180) y `dev-prueba` (Vite en 5174 con `GESTOR_API=http://localhost:4180`).
 
+## Fase 26: versión de producción (nov 2026)
+
+Rama `cambios-prod` de `equipo-ia-tck/gestor-tareas-prod`, publicada en Vercel (`gestor-tareas-prod.vercel.app`).
+
+- **Sin buscador en la barra lateral**: el cuadro está en la pantalla Buscar (`SearchBox`, `#global-search`); `/` y el comando
+  «Buscar tareas» abren esa pantalla con el cursor en el cuadro (`openSearch` en `router.ts`).
+- **Espacios apagados** (`SPACES_ENABLED = false` en `domain/spaces.ts`): fuera el selector de la barra lateral, la tarjeta de
+  espacios de Ajustes (queda «Mi cuenta»), el selector del proyecto, el campo de invitación al crear cuenta y, en
+  Administración, la columna de espacios, la lista de espacios y el código de administración. El filtro por espacio queda en
+  «Todo». Lo ya compartido en espacios se sigue viendo. **Alta sin invitación**: `supabase/migrations/003_alta_sin_invitacion.sql`
+  (sin código = usuario normal; la primera cuenta y el código de administración siguen dando administrador).
+- **Tablero siempre con las 7 columnas de Rally** (`RallyBoard`), elija los tipos que elija; se quitan el tablero por estados
+  de un tipo y el de grupos («Por grupo»). Las tareas que no están en Rally se pueden soltar en cualquier columna: pasan al
+  estado de ese grupo en su tipo (`stateForCategory`: si el tipo no lo tiene, Para hablar → Pendiente o Hablado) y guardan la
+  columna en `task.board_column` (sin migración; zod pone `null`), que vale mientras la tarea siga en ese estado
+  (`rallyColumnOf(…, chosen)`). Las enlazadas siguen yendo a su columna de Rally; Need Review en Rally sigue siendo solo de TS.
+
+- **Rally en Vercel** (sin el servidor del Mac): función `api/rally.ts` (formato `export default { fetch }`) con las mismas
+  rutas que el servidor local (`servidor/rallyRoutes.ts`, compartido). `vercel.json` lleva `/api/rally/<ruta>` a la función
+  con `?route=`. Las claves van por `RallyAccounts` (`servidor/rallyAccounts.ts`): SQLite en local y, en Vercel,
+  `SupabaseRallyAccounts` (`servidor/supabaseAccounts.ts`): cifradas con AES-256-GCM con `RALLY_SECRET` (variable secreta de
+  Vercel, nunca en el repo, que es público) en la tabla `connector_accounts` (migración 004; nadie la lee directamente y cada
+  persona solo lee la suya con su sesión). Si se cambia `RALLY_SECRET`, hay que volver a conectar Rally. Variables de Vercel:
+  `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (públicas) y `RALLY_SECRET`. Límite de Vercel: 4,5 MB por petición (adjuntos
+  grandes, solo en local).
+- **Solo en local** (`LOCAL_SERVER` en `data/serverApi.ts`: la app servida desde localhost): calendario de Outlook, chats, lista
+  y Confluence. En Vercel se ocultan (barra lateral, Ajustes, «Mis calendarios») y sus rutas muestran `LocalOnly`.
+- `tsconfig.json` incluye ahora `servidor` y `api` (el typecheck cubre el servidor).
+- **Fuera** (nov 2026, a petición de la usuaria): Lista (Microsoft List), Confluence y Chats, también del servidor; el botón
+  Releases del calendario; la vista **Resumen** del proyecto (queda Lista/Tablero; un `project-view` guardado como `summary`
+  abre el Tablero; «+ Subproyecto» pasa a la cabecera); y **archivar proyectos**: los archivados vuelven a la lista y el botón
+  es **Eliminar** (`repo.deleteProject`: el proyecto y sus subproyectos fuera, sus tareas eliminadas, restaurables desde el
+  Registro, y sus notas sin sección; un solo «Deshacer»).
+- **Personas**: «Eliminar» en la ficha (`repo.deletePerson`: sale de las tareas, sus menciones pasan a texto con
+  `dropMentions` y se borra la ficha). Unir (`renamePerson`) usa el nombre que ya existe aunque se escriba con otras mayúsculas
+  o sin tildes, y devuelve el nombre final.
+- **Para hablar en Mi día**: `inMyDay` incluye siempre los temas pendientes (`TOPIC_TYPE_ID`), sin `my_day`, hasta que se
+  marcan como hablados; en su panel y en las filas sale «En Mi día» fijo. Su panel no tiene Outlook, Mensaje ni ID externo.
+- **Release fuera de la vista** en todos los tipos: sin campo en el panel, sin filtro en el tablero y sin `^release` en la guía
+  ni en las pistas de captura (el dato y la sintaxis `^` siguen funcionando).
+- **Ajustes**: fuera Copia automática en archivo, Almacenamiento persistente y Capacidad y días laborables (los valores siguen
+  en `settings` con sus valores por defecto).
+- **Adjuntos**: `MAX_UPLOAD` es 25 MB en local y 3 MB en Vercel (4,5 MB por petición en base64); `tooBigMessage` dice qué
+  archivo es, cuánto pesa y dónde subirlo.
+
 ### Más adelante
 
 - **Electron**: la app es web estática con rutas por hash y datos en IndexedDB, así que se puede empaquetar sin cambios

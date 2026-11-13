@@ -6,10 +6,6 @@ import { BoardView } from '../features/board/BoardView';
 import { CalendarView } from '../features/calendar/CalendarView';
 import { NotesView } from '../features/notes/NotesView';
 import { RallyView } from '../features/rally/RallyView';
-import { ConfluenceView } from '../features/confluence/ConfluenceView';
-import { ListaView } from '../features/mslist/ListaView';
-import { ListaSync } from '../features/mslist/ListaSync';
-import { ChatsView } from '../features/chats/ChatsView';
 import { NeedReviewPrompt } from '../features/rally/NeedReviewPrompt';
 import { AnalystPrompt } from '../features/rally/AnalystPrompt';
 import { RallySync } from '../features/rally/RallySync';
@@ -42,9 +38,6 @@ function View({ route }: { route: Route }) {
     case 'review': return <ReviewView />;
     case 'calendar': return <CalendarView />;
     case 'rally': return <RallyView />;
-    case 'confluence': return <ConfluenceView />;
-    case 'lista': return <ListaView />;
-    case 'chats': return <ChatsView />;
     case 'projects': return <TodayView />; // la pantalla "Proyectos" se quitó: se gestionan desde la barra lateral
     case 'inbox': return <InboxView />;
     case 'project': return <ProjectView key={route.id} id={route.id} />;
@@ -71,7 +64,6 @@ function Main({ route }: { route: Route }) {
         <RallySync />
         <AnalystPrompt />
         <NeedReviewPrompt />
-        <ListaSync />
         <WideContext.Provider value={setWide}>
           {/* Siempre el mismo envoltorio: así la vista no se vuelve a montar al cambiar de modo. */}
           <div className={full ? 'min-h-0 flex-1' : undefined}><View route={route} /></div>
@@ -117,3 +109,4 @@ export function App() {
     </ToastProvider>
   );
 }
+

@@ -1,5 +1,5 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
-import { Calendar, ChevronDown, ChevronRight, ClipboardCheck, FileText, FolderOpen, ListChecks, History, Plus, Inbox, KanbanSquare, Layers, MessagesSquare, NotebookPen, Search, Settings, Sun, Users, type LucideIcon } from 'lucide-react';
+import { useState, type FormEvent, type ReactNode } from 'react';
+import { Calendar, ChevronDown, ChevronRight, ClipboardCheck, FolderOpen, History, Plus, Inbox, KanbanSquare, Layers, NotebookPen, Settings, Sun, Users, type LucideIcon } from 'lucide-react';
 import { Avatar } from '../components/ui/Badges';
 import { useApp } from './AppContext';
 import { repo } from '../data/services';
@@ -103,24 +103,6 @@ function ProjectNav({ node, route }: { node: ProjectNode; route: Route }) {
   );
 }
 
-/** Proyectos archivados (plegados): para consultarlos o desarchivarlos. */
-function ArchivedProjects() {
-  const { allProjects } = useApp();
-  const [open, setOpen] = usePersistentState('sidebar-archived', false);
-  const archived = allProjects.filter((p) => p.archived).sort((a, b) => a.name.localeCompare(b.name, 'es'));
-  if (!archived.length) return null;
-  return (
-    <>
-      <button type="button" onClick={() => setOpen(!open)} className="px-2 py-1 text-left text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200">
-        {open ? '▾' : '▸'} Archivados ({archived.length})
-      </button>
-      {open && archived.map((p) => (
-        <a key={p.id} href={routeHref({ view: 'project', id: p.id })} className="block truncate py-0.5 pr-2 pl-6 text-xs text-zinc-400 hover:underline">{p.name}</a>
-      ))}
-    </>
-  );
-}
-
 /** Vistas de uso ocasional, plegadas para no ocupar sitio. */
 function MoreSection({ route }: { route: Route }) {
   const [open, setOpen] = usePersistentState('sidebar-more', false);
@@ -147,38 +129,12 @@ export function Sidebar({ route }: { route: Route }) {
   const [addingProject, setAddingProject] = useState(false);
   const is = (v: Route['view']) => route.view === v;
   const { moveIds } = useTaskActions();
-  const [query, setQuery] = useState(route.view === 'search' ? route.q : '');
-
-  useEffect(() => { if (route.view !== 'search') setQuery(''); }, [route.view]);
-
-  function search(e: FormEvent) {
-    e.preventDefault();
-  }
-  function onQuery(q: string) {
-    setQuery(q);
-    window.location.replace(routeHref(q ? { view: 'search', q } : { view: 'today' }));
-  }
-
   return (
     <nav className="flex h-full flex-col overflow-y-auto border-r border-zinc-200 bg-zinc-100/70 p-3 dark:border-zinc-800 dark:bg-zinc-900/60">
       <div className="mb-4 flex items-center gap-2 px-2">
         <span className="flex size-6 items-center justify-center rounded-md bg-indigo-600 text-xs font-bold text-white">✓</span>
         <span className="text-sm font-semibold">Tareas</span>
       </div>
-      <form onSubmit={search} className="relative mb-3">
-        <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-zinc-400" />
-        <input
-          id="global-search"
-          type="search"
-          value={query}
-          onChange={(e) => onQuery(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Escape') { onQuery(''); e.currentTarget.blur(); } }}
-          placeholder="Buscar todo  /"
-          aria-label="Buscar tareas"
-          className="w-full rounded-md border border-zinc-200 bg-white py-1 pr-2 pl-7 text-sm outline-none placeholder:text-zinc-400 focus:border-indigo-500 dark:border-zinc-700 dark:bg-zinc-900"
-        />
-      </form>
-      <SpaceSwitcher />
       <NavItem icon={Sun} href={routeHref({ view: 'today' })} active={is('today')} count={new Set([...tasksDueOn(tasks, today), ...overdueTasks(tasks, today), ...myDayTasks(tasks, today)].map((t) => t.id)).size}
         onDropTasks={(ids) => void moveIds(ids, { due_date: today }, 'Movida a hoy')}>Hoy</NavItem>
       <NavItem icon={Inbox} href={routeHref({ view: 'inbox' })} active={is('inbox')} count={inboxTasks(tasks).length}
@@ -187,9 +143,6 @@ export function Sidebar({ route }: { route: Route }) {
       <NavItem icon={Calendar} href={routeHref({ view: 'calendar' })} active={is('calendar') || is('week')}>Calendario</NavItem>
       <NavItem icon={NotebookPen} href={routeHref({ view: 'notes' })} active={is('notes')}>Notas</NavItem>
       <NavItem icon={Layers} href={routeHref({ view: 'rally' })} active={is('rally')}>Rally</NavItem>
-      <NavItem icon={ListChecks} href={routeHref({ view: 'lista' })} active={is('lista')}>Lista</NavItem>
-      <NavItem icon={FileText} href={routeHref({ view: 'confluence' })} active={is('confluence')}>Confluence</NavItem>
-      <NavItem icon={MessagesSquare} href={routeHref({ view: 'chats' })} active={is('chats')}>Chats</NavItem>
 
       <Heading action={
         <button type="button" onClick={() => setAddingProject(true)} title="Nuevo proyecto" className="rounded p-0.5 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-700">
@@ -199,7 +152,6 @@ export function Sidebar({ route }: { route: Route }) {
       {addingProject && <NewProjectForm onDone={() => setAddingProject(false)} />}
       {projectTree(projects).map((node) => <ProjectNav key={node.project.id} node={node} route={route} />)}
       {projects.length === 0 && <p className="px-2 text-xs text-zinc-400">Crea uno con el +</p>}
-      <ArchivedProjects />
       {projects.length === 0 && <a href={routeHref({ view: 'projects' })} className="px-2 text-xs text-zinc-400 hover:underline">+ Crear proyecto</a>}
 
       <PeopleGroups route={route} />
@@ -226,29 +178,6 @@ function SyncBadge() {
       <span className="min-w-0 flex-1 truncate">{user.name}</span>
       <span className={`size-2 shrink-0 rounded-full ${dot}`} />
       <span className={status === 'offline' ? 'text-red-600 dark:text-red-400' : ''}>{status === 'offline' ? 'Sin conexión' : label}</span>
-    </div>
-  );
-}
-
-/** Filtro por espacio: todo, lo personal o un espacio. Afecta a todas las vistas. */
-function SpaceSwitcher() {
-  const { spaces, spaceFilter, setSpaceFilter } = useApp();
-  if (!spaces.length) return null;
-  const options = [
-    { id: 'all', name: 'Todo', color: null },
-    { id: 'personal', name: 'Personal', color: null },
-    ...spaces.map((s) => ({ id: s.id, name: s.name, color: s.color })),
-  ];
-  return (
-    <div role="radiogroup" aria-label="Espacio" className="mb-2 flex flex-wrap gap-1 px-1">
-      {options.map((o) => (
-        <button key={o.id} type="button" role="radio" aria-checked={spaceFilter === o.id} onClick={() => setSpaceFilter(o.id)}
-          className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ${spaceFilter === o.id
-            ? 'bg-indigo-600 text-white' : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700'}`}>
-          {o.color && <span className="size-2 rounded-full" style={{ background: o.color }} />}
-          {o.name}
-        </button>
-      ))}
     </div>
   );
 }

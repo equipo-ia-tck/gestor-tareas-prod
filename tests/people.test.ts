@@ -69,6 +69,38 @@ describe('renombrar y unir personas', async () => {
     expect((await repo.getTask(t.id))?.people).toEqual(['Diana Pérez', 'Luis']);
     expect((await repo.listPeople()).map((p) => p.name).sort()).toEqual(['Diana', 'Diana Pérez']);
   });
+
+  it('al unir, usa el nombre que ya existe aunque se escriba distinto (sin dos «Diana»)', async () => {
+    const repo = new DexieRepository(new TasksDB(`ppl-${crypto.randomUUID()}`));
+    const a = await repo.createTask({ title: 'a', people: ['Diana Pérez', 'Diana'] });
+    const b = await repo.createTask({ title: 'b', people: ['Luis'] });
+    await repo.savePerson({ name: 'Diana', role: 'PO', notes: '', email: '', group_id: 'g1' });
+    await repo.savePerson({ name: 'Diana Pérez', role: '', notes: 'vieja', email: 'd@x.com' });
+    expect(await repo.renamePerson('Diana Pérez', 'diana')).toBe('Diana');
+    expect((await repo.getTask(a.id))?.people).toEqual(['Diana']);
+    expect((await repo.getTask(b.id))?.people).toEqual(['Luis']);
+    expect(await repo.listPeople()).toEqual([{ name: 'Diana', role: 'PO', notes: 'vieja', email: 'd@x.com', group_id: 'g1' }]);
+    // Solo cambiar mayúsculas de una persona sin otra con ese nombre.
+    expect(await repo.renamePerson('Luis', 'LUIS')).toBe('LUIS');
+    expect((await repo.getTask(b.id))?.people).toEqual(['LUIS']);
+  });
+
+  it('eliminar persona: sale de tareas y menciones, se borra la ficha y se puede deshacer', async () => {
+    const { dropMentions } = await import('../src/domain/people');
+    expect(dropMentions('hablar con @Diana-Pérez y @Luis', 'Diana Pérez')).toBe('hablar con Diana Pérez y @Luis');
+    const repo = new DexieRepository(new TasksDB(`ppl-${crypto.randomUUID()}`));
+    const t = await repo.createTask({ title: 'x', people: ['Diana Pérez', 'Luis'] });
+    const n = await repo.createNote({ date: '2026-10-08', body: '@Diana-Pérez pide la demo a @Luis' });
+    await repo.savePerson({ name: 'Diana Pérez', role: 'PO', notes: '', email: '' });
+    expect(await repo.deletePerson('diana perez')).toBe(1);
+    expect((await repo.getTask(t.id))?.people).toEqual(['Luis']);
+    expect((await repo.getNote(n.id))?.body).toBe('diana perez pide la demo a @Luis');
+    expect((await repo.getNote(n.id))?.people).toEqual(['Luis']);
+    expect(await repo.listPeople()).toEqual([]);
+    await repo.undo();
+    expect((await repo.getTask(t.id))?.people).toEqual(['Diana Pérez', 'Luis']);
+    expect((await repo.listPeople()).map((p) => p.name)).toEqual(['Diana Pérez']);
+  });
 });
 
 describe('grupos de personas', () => {

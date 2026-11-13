@@ -6,13 +6,13 @@ import { MenuItem, Popover } from '../../components/ui/Popover';
 import { repo } from '../../data/services';
 import { activeFilterCount, applyFilter, EMPTY_FILTER, groupTasks } from '../../domain/filters';
 import { fuzzyScore } from '../../domain/text';
-import type { DueFilter, GroupBy, ItemType, NewTask, SavedView, StateCategory, Task, TaskFilter } from '../../domain/types';
+import type { DueFilter, GroupBy, NewTask, SavedView, StateCategory, Task, TaskFilter } from '../../domain/types';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { useProjectOptions } from '../../hooks/useProjectOptions';
 import { ViewHeader } from '../views/ViewHeader';
 import { useWideLayout } from '../../app/Layout';
 import { ViewSwitcher, type DisplayMode } from '../../components/ui/ViewSwitcher';
-import { Board, CategoryBoard, RallyBoard } from './Board';
+import { RallyBoard } from './Board';
 
 const CATEGORIES: { value: StateCategory; label: string; color: string }[] = [
   { value: 'todo', label: 'Por hacer', color: '#94a3b8' },
@@ -38,14 +38,9 @@ export function useBoardFilter(key: string) {
   return { filter, set, setStored };
 }
 
-/** Columnas del tablero mixto: las de Rally (New, Defined… Accepted) o los grupos del gestor. Igual en todos los tableros. */
-export const useBoardColumns = () => usePersistentState<'rally' | 'groups'>('board-columns', 'rally');
-
-export function boardSubtitle(mode: DisplayMode, singleType: ItemType | undefined, columnsBy: 'rally' | 'groups', count: number, includeDone: boolean) {
+export function boardSubtitle(mode: DisplayMode, count: number, includeDone: boolean) {
   return mode === 'board'
-    ? (singleType ? `${singleType.name}: una columna por estado. Arrastra las tarjetas para cambiarlas de estado.`
-      : columnsBy === 'rally' ? 'Las columnas de Rally, en su orden. Al soltar una tarjeta enlazada se mueve también en Rally.'
-        : 'Todo junto, por grupo de estado. Elige un solo tipo para ver sus estados uno a uno.')
+    ? 'Las 7 columnas de Rally, en su orden, para todos los tipos. Al soltar una tarjeta enlazada se mueve también en Rally.'
     : `${count} elemento${count === 1 ? '' : 's'}${includeDone ? ' (con completadas)' : ''}`;
 }
 
@@ -60,10 +55,8 @@ export function BoardView() {
   const { filter, set, setStored } = useBoardFilter('board-filter');
   const [viewId, setViewId] = usePersistentState('board-view', '');
   const [mode, setMode] = usePersistentState<DisplayMode>('board-mode', 'board');
-  const [columnsBy, setColumnsBy] = useBoardColumns();
 
   const results = applyFilter(tasks, filter, { today, projects: allProjects, types: itemTypes });
-  const singleType = filter.types.length === 1 ? itemTypes.find((t) => t.id === filter.types[0]) : undefined;
   const views = settings.saved_views;
   const current = views.find((v) => v.id === viewId);
   const dirty = current ? JSON.stringify({ ...EMPTY_FILTER, ...current.filter }) !== JSON.stringify(filter) : activeFilterCount(filter) > 0;
@@ -75,7 +68,7 @@ export function BoardView() {
     <>
       <ViewHeader
         title="Tablero"
-        subtitle={boardSubtitle(mode, singleType, columnsBy, results.length, filter.includeDone)}
+        subtitle={boardSubtitle(mode, results.length, filter.includeDone)}
         actions={<ViewSwitcher value={mode} onChange={setMode} />}
       />
 
@@ -97,8 +90,8 @@ export function BoardView() {
       </div>
 
       <BoardControls tasks={tasks} filter={filter} set={set} reset={() => setStored({ ...EMPTY_FILTER, groupBy: filter.groupBy })}
-        mode={mode} columnsBy={columnsBy} setColumnsBy={setColumnsBy} />
-      <BoardContent tasks={tasks} filter={filter} mode={mode} columnsBy={columnsBy} />
+        mode={mode} />
+      <BoardContent tasks={tasks} filter={filter} mode={mode} />
     </>
   );
 }
@@ -108,21 +101,17 @@ export function BoardView() {
  * grupo» y agrupar. `projectIds`: proyectos que se pueden elegir (en un proyecto, él y sus subproyectos; con uno solo no
  * se muestra el filtro).
  */
-export function BoardControls({ tasks, filter, set, reset, mode, columnsBy, setColumnsBy, projectIds }: {
+export function BoardControls({ tasks, filter, set, reset, mode, projectIds }: {
   tasks: Task[];
   filter: TaskFilter;
   set: (patch: Partial<TaskFilter>) => void;
   reset: () => void;
   mode: DisplayMode;
-  columnsBy: 'rally' | 'groups';
-  setColumnsBy: (v: 'rally' | 'groups') => void;
   projectIds?: Set<string>;
 }) {
-  const { itemTypes, labels, releases, mentionables } = useApp();
-  const singleType = filter.types.length === 1 ? itemTypes.find((t) => t.id === filter.types[0]) : undefined;
+  const { itemTypes, labels, mentionables } = useApp();
   const tags = [...new Set([...labels.map((l) => l.name), ...tasks.flatMap((t) => t.tags)])].sort((a, b) => a.localeCompare(b, 'es'));
   const people = projectIds ? [...new Set(tasks.flatMap((t) => t.people))].sort((a, b) => a.localeCompare(b, 'es')) : mentionables;
-  const ownReleases = projectIds ? releases.filter((r) => tasks.some((t) => t.release_id === r.id)) : releases;
   return (
     <>
       {/* Qué tipos ver */}
@@ -157,10 +146,6 @@ export function BoardControls({ tasks, filter, set, reset, mode, columnsBy, setC
           options={people.map((p) => ({ value: p, label: p }))} />
         <Multi label="Etiqueta" selected={filter.tags} onChange={(v) => set({ tags: v })} searchable
           options={tags.map((t) => ({ value: t, label: t }))} />
-        {ownReleases.length > 0 && (
-          <Multi label="Release" selected={filter.releases} onChange={(v) => set({ releases: v })}
-            options={ownReleases.map((r) => ({ value: r.id, label: r.name }))} />
-        )}
         <Single label="Fecha" value={filter.due} options={DUE} onChange={(v) => set({ due: v as DueFilter })} />
         {mode === 'list' && (
           <label className="flex items-center gap-1.5 rounded-md border border-zinc-200 px-2 py-1 text-xs dark:border-zinc-700">
@@ -168,14 +153,6 @@ export function BoardControls({ tasks, filter, set, reset, mode, columnsBy, setC
           </label>
         )}
         <span className="flex-1" />
-        {mode === 'board' && !singleType && (
-          <div className="flex rounded-md border border-zinc-200 p-0.5 text-xs dark:border-zinc-700" role="group" aria-label="Columnas">
-            {([['rally', 'Como en Rally'], ['groups', 'Por grupo']] as const).map(([v, label]) => (
-              <button key={v} type="button" aria-pressed={columnsBy === v} onClick={() => setColumnsBy(v)}
-                className={`rounded px-2 py-0.5 ${columnsBy === v ? 'bg-indigo-600 text-white' : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'}`}>{label}</button>
-            ))}
-          </div>
-        )}
         {mode === 'list' && <Single label="Agrupar" value={filter.groupBy} options={GROUPS} onChange={(v) => set({ groupBy: v as GroupBy })} />}
         {activeFilterCount(filter) > 0 && (
           <button type="button" onClick={reset} className="flex items-center gap-1 text-xs text-zinc-500 hover:text-red-600">
@@ -191,11 +168,10 @@ export function BoardControls({ tasks, filter, set, reset, mode, columnsBy, setC
  * Tablero (de un tipo, «Como en Rally» o por grupo) o lista agrupada de `tasks` con el filtro. Las tarjetas nuevas
  * heredan `defaults` y, si el filtro tiene un solo proyecto o una sola release, esos.
  */
-export function BoardContent({ tasks, filter, mode, columnsBy, defaults, showProject = true }: {
+export function BoardContent({ tasks, filter, mode, defaults, showProject = true }: {
   tasks: Task[];
   filter: TaskFilter;
   mode: DisplayMode;
-  columnsBy: 'rally' | 'groups';
   defaults?: Partial<NewTask>;
   showProject?: boolean;
 }) {
@@ -204,20 +180,14 @@ export function BoardContent({ tasks, filter, mode, columnsBy, defaults, showPro
   const results = applyFilter(tasks, filter, ctx);
   // En el tablero la columna "hecho" siempre está (con las completadas recientes).
   const boardTasks = applyFilter(tasks, { ...filter, includeDone: true }, ctx);
-  const singleType = filter.types.length === 1 ? itemTypes.find((t) => t.id === filter.types[0]) : undefined;
   const cardDefaults = {
     ...defaults,
     ...(filter.projects.length === 1 ? { project_id: filter.projects[0] } : {}),
     ...(filter.releases.length === 1 ? { release_id: filter.releases[0] } : {}),
   };
   const groups = groupTasks(results, filter.groupBy, ctx);
-  if (mode === 'board') {
-    return singleType
-      ? <Board tasks={boardTasks} type={singleType} defaults={cardDefaults} showProject={showProject} />
-      : columnsBy === 'rally'
-        ? <RallyBoard tasks={boardTasks} defaults={cardDefaults} showProject={showProject} />
-        : <CategoryBoard tasks={boardTasks} defaults={cardDefaults} showProject={showProject} />;
-  }
+  // Todas las vistas (un tipo, varios o todos) usan las 7 columnas de Rally, a petición de la usuaria (nov 2026).
+  if (mode === 'board') return <RallyBoard tasks={boardTasks} defaults={cardDefaults} showProject={showProject} />;
   return (
     <>
       {results.length === 0 && <p className="text-sm text-zinc-400">Nada coincide con estos filtros.</p>}

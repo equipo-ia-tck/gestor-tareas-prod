@@ -74,6 +74,14 @@ export function stateOf(types: ItemType[], task: Pick<Task, 'type_id' | 'state_i
   return type.states.find((s) => s.id === task.state_id) ?? (task.status === 'done' ? doneState(type) : initialState(type));
 }
 
+/**
+ * Estado de un tipo para una columna del tablero de categoría `cat`. Si el tipo no tiene esa categoría (Para hablar solo
+ * tiene Pendiente y Hablado): Accepted → su estado hecho; Bloqueado o En curso → su estado inicial.
+ */
+export function stateForCategory(type: ItemType, cat: StateCategory): WorkflowState {
+  return firstOf(type, cat) ?? (isDoneCategory(cat) ? doneState(type) : initialState(type));
+}
+
 /** Estado del nuevo tipo con la misma categoría que el actual (al cambiar una tarea de tipo). */
 export function equivalentState(from: WorkflowState, to: ItemType): WorkflowState {
   return firstOf(to, from.category) ?? (isDoneCategory(from.category) ? doneState(to) : initialState(to));

@@ -43,6 +43,7 @@ export const taskSchema = z.object({
   release_id: z.string().nullable().default(null),
   remind_at: isoDateTime.nullable().default(null),
   my_day: isoDate.nullable().default(null),
+  board_column: z.string().nullable().default(null),
   recurrence_rule: recurrenceSchema.nullable().default(null),
   series_id: z.string().nullable().default(null),
   sort_order: z.number().default(0),

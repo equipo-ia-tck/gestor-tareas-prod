@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { LOCAL_SERVER } from '../../data/serverApi';
 import { CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, PanelLeft, Plus, RefreshCw, Rocket } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
 import { useWideLayout } from '../../app/Layout';
@@ -63,7 +64,7 @@ function rangeLabel(mode: Mode, cursor: ISODate, days: ISODate[]): string {
  */
 export function CalendarView({ initial }: { initial?: 'week' | 'month' }) {
   useWideLayout('full');
-  const { tasks, releases, today } = useApp();
+  const { tasks, today } = useApp();
   const outlook = useOutlook();
   const { open } = useCommandCenter();
   const [mode, setMode] = usePersistentState<Mode>('calendar-mode', 'workweek');
@@ -73,7 +74,6 @@ export function CalendarView({ initial }: { initial?: 'week' | 'month' }) {
   const [sidebar, setSidebar] = usePersistentState('calendar-sidebar', true);
   const [showMeetings, setShowMeetings] = usePersistentState('calendar-meetings', true);
   const [showTasks, setShowTasks] = usePersistentState('calendar-tasks', true);
-  const [showReleases, setShowReleases] = usePersistentState('calendar-releases', true);
   const [showDone, setShowDone] = usePersistentState('calendar-done', false);
 
   const days = visibleDays(mode, cursor);
@@ -100,7 +100,7 @@ export function CalendarView({ initial }: { initial?: 'week' | 'month' }) {
           <MiniMonth selected={mode === 'month' ? [] : days} cursor={cursor} onPick={setCursor} />
           <section>
             <h2 className="mb-1 px-1 text-sm font-semibold">Mis calendarios</h2>
-            {connected ? (
+            {!LOCAL_SERVER ? null : connected ? (
               <Toggle checked={showMeetings} onChange={setShowMeetings} color="#8b5cf6" label="Reuniones (Outlook)" />
             ) : (
               <a href={routeHref({ view: 'settings' })} className="flex items-center gap-2 rounded px-1 py-1 text-sm text-violet-600 hover:bg-zinc-100 dark:text-violet-400 dark:hover:bg-zinc-800">
@@ -109,7 +109,6 @@ export function CalendarView({ initial }: { initial?: 'week' | 'month' }) {
             )}
             <Toggle checked={showTasks} onChange={setShowTasks} color="#4f46e5" label="Tareas" />
             {showTasks && <Toggle checked={showDone} onChange={setShowDone} color="#a1a1aa" label="Completadas" indent />}
-            <Toggle checked={showReleases} onChange={setShowReleases} color="#65a30d" label="Releases" />
           </section>
         </aside>
       )}
@@ -164,7 +163,7 @@ export function CalendarView({ initial }: { initial?: 'week' | 'month' }) {
             <MonthGrid
               cursor={cursor}
               tasksOn={showTasks ? tasksOn : () => []}
-              releasesOn={(day) => (showReleases ? releases.filter((r) => r.date === day && r.status !== 'cancelled') : [])}
+              releasesOn={() => []}
               meetings={meetings}
             />
           )}

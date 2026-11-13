@@ -8,7 +8,6 @@ const ROWS: { what: string; how: string; example: string }[] = [
   { what: 'Prioridad', how: '!1 urgente · !2 alta · !3 media · !4 normal', example: 'reentregar Alta Bizum !1' },
   { what: 'Etiqueta', how: '+etiqueta', example: 'validar etiquetado +bizum' },
   { what: 'ID de Rally o Jira', how: 'US1764574, TS92615, DE125701 o US-1234: guarda el ID y pone el tipo (US, TS…)', example: 'US1764574 Alta Bizum web' },
-  { what: 'Release', how: '^nombre', example: 'subir landing ^R3.0' },
   { what: 'Repetir', how: 'cada lunes, todos los días, cada mes, cada 2 semanas', example: 'revisar validaciones cada lunes' },
   { what: 'Recordatorio', how: 'recuérdame a las 17:00', example: 'llamar a Rosa mañana recuérdame a las 10' },
   { what: 'Varias tareas', how: 'una por línea (Shift+Enter para saltar de línea)', example: '' },

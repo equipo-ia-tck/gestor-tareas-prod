@@ -3,7 +3,7 @@ import { parseIcs, type CalendarEvent } from '../../domain/ics';
 import { outlookToCalendar, type OutlookEvent } from '../../domain/outlookEvents';
 import { nameKey } from '../../domain/text';
 import type { ISODate } from '../../domain/types';
-import { serverCall as call } from '../../data/serverApi';
+import { LOCAL_SERVER, serverCall as call } from '../../data/serverApi';
 
 export interface CalendarStatus {
   /** Enlace ICS publicado (solo disponibilidad en WPP). */
@@ -58,6 +58,8 @@ let stop: (() => void) | null = null;
 /** Lee el estado y, si está conectado, el calendario (`fresh` salta la caché del servidor). */
 export function loadOutlook(fresh = false): Promise<void> {
   if (inflight) return inflight;
+  // Las reuniones de Outlook salen de un archivo de OneDrive que solo lee el servidor del Mac.
+  if (!LOCAL_SERVER) return Promise.resolve();
   inflight = (async () => {
     set({ loading: true });
     try {

@@ -265,3 +265,23 @@ describe('tareas con un espacio elegido en el filtro', () => {
     expect(await repo.db.tasks.count()).toBe(0);
   });
 });
+
+describe('eliminar proyectos', () => {
+  it('borra el proyecto y sus subproyectos, elimina sus tareas, deja sus notas sin sección y se puede deshacer', async () => {
+    const p = await repo.createProject('Pagos', { space_id: null });
+    const sub = await repo.createProject('Bizum', { parent_id: p.id });
+    const other = await repo.createProject('Otro', { space_id: null });
+    const t1 = await repo.createTask({ title: 'a', project_id: p.id });
+    const t2 = await repo.createTask({ title: 'b', project_id: sub.id });
+    const t3 = await repo.createTask({ title: 'c', project_id: other.id });
+    const n = await repo.createNote({ date: '2026-11-12', body: 'acta', project_id: sub.id });
+    expect(await repo.deleteProject(p.id)).toEqual({ tasks: 2, notes: 1 });
+    expect((await repo.db.projects.toArray()).map((x) => x.name)).toEqual(['Otro']);
+    expect((await repo.listTasks()).map((t) => t.id)).toEqual([t3.id]);
+    expect((await repo.getNote(n.id))?.project_id).toBeNull();
+    await repo.undo();
+    expect((await repo.db.projects.count())).toBe(3);
+    expect((await repo.listTasks()).map((t) => t.id).sort()).toEqual([t1.id, t2.id, t3.id].sort());
+    expect((await repo.getNote(n.id))?.project_id).toBe(sub.id);
+  });
+});

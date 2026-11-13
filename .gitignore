@@ -5,3 +5,5 @@ dev-dist/
 .DS_Store
 importar/
 servidor/datos*/
+.vercel
+.env*

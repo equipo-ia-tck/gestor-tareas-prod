@@ -24,6 +24,7 @@ export function makeTask(overrides: Partial<Task> = {}): Task {
     release_id: null,
     remind_at: null,
     my_day: null,
+    board_column: null,
     recurrence_rule: null,
     series_id: null,
     sort_order: n,

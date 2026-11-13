@@ -121,7 +121,7 @@ describe('Rally: servidor', () => {
       'hierarchicalrequirement (FormattedID = "US1")', 'testset (FormattedID = "TS9")',
     ]);
 
-    expect(rally.disconnect(marta).connected).toBe(false);
+    expect((await rally.disconnect(marta)).connected).toBe(false);
   });
 
   it('explica una clave rechazada', async () => {
@@ -130,7 +130,7 @@ describe('Rally: servidor', () => {
     const marta = api.register({ login: 'marta@vml.com', name: 'Marta', password: 'contraseña-larga', code: api.teamCode }).user;
     const rally = new Rally(db, fakeRally([], 401).fetcher);
     await expect(rally.connect(marta, { apiKey: '_mala' })).rejects.toThrow(/no acepta la clave/);
-    expect(rally.status(marta).connected).toBe(false);
+    expect((await rally.status(marta)).connected).toBe(false);
   });
 });
 
@@ -395,6 +395,11 @@ describe('Rally: mover', () => {
     expect(rallyColumnOf('To Do', 'todo')).toBe('New');
     expect(rallyColumnOf('Desarrollo', 'doing')).toBe('In-Progress');
     expect(rallyColumnOf(undefined, 'accepted')).toBe('Accepted');
+    // Las que no están en Rally: la columna en la que se soltaron (si existe); el estado de Rally manda siempre.
+    expect(rallyColumnOf(undefined, 'todo', 'Defined')).toBe('Defined');
+    expect(rallyColumnOf(undefined, 'doing', 'Need Review')).toBe('Need Review');
+    expect(rallyColumnOf(undefined, 'todo', 'Inventada')).toBe('New');
+    expect(rallyColumnOf('Completed', 'done', 'Defined')).toBe('Completed');
   });
 
   it('Ready y Blocked se marcan sin cambiar de columna', async () => {

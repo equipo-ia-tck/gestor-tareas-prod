@@ -25,7 +25,6 @@
       "runtimeArgs": [
         "PORT=4180",
         "GESTOR_DATOS=servidor/datos-prueba",
-        "GESTOR_LISTA=servidor/datos-prueba/Gestor/lista.json",
         "node",
         "servidor/index.ts"
       ],

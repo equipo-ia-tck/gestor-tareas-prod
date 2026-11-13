@@ -3,7 +3,7 @@ import { formatDay, formatMinutes } from '../domain/dates';
 import { AlignLeft, ChevronRight, Repeat, Sun } from 'lucide-react';
 import { useApp } from '../app/AppContext';
 import { describeRule } from '../domain/recurrence';
-import type { ISODate, Project, Task } from '../domain/types';
+import { TOPIC_TYPE_ID, type ISODate, type Project, type Task } from '../domain/types';
 import { findType, stateOf } from '../domain/workflows';
 import { AvatarStack, ChecklistProgress, ExternalChip, LabelChip, PostponedChip, PRIORITY_COLOR, PriorityFlag, ReleaseChip, ReminderChip, StatePill, TypeBadge } from './ui/Badges';
 import { useSelection, type EditableField } from '../features/selection/SelectionContext';
@@ -98,7 +98,7 @@ export function TaskRow({ task, today, projects, onEdit, hideDate, hideProject: 
           </div>
         )}
         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400">
-          {task.my_day === today && !done && <span className="inline-flex items-center gap-0.5 text-[11px] text-amber-600"><Sun className="size-3" />Mi día</span>}
+          {(task.my_day === today || task.type_id === TOPIC_TYPE_ID) && !done && <span className="inline-flex items-center gap-0.5 text-[11px] text-amber-600"><Sun className="size-3" />Mi día</span>}
           {showState && <StatePill state={state} />}
           <ExternalChip task={task} type={type} />
           <ReleaseChip releaseId={task.release_id} />

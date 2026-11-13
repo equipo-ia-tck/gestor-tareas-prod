@@ -163,6 +163,11 @@ export interface Task {
   remind_at: ISODateTime | null;
   /** Día en que se añadió a "Mi día" (como en Microsoft To Do). Solo cuenta si es hoy. */
   my_day: ISODate | null;
+  /**
+   * Columna del tablero «Como en Rally» en la que se soltó la tarea (New, Defined, Need Review…). Solo cuenta para las que
+   * no están en Rally y mientras sigan en el grupo de esa columna; si no, van a la columna de su grupo.
+   */
+  board_column: string | null;
   recurrence_rule: RecurrenceRule | null;
   /** Enlaza las ocurrencias de una misma tarea recurrente. */
   series_id: string | null;

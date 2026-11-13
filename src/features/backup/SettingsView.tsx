@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { LOCAL_SERVER } from '../../data/serverApi';
 import { useApp } from '../../app/AppContext';
-import { inputClass } from '../../components/ui/styles';
 import { Modal } from '../../components/Modal';
 import { useToast } from '../../components/Toast';
 import { downloadBackup, parseBackup, type BackupSummary } from '../../data/backup';
@@ -12,14 +12,11 @@ import { OutlookSettings } from '../calendar/Meetings';
 import { AdminCard } from './AdminCard';
 import type { AutosaveState } from '../../data/fsAutosave';
 import { ViewHeader } from '../views/ViewHeader';
-import { usePersistence } from './usePersistence';
 import { useInstall } from '../../app/install';
 import { LabelsCard } from './LabelsCard';
 import { TypesCard } from './TypesCard';
 import { ensureNotificationPermission, notificationPermission, showNotification } from '../reminders/notifications';
 
-const WEEKDAY_LABELS = ['D', 'L', 'M', 'X', 'J', 'V', 'S'];
-const WEEKDAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
 
 export function useAutosaveState() {
   const [state, setState] = useState<AutosaveState>(autosave.getState());
@@ -35,8 +32,6 @@ export function SettingsView() {
   const [pending, setPending] = useState<{ backup: Backup; summary: BackupSummary; merge: boolean } | null>(null);
   const mergeMode = useRef(false);
   const [importError, setImportError] = useState<string | null>(null);
-  const persisted = usePersistence();
-  const fsState = useAutosaveState();
 
   async function onFile(file: File | undefined) {
     if (!file) return;
@@ -68,11 +63,6 @@ export function SettingsView() {
     } });
   }
 
-  function toggleWorkday(d: number) {
-    const set = new Set(settings.workdays);
-    if (set.has(d)) set.delete(d); else set.add(d);
-    void repo.updateSettings({ workdays: [...set].sort() });
-  }
 
   return (
     <>
@@ -82,9 +72,11 @@ export function SettingsView() {
 
       <SpacesCard />
 
-      <Card title="Calendario de Outlook / Teams">
-        <OutlookSettings />
-      </Card>
+      {LOCAL_SERVER && (
+        <Card title="Calendario de Outlook / Teams">
+          <OutlookSettings />
+        </Card>
+      )}
 
       <Card title="Copia de seguridad">
         <p className="mb-3 text-sm text-zinc-500 dark:text-zinc-400">
@@ -101,18 +93,6 @@ export function SettingsView() {
         {importError && <p className="mt-2 text-sm text-red-600">{importError}</p>}
       </Card>
 
-      <Card title="Copia automática en archivo">
-        <AutosaveControls state={fsState} />
-      </Card>
-
-      <Card title="Almacenamiento persistente">
-        <p className="text-sm text-zinc-500 dark:text-zinc-400">
-          {persisted === null && 'Este navegador no permite pedir almacenamiento persistente.'}
-          {persisted === true && '✓ Concedido: el navegador no borrará tus datos para liberar espacio.'}
-          {persisted === false && 'No concedido todavía. Chrome suele concederlo cuando instalas la app o la usas a menudo. Exportar copias sigue siendo la protección principal.'}
-        </p>
-      </Card>
-
       <NotificationsCard />
 
       <InstallCard />
@@ -127,30 +107,6 @@ export function SettingsView() {
           <p className="text-sm text-zinc-500 dark:text-zinc-400">Son comunes a todo el equipo: los configuran los administradores.</p>
         </Card>
       )}
-
-      <Card title="Capacidad y días laborables">
-        <label className="mb-3 flex items-center gap-3 text-sm">
-          Capacidad diaria
-          <input
-            type="number" min={0} max={1440} step={30}
-            className={`${inputClass} w-24`}
-            value={settings.capacity_minutes}
-            onChange={(e) => void repo.updateSettings({ capacity_minutes: Math.max(0, Number(e.target.value) || 0) })}
-          />
-          minutos ({(settings.capacity_minutes / 60).toFixed(1).replace('.0', '')} h)
-        </label>
-        <div className="flex gap-1">
-          {WEEKDAY_ORDER.map((d) => (
-            <button
-              key={d}
-              onClick={() => toggleWorkday(d)}
-              className={`size-8 rounded-md text-sm font-medium ${settings.workdays.includes(d) ? 'bg-indigo-600 text-white' : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800'}`}
-            >
-              {WEEKDAY_LABELS[d]}
-            </button>
-          ))}
-        </div>
-      </Card>
 
       {pending && (
         <Modal title={pending.merge ? '¿Añadir este contenido?' : '¿Sobrescribir con esta copia?'} onClose={() => setPending(null)}>
@@ -173,55 +129,6 @@ export function SettingsView() {
       )}
     </>
   );
-}
-
-function AutosaveControls({ state }: { state: AutosaveState }) {
-  const run = (fn: () => Promise<void>) => () => void fn().catch(() => { /* el usuario canceló el diálogo */ });
-  switch (state.status) {
-    case 'unsupported':
-      return <p className="text-sm text-zinc-500">Disponible solo en Chrome y Edge. En este navegador usa "Exportar copia".</p>;
-    case 'unlinked':
-      return (
-        <>
-          <p className="mb-3 text-sm text-zinc-500 dark:text-zinc-400">
-            Elige un archivo (por ejemplo, en una carpeta de Google Drive, iCloud o Dropbox) y la app guardará en él una copia tras cada cambio.
-          </p>
-          <Button primary onClick={run(() => autosave.link())}>Vincular archivo…</Button>
-        </>
-      );
-    case 'needs-permission':
-      return (
-        <>
-          <p className="mb-3 text-sm text-amber-700 dark:text-amber-400">
-            El navegador necesita que vuelvas a dar permiso para escribir en <strong>{state.fileName}</strong>.
-          </p>
-          <div className="flex gap-2">
-            <Button primary onClick={run(() => autosave.reactivate())}>Reactivar copia automática</Button>
-            <Button onClick={run(() => autosave.unlink())}>Desvincular</Button>
-          </div>
-        </>
-      );
-    case 'active':
-      return (
-        <>
-          <p className="mb-3 text-sm text-zinc-500 dark:text-zinc-400">
-            ✓ Guardando en <strong>{state.fileName}</strong>
-            {state.lastSavedAt && ` · última escritura ${state.lastSavedAt.toLocaleTimeString('es-ES')}`}
-          </p>
-          <Button onClick={run(() => autosave.unlink())}>Desvincular</Button>
-        </>
-      );
-    case 'error':
-      return (
-        <>
-          <p className="mb-3 text-sm text-red-600">No se pudo escribir en {state.fileName}: {state.message}</p>
-          <div className="flex gap-2">
-            <Button primary onClick={run(() => autosave.reactivate())}>Reintentar</Button>
-            <Button onClick={run(() => autosave.link())}>Elegir otro archivo…</Button>
-          </div>
-        </>
-      );
-  }
 }
 
 function NotificationsCard() {

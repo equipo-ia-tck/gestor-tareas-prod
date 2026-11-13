@@ -10,9 +10,6 @@ export type Route =
   | { view: 'notes'; id?: string }
   | { view: 'calendar' }
   | { view: 'rally' }
-  | { view: 'confluence' }
-  | { view: 'lista' }
-  | { view: 'chats' }
   | { view: 'inbox' }
   | { view: 'projects' }
   | { view: 'project'; id: string }
@@ -34,9 +31,6 @@ export function parseHash(hash: string): Route {
     case 'notes': return arg ? { view: 'notes', id: decodeURIComponent(arg) } : { view: 'notes' };
     case 'calendar': return { view: 'calendar' };
     case 'rally': return { view: 'rally' };
-    case 'confluence': return { view: 'confluence' };
-    case 'lista': return { view: 'lista' };
-    case 'chats': return { view: 'chats' };
     case 'inbox': return { view: 'inbox' };
     case 'projects': return { view: 'projects' };
     case 'project': return arg ? { view: 'project', id: decodeURIComponent(arg) } : { view: 'projects' };
@@ -68,4 +62,10 @@ export function useRoute(): Route {
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
   return route;
+}
+
+/** Abre el buscador (pantalla Buscar) y pone el cursor en su cuadro. */
+export function openSearch() {
+  if (!window.location.hash.startsWith('#/search/')) navigate({ view: 'search', q: '' });
+  requestAnimationFrame(() => setTimeout(() => document.getElementById('global-search')?.focus(), 0));
 }
