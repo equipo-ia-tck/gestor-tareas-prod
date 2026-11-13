@@ -164,11 +164,11 @@ function ProjectChips({ projects, selected, onToggle, pinned, onPin }: {
         );
       })}
       <div ref={box} className="relative">
-        <div className="flex items-center gap-1 rounded-full border border-zinc-300 bg-white px-2 dark:border-zinc-600 dark:bg-zinc-900">
-          <Search className="size-3.5 text-zinc-400" />
-          <input className="w-44 bg-transparent py-0.5 text-xs outline-none" value={q} onChange={(e) => setQ(e.target.value)}
+        <div className="flex items-center gap-1.5 rounded-full border-2 border-indigo-400 bg-white px-3 shadow-sm focus-within:border-indigo-600 focus-within:ring-2 focus-within:ring-indigo-200 dark:border-indigo-500 dark:bg-zinc-900 dark:focus-within:ring-indigo-900">
+          <Search className="size-4 text-indigo-600 dark:text-indigo-400" />
+          <input className="w-64 bg-transparent py-1 text-sm text-zinc-800 outline-none placeholder:text-zinc-500 dark:text-zinc-100 dark:placeholder:text-zinc-400" value={q} onChange={(e) => setQ(e.target.value)}
             placeholder={hidden > 0 ? `Buscar entre ${projects.length} proyectos…` : 'Buscar proyecto…'} aria-label="Buscar proyecto de Rally" />
-          {q && <button type="button" onClick={() => setQ('')} aria-label="Borrar búsqueda"><X className="size-3.5 text-zinc-400" /></button>}
+          {q && <button type="button" onClick={() => setQ('')} aria-label="Borrar búsqueda"><X className="size-4 text-zinc-400 hover:text-zinc-700" /></button>}
         </div>
         {query && (
           <div className="absolute top-full left-0 z-20 mt-1 max-h-80 w-80 overflow-y-auto rounded-lg border border-zinc-200 bg-white p-1 text-sm shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
@@ -213,7 +213,7 @@ function RallyItems() {
   const [onlyMine, setOnlyMine] = usePersistentState('rally-only-mine', false);
   const [person, setPerson] = useState('');
   const [groupBy, setGroupBy] = usePersistentState<RallyGroupBy>('rally-group-by', 'category');
-  const [days, setDays] = usePersistentState('rally-days', 90);
+  const [days, setDays] = usePersistentState('rally-days-v2', 0);
   const [projectId, setProjectId] = usePersistentState('rally-project', '');
   // Elemento abierto en el panel de la derecha.
   const [open, setOpen] = useState<RallyItem | null>(null);
