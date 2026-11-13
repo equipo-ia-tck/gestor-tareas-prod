@@ -5,8 +5,8 @@ import { DexieRepository } from '../src/data/repository';
 import {
   actionItems, extractMentions, parseInline, parseMarkdown, plainLine, sectionOf, setChecked, setTaskMarker,
 } from '../src/domain/markdown';
-import { meetingTemplate, mentionsOf, noteExcerpt, notesLinkingTask } from '../src/domain/notes';
-import type { Note } from '../src/domain/types';
+import { meetingTemplate, mentionsOf, noteExcerpt, noteLines, notesLinkingTask, projectLines } from '../src/domain/notes';
+import type { Note, Project } from '../src/domain/types';
 
 let repo: DexieRepository;
 beforeEach(() => { repo = new DexieRepository(new TasksDB(`v4-${crypto.randomUUID()}`)); });
@@ -65,6 +65,24 @@ describe('notas', () => {
       ['2026-10-09', '@diana pide revisar los TS', null],
       ['2026-10-07', '@Diana: el login va en la R2.3', 'Decisiones'],
     ]);
+  });
+
+  it('líneas con #proyecto y @persona: van a su proyecto (y subproyectos) y recuerdan su tarea', () => {
+    const proj = (id: string, name: string, parent_id: string | null = null) => ({ id, name, parent_id }) as Project;
+    const projects = [proj('c', 'Caixa'), proj('s', 'Sprint 14', 'c'), proj('o', 'Otro')];
+    const a = note('**Asistentes:** @Diana\n## Notas\n- #caixa revisar el login con @Diana\n- #sprint-14 demo el lunes [[t:t1]]\n- #nada sin proyecto\n- #caixa\n- ## título', { date: '2026-10-09' });
+    const b = note('- @Luis lleva las pruebas\n- texto sin menciones', { project_id: 'c' });
+    const c = note('- @Luis en otra parte', { project_id: 'o' });
+    const all = noteLines([a, b, c], projects);
+    expect(all.map((l) => [l.text, l.people, l.projectIds, l.taskId, l.section])).toEqual([
+      ['#caixa revisar el login con @Diana', ['Diana'], ['c'], null, 'Notas'],
+      ['#sprint-14 demo el lunes', [], ['s'], 't1', 'Notas'],
+      ['@Luis lleva las pruebas', ['Luis'], [], null, null],
+      ['@Luis en otra parte', ['Luis'], [], null, null],
+    ]);
+    expect(projectLines(new Set(['c', 's']), [a, b, c], projects).map((l) => l.text))
+      .toEqual(['#caixa revisar el login con @Diana', '#sprint-14 demo el lunes', '@Luis lleva las pruebas']);
+    expect(projectLines(new Set(['s']), [a, b, c], projects).map((l) => l.text)).toEqual(['#sprint-14 demo el lunes']);
   });
 
   it('notas que enlazan una tarea y resumen', () => {

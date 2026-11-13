@@ -3,7 +3,8 @@ import { ActionButton, Section } from '../../components/TaskList';
 import { FolderInput, Lock, Plus, Users } from 'lucide-react';
 import { repo } from '../../data/services';
 import { newNote } from '../notes/NotesView';
-import { noteExcerpt, sortNotes } from '../../domain/notes';
+import { noteExcerpt, projectLines, sortNotes } from '../../domain/notes';
+import { NoteLineList } from '../notes/LineToTask';
 import { formatDay } from '../../domain/dates';
 import { MenuItem, Popover } from '../../components/ui/Popover';
 import { canMoveUnder, flattenTree, MAX_PROJECT_DEPTH, projectTree } from '../../domain/projects';
@@ -78,9 +79,30 @@ export function ProjectSpace({ id }: { id: string }) {
 }
 
 export function ProjectNotes({ projectIds, projectId }: { projectIds: Set<string>; projectId: string }) {
-  const { notes, today } = useApp();
-  const mine = sortNotes(notes.filter((n) => n.project_id !== null && projectIds.has(n.project_id) && !n.task_id));
+  const { notes, today, allProjects } = useApp();
+  const lines = projectLines(projectIds, notes, allProjects);
+  // También las notas de otras secciones que mencionan el proyecto con #.
+  const mentioning = new Set(lines.filter((l) => l.projectIds.some((id) => projectIds.has(id))).map((l) => l.note.id));
+  const mine = sortNotes(notes.filter((n) => !n.deleted_at && !n.task_id
+    && ((n.project_id !== null && projectIds.has(n.project_id)) || mentioning.has(n.id))));
+  const pending = lines.filter((l) => !l.taskId).length;
   return (
+    <>
+    <Section
+      title={`En las notas · ${lines.length}`}
+      aside={pending > 0 ? <span className="text-xs text-zinc-400">{pending} sin pasar a tarea</span> : undefined}
+      prominent
+      collapsible
+      defaultOpen={lines.length > 0}
+    >
+      {!lines.length && (
+        <p className="px-2 py-2 text-sm text-zinc-400">
+          Las líneas de tus notas que mencionan este proyecto con #{(allProjects.find((p) => p.id === projectId)?.name ?? '').replace(/\s+/g, '-')}
+          {' '}(o a una persona con @ en las notas del proyecto) aparecerán aquí, para pasarlas a tareas.
+        </p>
+      )}
+      <div className="px-2 py-1"><NoteLineList lines={lines} /></div>
+    </Section>
     <Section
       title={`Notas y actas · ${mine.length}`}
       aside={<ActionButton icon={<Plus className="size-3.5" />} onClick={() => void newNote('meeting', today, { project_id: projectId })}>Nueva acta</ActionButton>}
@@ -92,11 +114,12 @@ export function ProjectNotes({ projectIds, projectId }: { projectIds: Set<string
       <ul>
         {mine.slice(0, 10).map((n) => (
           <li key={n.id}><a href={`#/notes/${n.id}`} className="flex justify-between gap-3 rounded px-2 py-1.5 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
-            <span className="truncate">{n.title || 'Sin título'} <span className="text-xs text-zinc-400">{noteExcerpt(n)}</span></span>
+            <span className="truncate">{n.title || 'Sin título'}{mentioning.has(n.id) && !(n.project_id && projectIds.has(n.project_id)) && <span className="ml-1 text-[11px] text-indigo-500">#menciona</span>} <span className="text-xs text-zinc-400">{noteExcerpt(n)}</span></span>
             <span className="shrink-0 text-xs text-zinc-400">{formatDay(n.date, today)}</span>
           </a></li>
         ))}
       </ul>
     </Section>
+    </>
   );
 }

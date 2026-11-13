@@ -1,6 +1,7 @@
 import { plainLine, sectionOf } from './markdown';
+import { resolveProjectToken } from './projects';
 import { fold, nameKey } from './text';
-import type { ISODate, Note } from './types';
+import type { ISODate, Note, Project } from './types';
 
 export const isLiveNote = (n: Note) => !n.deleted_at;
 
@@ -53,6 +54,51 @@ export function mentionsOf(person: string, notes: Note[]): Mention[] {
     });
   }
   return out.sort((a, b) => b.note.date.localeCompare(a.note.date) || a.line - b.line);
+}
+
+const MENTION = /(?<![\p{L}\p{N}_.])@([\p{L}\p{N}_\-.]*[\p{L}\p{N}_])/gu;
+const PROJECT_TAG = /(?<![\p{L}\p{N}_&/])#([\p{L}\p{N}_\-./]*[\p{L}\p{N}_])/gu;
+const LINE_TASK = /\[\[t:([\w-]+)\]\]/;
+
+/** Una línea de nota con @personas o #proyectos: se ve en la persona y en el proyecto y se puede pasar a tarea. */
+export interface NoteLine extends Mention {
+  /** Personas mencionadas tal como se escribieron ("Diana-Pérez" → "Diana Pérez"). */
+  people: string[];
+  /** Proyectos mencionados con #, ya resueltos (los # que no son un proyecto no cuentan). */
+  projectIds: string[];
+  /** Tarea creada desde la línea ([[t:id]]), si la hay. */
+  taskId: string | null;
+}
+
+/**
+ * Líneas de las notas que mencionan @personas o #proyectos (excepto la de asistentes y las que solo tienen la
+ * mención), las más recientes primero.
+ */
+export function noteLines(notes: Note[], projects: Project[]): NoteLine[] {
+  const out: NoteLine[] = [];
+  for (const note of notes) {
+    if (!isLiveNote(note)) continue;
+    note.body.split('\n').forEach((raw, line) => {
+      if (/^\s*\*\*asistentes:?\*\*/i.test(raw)) return;
+      const people = [...raw.matchAll(MENTION)].map((m) => m[1].replace(/-/g, ' '));
+      const projectIds = [...new Set([...raw.matchAll(PROJECT_TAG)]
+        .map((m) => resolveProjectToken(m[1], projects)?.id).filter((id): id is string => !!id))];
+      if (!people.length && !projectIds.length) return;
+      const text = plainLine(raw);
+      if (text.replace(MENTION, '').replace(PROJECT_TAG, '').trim().length < 2) return;
+      out.push({ note, line, text, section: sectionOf(note.body, line), people, projectIds, taskId: LINE_TASK.exec(raw)?.[1] ?? null });
+    });
+  }
+  return out.sort((a, b) => b.note.date.localeCompare(a.note.date) || a.line - b.line);
+}
+
+/**
+ * Lo que se ha dicho de un proyecto: líneas que lo mencionan con # (a él o a un subproyecto) y líneas con @persona de
+ * las notas del proyecto.
+ */
+export function projectLines(scope: Set<string>, notes: Note[], projects: Project[]): NoteLine[] {
+  return noteLines(notes, projects).filter((l) => l.projectIds.some((id) => scope.has(id))
+    || (l.people.length > 0 && l.note.project_id !== null && scope.has(l.note.project_id)));
 }
 
 /** Notas que enlazan una tarea con [[t:id]] (contexto de dónde salió). */

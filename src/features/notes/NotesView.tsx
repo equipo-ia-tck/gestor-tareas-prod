@@ -4,7 +4,7 @@ import { lazy, Suspense, useEffect, useMemo, useState, type FormEvent, type Reac
 
 // El editor con formato pesa: se carga al abrir una nota, no al arrancar la app.
 const NoteEditor = lazy(() => import('./NoteEditor').then((m) => ({ default: m.NoteEditor })));
-import { FileText, ListChecks, MessageSquare, Pin, Plus, Search, Trash2, Users } from 'lucide-react';
+import { AtSign, FileText, ListChecks, MessageSquare, Pin, Plus, Search, Trash2, Users } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
 import { useWideLayout } from '../../app/Layout';
 import { navigate } from '../../app/router';
@@ -12,7 +12,7 @@ import { AvatarStack, StatePill } from '../../components/ui/Badges';
 import { repo } from '../../data/services';
 import { formatDay } from '../../domain/dates';
 import { actionItems } from '../../domain/markdown';
-import { defaultNoteTitle, matchesNote, meetingTemplate, noteExcerpt, reorderPages, sortNotes, sortPages } from '../../domain/notes';
+import { defaultNoteTitle, matchesNote, meetingTemplate, noteExcerpt, noteLines, reorderPages, sortNotes, sortPages } from '../../domain/notes';
 import { ancestry, flattenTree, MAX_PROJECT_DEPTH, projectPath, projectTree } from '../../domain/projects';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { fold, nameKey } from '../../domain/text';
@@ -21,6 +21,7 @@ import { stateOf } from '../../domain/workflows';
 import { createTasksFromActions } from './noteActions';
 import { IcsImport } from './IcsImport';
 import { MeetingLink, ShareMeeting } from './MeetingTools';
+import { NoteLineList } from './LineToTask';
 import { taskLabel } from './TaskNotes';
 import { TypeBadge } from '../../components/ui/Badges';
 import { findType } from '../../domain/workflows';
@@ -243,14 +244,17 @@ function PageList({ pages, activeId, reorderable }: { pages: Note[]; activeId?: 
 }
 
 function NotePage({ note }: { note: Note }) {
-  const { tasks, projects, today, itemTypes, releases, mentionables } = useApp();
+  const { tasks, projects, allProjects, today, itemTypes, releases, mentionables } = useApp();
   const [title, setTitle] = useState(note.title);
   useEffect(() => setTitle(note.title), [note.title]);
   const taskMap = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks]);
   const ctx = { today, projects, people: mentionables, types: itemTypes, releases };
   const actions = actionItems(note.body);
   const unlinked = actions.filter((a) => !a.taskId);
-  const showSide = note.kind === 'meeting' || actions.length > 0;
+  // Líneas con @persona o #proyecto que no son acciones (las acciones ya tienen su panel).
+  const actionLines = new Set(actions.map((a) => a.line));
+  const mentions = noteLines([note], allProjects).filter((l) => !actionLines.has(l.line));
+  const showSide = note.kind === 'meeting' || actions.length > 0 || mentions.length > 0;
 
   return (
     <article className="min-w-0">
@@ -283,7 +287,7 @@ function NotePage({ note }: { note: Note }) {
       {note.task_id && <TaskOrigin taskId={note.task_id} />}
       {note.kind === 'meeting' && <MeetingLink note={note} />}
 
-      {/* El lateral (acciones, temas de los asistentes) solo en actas o si la nota tiene acciones. */}
+      {/* El lateral (acciones, menciones, temas de los asistentes) solo en actas o si la nota tiene acciones o menciones. */}
       <div className={`grid gap-6 ${showSide ? '2xl:grid-cols-[1fr_260px]' : ''}`}>
         <Suspense fallback={<p className="text-sm text-zinc-400">Abriendo el editor…</p>}><NoteEditor note={note} /></Suspense>
         {showSide && <div className="space-y-5 text-sm">
@@ -297,6 +301,11 @@ function NotePage({ note }: { note: Note }) {
             )}
             <LinkedTasks ids={actions.flatMap((a) => (a.taskId ? [a.taskId] : []))} />
           </SidePanel>
+          {mentions.length > 0 && (
+            <SidePanel icon={<AtSign className="size-4" />} title={`Menciones · ${mentions.length}`}>
+              <NoteLineList lines={mentions} showSource={false} />
+            </SidePanel>
+          )}
           <AttendeeTopics people={note.people} />
         </div>}
       </div>

@@ -10,7 +10,8 @@ import { Section, TaskList } from '../../components/TaskList';
 import { Avatar } from '../../components/ui/Badges';
 import { repo } from '../../data/services';
 import { formatDay } from '../../domain/dates';
-import { meetingsWith, mentionsOf } from '../../domain/notes';
+import { meetingsWith, noteLines } from '../../domain/notes';
+import { NoteLineList } from '../notes/LineToTask';
 import { groupPeople, peopleDirectory, type PersonEntry } from '../../domain/people';
 import { isActive, samePerson, sortTasks } from '../../domain/selectors';
 import { nameKey } from '../../domain/text';
@@ -124,7 +125,7 @@ function IconButton({ title, onClick, disabled, children }: { title: string; onC
 }
 
 export function PersonView({ name }: { name: string }) {
-  const { tasks, notes, peopleCards, today, projectMap, editTask } = useApp();
+  const { tasks, notes, peopleCards, today, projectMap, allProjects, editTask } = useApp();
   const card = peopleCards.find((c) => nameKey(c.name) === nameKey(name));
   const mine = tasks.filter((t) => t.people.some((p) => samePerson(p, name)));
   const topics = sortTasks(mine.filter((t) => t.type_id === TOPIC_TYPE_ID && isActive(t)));
@@ -136,7 +137,7 @@ export function PersonView({ name }: { name: string }) {
   const owned = tasks.filter((t) => !mine.includes(t) && samePerson(rallyOwners.get(t.id) ?? '', name));
   const ownedActive = sortTasks(owned.filter(isActive));
   const ownedDone = owned.filter((t) => t.status === 'done');
-  const said = mentionsOf(name, notes);
+  const said = noteLines(notes, allProjects).filter((l) => l.people.some((p) => nameKey(p) === nameKey(name)));
   const [teamsApp] = useTeamsApp();
   const meetings = meetingsWith(name, notes);
   const list = { today, projects: projectMap, onEdit: editTask };
@@ -195,17 +196,7 @@ export function PersonView({ name }: { name: string }) {
         <div className="space-y-5">
           <Card icon={<Quote className="size-4" />} title={`Lo que dijo o se habló · ${said.length}`}>
             {!said.length && <p className="text-xs text-zinc-400">Las líneas de tus notas que mencionan a @{name.replace(/\s+/g, '-')} aparecerán aquí.</p>}
-            <ul className="space-y-2">
-              {said.slice(0, 30).map((m) => (
-                <li key={`${m.note.id}-${m.line}`} className="group text-sm">
-                  <p className="leading-snug">{m.text}</p>
-                  <MentionActions name={name} text={m.text} noteTitle={m.note.title} projectId={m.note.project_id} />
-                  <a href={`#/notes/${m.note.id}`} className="text-[11px] text-zinc-400 hover:underline">
-                    {formatDay(m.note.date, today)} · {m.note.title || 'nota'}{m.section ? ` · ${m.section}` : ''}
-                  </a>
-                </li>
-              ))}
-            </ul>
+            <NoteLineList lines={said} defaults={{ people: [name] }} topicPerson={name} />
           </Card>
           <Card icon={<FileText className="size-4" />} title={`Reuniones y notas · ${meetings.length}`}>
             {!meetings.length && <p className="text-xs text-zinc-400">Ninguna todavía.</p>}
@@ -220,25 +211,6 @@ export function PersonView({ name }: { name: string }) {
         </div>
       </div>
     </>
-  );
-}
-
-/** Convertir una línea de una nota en tarea o tema de esta persona (si no lo es ya). */
-function MentionActions({ name, text, noteTitle, projectId }: { name: string; text: string; noteTitle: string; projectId: string | null }) {
-  const { tasks } = useApp();
-  // "@Diana: revisar los TS" → "revisar los TS" (la persona ya va en el campo Personas).
-  const title = text.replace(/^@[\p{L}\p{N}_\-.]+[:,]?\s*/u, '').replace(/(?<![\p{L}\p{N}_.])@([\p{L}\p{N}_\-.]*[\p{L}\p{N}_])/gu, (_, n: string) => n.replace(/-/g, ' ')).trim();
-  const exists = tasks.find((t) => nameKey(t.title) === nameKey(title) && t.people.some((p) => samePerson(p, name)));
-  if (!title) return null;
-  if (exists) return <span className="mr-2 text-[11px] text-emerald-600">✓ {exists.type_id === TOPIC_TYPE_ID ? 'Está en Para hablar' : 'Ya es una tarea'}</span>;
-  const create = (topic: boolean) => repo.batch(topic ? 'Añadido a Para hablar' : 'Tarea creada', () => repo.createTask({
-    title, people: [name], type_id: topic ? TOPIC_TYPE_ID : undefined, project_id: topic ? null : projectId, notes: `De: ${noteTitle || 'nota'}`,
-  }));
-  return (
-    <span className="mr-2 inline-flex gap-1 opacity-60 group-hover:opacity-100">
-      <button type="button" onClick={() => void create(false)} className="rounded bg-indigo-50 px-1.5 text-[11px] font-medium text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-950 dark:text-indigo-300">→ Tarea</button>
-      <button type="button" onClick={() => void create(true)} className="rounded bg-amber-50 px-1.5 text-[11px] font-medium text-amber-700 hover:bg-amber-100 dark:bg-amber-950 dark:text-amber-300">→ Para hablar</button>
-    </span>
   );
 }
 

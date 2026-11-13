@@ -733,6 +733,19 @@ En Vercel no hay servidor que lea la carpeta de OneDrive del Mac, así que el Ma
   esa copia). `--instalar` con clave prueba antes una subida y no instala si falla. En `npm run dev` no existe el archivo.
 - Chats y Microsoft List siguen necesitando el servidor local (la Lista escribe en OneDrive).
 
+## Fase 28: notas con #proyecto y @persona → tareas (rama `notas-proyectos`)
+
+- `noteLines(notes, projects)` (`domain/notes.ts`): líneas con @personas o #proyectos (resueltos con `resolveProjectToken`;
+  un # que no es proyecto no cuenta), sin la de asistentes ni las que solo tienen la mención, con su `[[t:id]]` si ya son
+  tarea. `projectLines(scope, …)`: las que mencionan el proyecto o un subproyecto con #, más las de @persona de las notas
+  del proyecto.
+- **Proyecto**: sección «En las notas» encima de «Notas y actas», que ahora incluye también las notas de otras secciones que
+  mencionan el proyecto (`#menciona`). **Nota**: panel lateral «Menciones» con las líneas que no son acciones. **Persona**:
+  «Lo que dijo o se habló» usa lo mismo.
+- «→ Tarea» / «→ Para hablar» (`LineToTask`, `createTaskFromLine` en `noteActions.ts`): la línea pasa por `parseCapture`
+  (persona, #proyecto, fecha, !1…; "@Diana: …" pierde los dos puntos), la tarea va al proyecto de la línea o al de la nota y
+  la línea recibe `[[t:id]]`, así enseña «✓ Tarea» con su estado y no se duplica. Un solo «Deshacer».
+
 ### Más adelante
 
 - **Electron**: la app es web estática con rutas por hash y datos en IndexedDB, así que se puede empaquetar sin cambios
