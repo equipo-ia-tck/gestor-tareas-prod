@@ -145,7 +145,8 @@ export interface RallyDetail {
   tags: string[];
   /** Elementos hijos agrupados: "Tareas", "Test Cases", "Defectos", "User Stories hijas". */
   related: { label: string; items: RallyItem[] }[];
-  discussion: { author: string | null; date: string; text: string }[];
+  /** `objectId` del comentario en Rally y `mine` si lo escribió la persona conectada (puede editarlo o eliminarlo). */
+  discussion: { author: string | null; date: string; text: string; objectId?: string; mine?: boolean }[];
   /** `objectId`: el del adjunto en Rally (para eliminarlo). */
   attachments: { name: string; size: number; objectId?: string }[];
 }

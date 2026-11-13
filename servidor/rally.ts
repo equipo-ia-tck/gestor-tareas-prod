@@ -232,6 +232,19 @@ export function messageHtml(text: string, mentions: Mention[]): string {
   return `<p>${html}</p>`;
 }
 
+/** Menciones de Rally que hay en un comentario (`<span class="mention" data-mention="UUID">@Nombre</span>`). */
+export function mentionsIn(html: string): Mention[] {
+  const out: Mention[] = [];
+  for (const m of html.matchAll(/<span\b([^>]*)>([^<]*)<\/span>/gi)) {
+    const attrs = m[1];
+    if (!/class=["'][^"']*\bmention\b/i.test(attrs)) continue;
+    const uuid = /data-mention=["']([^"']+)["']/i.exec(attrs)?.[1] ?? null;
+    const name = htmlToText(m[2]).replace(/^@/, '').trim();
+    if (name && !out.some((x) => x.name === name)) out.push({ name, uuid });
+  }
+  return out;
+}
+
 /** Motivo de bloqueo a partir del comentario: sin saltos de línea y como mucho 256 caracteres. */
 export function blockedReasonText(text: unknown): string | null {
   if (typeof text !== 'string') return null;
@@ -1041,13 +1054,53 @@ export class Rally {
     const text = String(input.text ?? '').trim();
     if (!text) throw new ApiError(400, 'Escribe el comentario.');
     if (text.length > 10_000) throw new ApiError(400, 'El comentario es demasiado largo.');
-    const post = await this.post(a, '/conversationpost/create?fetch=Text,User,CreationDate',
+    const post = await this.post(a, '/conversationpost/create?fetch=Text,User,CreationDate,ObjectID',
       { ConversationPost: { Artifact: `/${entry[0]}/${input.objectId}`, Text: commentHtml(text) } });
+    return { ...this.toPost(a, { ...post, Text: post.Text ?? commentHtml(text) }), author: refName(post.User) ?? a.rally_user, mine: true };
+  }
+
+  /** Comentario de la discusión tal como lo enseña la app. */
+  private toPost(a: { rally_user_id: string }, p: RallyObject): RallyDetail['discussion'][number] {
+    const id = p.ObjectID ? String(p.ObjectID) : null;
+    const mine = !!p.User && refId(p.User as RallyObject) === a.rally_user_id;
     return {
-      author: refName(post.User) ?? a.rally_user,
-      date: String(post.CreationDate ?? new Date().toISOString()),
-      text: htmlToText(String(post.Text ?? commentHtml(text))),
+      author: refName(p.User),
+      date: String(p.CreationDate ?? new Date().toISOString()),
+      text: htmlToText(String(p.Text ?? '')),
+      ...(id ? { objectId: id } : {}),
+      ...(mine ? { mine: true } : {}),
     };
+  }
+
+  /** Comentario de la discusión por su ObjectID (404 si ya no existe). */
+  private async findPost(a: { base_url: string; api_key: string }, objectId: unknown): Promise<{ id: string; post: RallyObject }> {
+    const id = String(objectId ?? '');
+    if (!/^\d+$/.test(id)) throw new ApiError(400, 'Comentario de Rally no válido.');
+    const [post] = await this.list(a, '/conversationpost', { query: `(ObjectID = ${id})`, fetch: 'Text,User,CreationDate,ObjectID', pagesize: '1' });
+    if (!post) throw new ApiError(404, 'Ese comentario ya no existe en Rally.');
+    return { id, post };
+  }
+
+  /**
+   * Cambia el texto de un comentario. Las menciones que tenía (@Nombre con su UUID) se conservan si siguen en el texto,
+   * para que no pasen a ser texto plano. Rally solo deja editar los propios (o a quien administra el proyecto).
+   */
+  async editComment(user: TeamUser, input: { objectId?: unknown; text?: unknown }): Promise<RallyDetail['discussion'][number]> {
+    const a = await this.connected(user);
+    const text = String(input.text ?? '').trim();
+    if (!text) throw new ApiError(400, 'Escribe el comentario.');
+    if (text.length > 10_000) throw new ApiError(400, 'El comentario es demasiado largo.');
+    const { id, post } = await this.findPost(a, input.objectId);
+    const html = messageHtml(text, mentionsIn(String(post.Text ?? '')));
+    const updated = await this.post(a, `/conversationpost/${id}?fetch=Text,User,CreationDate,ObjectID`, { ConversationPost: { Text: html } });
+    return this.toPost(a, { ...post, ...updated, Text: updated.Text ?? html });
+  }
+
+  /** Elimina un comentario de la discusión (no se puede deshacer). */
+  async deleteComment(user: TeamUser, input: { objectId?: unknown }): Promise<void> {
+    const a = await this.connected(user);
+    const { id } = await this.findPost(a, input.objectId);
+    await this.remove(a, `/conversationpost/${id}`);
   }
 
   /**
@@ -1158,7 +1211,7 @@ export class Rally {
     };
     const [tags, posts, files, ...lists] = await Promise.all([
       fetchSub('Tags', 'Name'),
-      fetchSub('Discussion', 'Text,User,CreationDate', 'CreationDate'),
+      fetchSub('Discussion', 'Text,User,CreationDate,ObjectID', 'CreationDate'),
       fetchSub('Attachments', 'Name,Size,ObjectID'),
       ...RELATED.map(([k]) => fetchSub(k, FETCH)),
     ]);
@@ -1172,7 +1225,7 @@ export class Rally {
         label: l,
         items: lists[i].map((r) => toRallyItem(r, a.base_url, a.rally_user_id)).filter((x): x is RallyItem => !!x),
       })).filter((g) => g.items.length),
-      discussion: posts.map((p) => ({ author: refName(p.User), date: String(p.CreationDate ?? ''), text: htmlToText(String(p.Text ?? '')) })),
+      discussion: posts.map((p) => this.toPost(a, p)),
       attachments: files.map((f) => ({ name: String(f.Name ?? ''), size: Number(f.Size ?? 0), ...(f.ObjectID ? { objectId: String(f.ObjectID) } : {}) })),
     };
   }

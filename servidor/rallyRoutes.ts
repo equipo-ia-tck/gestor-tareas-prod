@@ -76,6 +76,18 @@ export async function rallyRoute(rally: Rally, user: TeamUser, method: string, p
         throw e;
       }
     }
+    case 'POST /api/rally/comment-edit': {
+      const body = await readBody();
+      const post = await rally.editComment(user, body);
+      log(`comentario ${String(body.objectId)} editado`);
+      return { post };
+    }
+    case 'POST /api/rally/comment-delete': {
+      const body = await readBody();
+      await rally.deleteComment(user, body);
+      log(`comentario ${String(body.objectId)} eliminado`);
+      return { ok: true };
+    }
     case 'POST /api/rally/attach': {
       const body = await readBody();
       try {

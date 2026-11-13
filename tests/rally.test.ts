@@ -1,7 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
 import { Api } from './fakeAccounts.ts';
-import { commentHtml, fieldValue, htmlToText, joinQuery, MOVE_COMMENTS, blockedReasonText, messageHtml, moveComment, normalizeBaseUrl, Rally, rallyCategory, toRallyItem } from '../servidor/rally.ts';
+import { mentionsIn, commentHtml, fieldValue, htmlToText, joinQuery, MOVE_COMMENTS, blockedReasonText, messageHtml, moveComment, normalizeBaseUrl, Rally, rallyCategory, toRallyItem } from '../servidor/rally.ts';
 import { groupRally, isRallyId, rallyColumnOf, linkedTask, rallyIdsOf, rallyMoves, rallyPushes, taskFromRally, tasksByRallyId, type RallyItem } from '../src/domain/rally';
 import { DEFAULT_ITEM_TYPES } from '../src/domain/workflows';
 import { makeTask } from './factories';
@@ -448,6 +448,20 @@ describe('Rally: mover', () => {
     ]);
     expect(file).toEqual({ name: 'captura.png', size: 4 });
     await expect(rally.attach(marta, { kind: 'DE', objectId: '5', name: 'x', content: '!!' })).rejects.toThrow(/no válido/);
+  });
+
+  it('edita un comentario conservando sus menciones y lo elimina', async () => {
+    const original = '<p><span class="mention" data-mention="2a75bf52-cfd9-4550-97ec-fc6383373083">@Pepa PO</span> Guía bloqueada</p>';
+    const { rally, marta, posts, gets } = await setup({ ObjectID: 61, Text: original, User: { _ref: `${ws}/user/42`, _refObjectName: 'Marta' }, CreationDate: '2026-11-13T10:00:00.000Z' });
+    expect(mentionsIn(original)).toEqual([{ name: 'Pepa PO', uuid: '2a75bf52-cfd9-4550-97ec-fc6383373083' }]);
+    const post = await rally.editComment(marta, { objectId: '61', text: '@Pepa PO Guía bloqueada por el diseño' });
+    expect(posts).toEqual([{ path: '/conversationpost/61', body: { ConversationPost: {
+      Text: '<p><span class="mention" data-mention="2a75bf52-cfd9-4550-97ec-fc6383373083">@Pepa PO</span> Guía bloqueada por el diseño</p>' } } }]);
+    expect(post).toMatchObject({ objectId: '61', mine: true });
+    await rally.deleteComment(marta, { objectId: '61' });
+    expect(gets.map((u) => u.pathname.replace('/slm/webservice/v2.0', ''))).toContain('/conversationpost/61');
+    await expect(rally.editComment(marta, { objectId: '61', text: ' ' })).rejects.toThrow(/Escribe/);
+    await expect(rally.deleteComment(marta, { objectId: 'x' })).rejects.toThrow(/no válido/);
   });
 
   it('elimina un adjunto y su contenido con DELETE', async () => {

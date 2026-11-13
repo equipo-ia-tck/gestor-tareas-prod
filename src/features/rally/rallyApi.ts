@@ -41,6 +41,11 @@ export const rallyApi = {
     call<{ text: string; owner: string | null; analyst: string | null; people?: { name: string; email: string | null }[] }>('POST', '/api/rally/move-comment', { id, text, analyst, owner }),
   comment: (item: RallyItem, text: string) =>
     call<{ post: RallyDetail['discussion'][number] }>('POST', '/api/rally/comment', { kind: item.kind, objectId: item.objectId, text }).then((r) => r.post),
+  /** Cambia el texto de un comentario propio (las menciones que tenía se conservan). */
+  editComment: (objectId: string, text: string) =>
+    call<{ post: RallyDetail['discussion'][number] }>('POST', '/api/rally/comment-edit', { objectId, text }).then((r) => r.post),
+  /** Elimina un comentario propio de la discusión (no se puede deshacer). */
+  deleteComment: (objectId: string) => call<{ ok: boolean }>('POST', '/api/rally/comment-delete', { objectId }),
   attach: (item: RallyItem, file: { name: string; contentType: string; content: string }) =>
     call<{ file: RallyDetail['attachments'][number] }>('POST', '/api/rally/attach', { kind: item.kind, objectId: item.objectId, ...file }).then((r) => r.file),
   /** Elimina un adjunto en Rally (no se puede deshacer). */

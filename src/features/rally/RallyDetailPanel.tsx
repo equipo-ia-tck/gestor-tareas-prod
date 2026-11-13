@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { ExternalLink, Paperclip, Trash2, Plus, Send, Upload, X } from 'lucide-react';
+import { ExternalLink, Paperclip, Pencil, Trash2, Plus, Send, Upload, X } from 'lucide-react';
 import type { RallyDetail, RallyItem } from '../../domain/rally';
 import type { Task } from '../../domain/types';
 import { MAX_UPLOAD, rallyApi, toBase64, tooBigMessage } from './rallyApi';
@@ -260,7 +260,42 @@ function Discussion({ item, posts }: { item: RallyItem; posts: RallyDetail['disc
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const all = [...posts, ...added];
+  /** Cambios ya guardados en Rally (por ObjectID): texto nuevo o `null` si se ha eliminado. */
+  const [changed, setChanged] = useState<Record<string, RallyDetail['discussion'][number] | null>>({});
+  const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const all = [...posts, ...added]
+    .map((p) => (p.objectId && p.objectId in changed ? changed[p.objectId] : p))
+    .filter((p): p is RallyDetail['discussion'][number] => !!p);
+
+  const saveEdit = async () => {
+    if (!editing || !editing.text.trim() || busy) return;
+    setBusy(editing.id);
+    setError(null);
+    try {
+      const post = await rallyApi.editComment(editing.id, editing.text);
+      setChanged((c) => ({ ...c, [editing.id]: { ...post, mine: true } }));
+      setEditing(null);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+  const remove = async (id: string) => {
+    if (!window.confirm('¿Eliminar este comentario de Rally? No se puede deshacer.')) return;
+    setBusy(id);
+    setError(null);
+    try {
+      await rallyApi.deleteComment(id);
+      setChanged((c) => ({ ...c, [id]: null }));
+      if (editing?.id === id) setEditing(null);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const publish = async () => {
     if (!text.trim() || sending) return;
@@ -282,9 +317,37 @@ function Discussion({ item, posts }: { item: RallyItem; posts: RallyDetail['disc
       {all.length > 0 && (
         <ul className="mb-3 space-y-3">
           {all.map((p, i) => (
-            <li key={i} className="text-sm">
-              <div className="text-xs text-zinc-500"><b className="text-zinc-700 dark:text-zinc-300">{p.author ?? 'Alguien'}</b> · {formatDate(p.date)}</div>
-              <p className="mt-0.5 break-words whitespace-pre-wrap">{p.text}</p>
+            <li key={p.objectId ?? i} className="group text-sm">
+              <div className="flex items-center gap-1 text-xs text-zinc-500">
+                <span className="min-w-0 flex-1"><b className="text-zinc-700 dark:text-zinc-300">{p.author ?? 'Alguien'}</b> · {formatDate(p.date)}</span>
+                {p.mine && p.objectId && editing?.id !== p.objectId && (
+                  <span className="flex shrink-0 gap-0.5 opacity-60 group-hover:opacity-100">
+                    <button type="button" disabled={!!busy} onClick={() => setEditing({ id: p.objectId!, text: p.text })} title="Editar el comentario" aria-label="Editar el comentario"
+                      className="rounded p-0.5 hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-40 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"><Pencil className="size-3.5" /></button>
+                    <button type="button" disabled={!!busy} onClick={() => void remove(p.objectId!)} title="Eliminar el comentario de Rally" aria-label="Eliminar el comentario de Rally"
+                      className="rounded p-0.5 hover:bg-red-50 hover:text-red-600 disabled:opacity-40 dark:hover:bg-red-950">{busy === p.objectId ? '…' : <Trash2 className="size-3.5" />}</button>
+                  </span>
+                )}
+              </div>
+              {editing && editing.id === p.objectId ? (
+                <div className="mt-1">
+                  <textarea autoFocus value={editing.text} rows={Math.min(8, Math.max(3, editing.text.split('\n').length + 1))} aria-label="Editar comentario"
+                    onChange={(e) => setEditing({ ...editing, text: e.target.value })}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void saveEdit(); }
+                      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setEditing(null); }
+                    }}
+                    className="w-full resize-y rounded-md border border-indigo-400 bg-white px-2 py-1.5 text-sm outline-none ring-1 ring-indigo-300 dark:bg-zinc-900" />
+                  <div className="mt-1 flex items-center justify-end gap-2">
+                    <span className="mr-auto text-[11px] text-zinc-400">Las menciones se mantienen si dejas el @Nombre · ⌘↵ guarda · Esc cancela</span>
+                    <button type="button" onClick={() => setEditing(null)} className="rounded-md border border-zinc-300 px-2 py-0.5 text-xs hover:bg-zinc-100 dark:border-zinc-600 dark:hover:bg-zinc-800">Cancelar</button>
+                    <button type="button" disabled={!editing.text.trim() || !!busy} onClick={() => void saveEdit()}
+                      className="rounded-md bg-indigo-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-40">{busy ? 'Guardando…' : 'Guardar en Rally'}</button>
+                  </div>
+                </div>
+              ) : (
+                <p className="mt-0.5 break-words whitespace-pre-wrap">{p.text}</p>
+              )}
             </li>
           ))}
         </ul>
