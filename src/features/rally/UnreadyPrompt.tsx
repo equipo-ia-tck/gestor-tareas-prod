@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { RallyItem, RallyRef } from '../../domain/rally';
 import { lastAnalyst, rememberAnalyst } from './AnalystPrompt';
-import { AnalystSearch } from './NeedReviewPrompt';
+import { AnalystSearch } from './UserSearch';
 import { rallyApi } from './rallyApi';
 import { Dialog } from './RallyPickers';
 

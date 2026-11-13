@@ -1,12 +1,13 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { Bug, Check, Search, UserRound, X } from 'lucide-react';
+import { Bug, Search, X } from 'lucide-react';
 import type { RallyPick, RallyRef } from '../../domain/rally';
 import { lastAnalyst, rememberAnalyst } from './AnalystPrompt';
 import { rallyApi } from './rallyApi';
 import { Dialog } from './RallyPickers';
+import { AnalystSearch, OwnerMention, box, row, useSearch } from './UserSearch';
 
 /** Lo que se ha rellenado en la ventana (todo obligatorio) o `cancel` si se cierra. */
-export type NeedReviewAnswer = { defect: RallyPick; text: string; analyst: RallyRef; reason: string } | 'cancel';
+export type NeedReviewAnswer = { defect: RallyPick; text: string; analyst: RallyRef; reason: string; owner: RallyRef | null } | 'cancel';
 
 interface Pending {
   /** FormattedID del TS. */
@@ -51,8 +52,10 @@ export function NeedReviewPrompt() {
   const [text, setText] = useState(needReviewText(DEFECT_HOLE));
   const [analyst, setAnalyst] = useState<RallyRef | null>(null);
   const [reason, setReason] = useState('');
+  /** Persona mencionada en lugar del Owner (null = el Owner). */
+  const [owner, setOwner] = useState<RallyRef | null>(null);
   useEffect(() => {
-    setStep('message'); setDefect(null); setText(needReviewText(DEFECT_HOLE)); setAnalyst(lastAnalyst()); setReason('');
+    setStep('message'); setDefect(null); setText(needReviewText(DEFECT_HOLE)); setAnalyst(lastAnalyst()); setReason(''); setOwner(null);
   }, [pending]);
   if (!pending) return null;
 
@@ -68,7 +71,7 @@ export function NeedReviewPrompt() {
   const accept = () => {
     if (!canNext || !reason.trim()) return;
     rememberAnalyst(analyst!);
-    answer({ defect: defect!, text: text.trim(), analyst: analyst!, reason: reason.trim() });
+    answer({ defect: defect!, text: text.trim(), analyst: analyst!, reason: reason.trim(), owner });
   };
   const label = 'mb-0.5 block text-xs font-bold tracking-wide text-zinc-600 uppercase dark:text-zinc-300';
 
@@ -81,9 +84,7 @@ export function NeedReviewPrompt() {
           <div>
             <span className={label}>Comentario en la discusión</span>
             <div className="rounded-md border border-zinc-300 bg-white p-2 dark:border-zinc-600 dark:bg-zinc-800">
-              {pending.owner
-                ? <span className="text-xs font-medium text-indigo-700 dark:text-indigo-300">@{pending.owner}</span>
-                : <span className="text-xs text-amber-600">No tiene Owner en Rally: no se etiqueta a nadie como PO.</span>}
+              <OwnerMention owner={pending.owner} value={owner} onChange={setOwner} />
               <textarea value={text} onChange={(e) => setText(e.target.value)} rows={4} aria-label="Comentario"
                 className="mt-1 w-full resize-y rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900" />
               <p className="text-xs"><span className="text-zinc-500">Analista: </span>
@@ -116,24 +117,6 @@ export function NeedReviewPrompt() {
   );
 }
 
-function useSearch<T>(q: string, load: (q: string) => Promise<T[]>, min: number) {
-  const [found, setFound] = useState<T[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    const term = q.trim();
-    if (term.length < min) { setFound(null); return; }
-    let live = true;
-    setFound(null);
-    setError(null);
-    const t = setTimeout(() => { load(term).then((r) => live && setFound(r), (e: Error) => live && setError(e.message)); }, 300);
-    return () => { live = false; clearTimeout(t); };
-  }, [q]); // eslint-disable-line react-hooks/exhaustive-deps
-  return { found, error };
-}
-
-const box = 'flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-2 dark:border-zinc-600 dark:bg-zinc-800';
-const row = 'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-zinc-100 dark:hover:bg-zinc-800';
-
 /** Buscador de defectos de Rally por ID o palabra (en todos los proyectos). */
 function DefectSearch({ value, onChange }: { value: RallyPick | null; onChange: (d: RallyPick | null) => void }) {
   const [q, setQ] = useState('');
@@ -162,34 +145,6 @@ function DefectSearch({ value, onChange }: { value: RallyPick | null; onChange: 
             <button key={d.id} type="button" onClick={() => onChange(d)} className={row}>
               <span className="w-20 shrink-0 font-medium">{d.id}</span><span className="flex-1 truncate" title={d.name}>{d.name}</span>
               <span className="w-32 truncate text-xs text-zinc-500">{d.project}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </>
-  );
-}
-
-/** Analista (obligatorio): el último elegido de entrada y búsqueda en Rally. */
-export function AnalystSearch({ value, onChange }: { value: RallyRef | null; onChange: (u: RallyRef) => void }) {
-  const [q, setQ] = useState('');
-  const { found, error } = useSearch(q, (term) => rallyApi.searchUsers(term), 2);
-  return (
-    <>
-      <div className={box}>
-        <Search className="size-4 text-zinc-400" />
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar en Rally por nombre, usuario o email" aria-label="Buscar analista"
-          className="w-full bg-transparent py-1.5 text-sm outline-none" />
-      </div>
-      {q.trim().length >= 2 && (
-        <div className="mt-1 max-h-40 overflow-y-auto rounded-md border border-zinc-200 p-1 dark:border-zinc-700">
-          {found === null && !error && <p className="px-2 py-1 text-xs text-zinc-400">Buscando en Rally…</p>}
-          {found && !found.length && <p className="px-2 py-1 text-xs text-zinc-400">Nadie con ese nombre.</p>}
-          {error && <p className="px-2 py-1 text-xs text-red-600">{error}</p>}
-          {found?.map((u) => (
-            <button key={u.ref} type="button" onClick={() => { onChange(u); setQ(''); }} className={row}>
-              <UserRound className="size-4 text-zinc-400" /><span className="flex-1">{u.name}</span>
-              {value?.ref === u.ref && <Check className="size-4 text-indigo-600" />}
             </button>
           ))}
         </div>

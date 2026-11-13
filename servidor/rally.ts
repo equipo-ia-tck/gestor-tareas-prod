@@ -172,20 +172,22 @@ export const MOVE_COMMENTS = {
   doing: 'Se comienza a trabajar en la guía solicitada',
   blocked: 'Guía bloqueada',
   done: 'Se finaliza la guía a la espera de validación',
+  accepted: 'Tras la revisión y OK del PO, PO IT y analista, se entrega la guía y se da por Accepted la US.\n\nGracias!',
 } as const;
 
 const isNew = (state: string) => /^new$/i.test(state.trim());
 const isDefined = (state: string) => /^defined$/i.test(state.trim());
 
 /**
- * Comentario para un movimiento (null si no toca): de New a Defined, a En curso, a Bloqueado o a Completed. Pasar a
- * Accepted o volver atrás a Por hacer no deja comentario.
+ * Comentario para un movimiento (null si no toca): de New a Defined, a En curso, a Bloqueado, a Completed o a Accepted.
+ * Volver atrás a Por hacer no deja comentario.
  */
 export function moveComment(from: Pick<RallyItem, 'state' | 'category'>, to: Pick<RallyItem, 'state' | 'category'>): string | null {
   if (from.category === to.category && from.state === to.state) return null;
   if (to.category === 'blocked') return from.category === 'blocked' ? null : MOVE_COMMENTS.blocked;
   if (to.category === 'doing') return from.category === 'doing' ? null : MOVE_COMMENTS.doing;
   if (to.category === 'done') return MOVE_COMMENTS.done;
+  if (to.category === 'accepted') return from.category === 'accepted' ? null : MOVE_COMMENTS.accepted;
   if (to.category === 'todo' && isNew(from.state) && isDefined(to.state)) return MOVE_COMMENTS.defined;
   return null;
 }
@@ -530,7 +532,7 @@ export class Rally {
    * Publica en la discusión el comentario de un movimiento, mencionando al Owner (el PO) y, si se ha elegido, al
    * analista: «@PO Guía bloqueada» + «Analista: @X». El texto es el de `MOVE_COMMENTS` o el que se haya escrito con el lápiz.
    */
-  async moveCommentPost(user: TeamUser, input: { id?: unknown; text?: unknown; analyst?: unknown }): Promise<{ text: string; owner: string | null; analyst: string | null; people: MentionedPerson[] }> {
+  async moveCommentPost(user: TeamUser, input: { id?: unknown; text?: unknown; analyst?: unknown; owner?: unknown }): Promise<{ text: string; owner: string | null; analyst: string | null; people: MentionedPerson[] }> {
     const a = await this.connected(user);
     const id = String(input.id ?? '').replace(/-/g, '').toUpperCase();
     // El texto parte de MOVE_COMMENTS, pero se puede modificar en la ventana antes de publicarlo.
@@ -539,10 +541,12 @@ export class Rally {
     if (!entry || !text || text.length > 10_000) throw new ApiError(400, 'Comentario de Rally no válido.');
     const analyst = parseUserRef(input.analyst);
     if (input.analyst != null && !analyst) throw new ApiError(400, 'Analista no válido.');
+    const ownerOverride = parseUserRef(input.owner);
+    if (input.owner != null && !ownerOverride) throw new ApiError(400, 'Persona a mencionar no válida.');
     const [type] = entry;
     const [o] = await this.query(a, type, `(FormattedID = "${id}")`);
     if (!o) throw new ApiError(404, `${id} no existe en Rally.`);
-    const { owner, people } = await this.postMoveComment(a, type, o, text, analyst);
+    const { owner, people } = await this.postMoveComment(a, type, o, text, analyst, ownerOverride);
     return { text, owner, analyst: analyst?.name ?? null, people };
   }
 
@@ -550,13 +554,22 @@ export class Rally {
    * Publica «@PO texto» + «Analista: @X» en la discusión de `o`. Devuelve el nombre del Owner mencionado y las personas
    * mencionadas con su email (para convocar la reunión de entrega desde la app).
    */
-  private async postMoveComment(a: { base_url: string; api_key: string }, type: string, o: RallyObject, text: string, analyst: RallyRef | null): Promise<{ owner: string | null; people: MentionedPerson[] }> {
-    const ownerRef = o.Owner && typeof o.Owner === 'object' ? o.Owner as RallyObject : null;
-    const ownerId = refId(ownerRef);
-    const ownerInfo = ownerRef && ownerId && /^\d+$/.test(ownerId) ? await this.userInfo(a, ownerId) : null;
-    const owner: Mention | null = ownerRef && ownerInfo
-      ? { name: refName(ownerRef) ?? 'Owner', uuid: typeof ownerRef._refObjectUUID === 'string' ? ownerRef._refObjectUUID : ownerInfo.uuid }
-      : null;
+  private async postMoveComment(a: { base_url: string; api_key: string }, type: string, o: RallyObject, text: string, analyst: RallyRef | null,
+    ownerOverride: RallyRef | null = null): Promise<{ owner: string | null; people: MentionedPerson[] }> {
+    // Se menciona al Owner del elemento, salvo que en la ventana se haya elegido a otra persona en su lugar.
+    let owner: Mention | null = null;
+    let ownerInfo: { uuid: string | null; email: string | null } | null = null;
+    if (ownerOverride) {
+      ownerInfo = await this.userInfo(a, ownerOverride.ref.split('/').pop()!);
+      owner = { name: ownerOverride.name, uuid: ownerInfo?.uuid ?? null };
+    } else {
+      const ownerRef = o.Owner && typeof o.Owner === 'object' ? o.Owner as RallyObject : null;
+      const ownerId = refId(ownerRef);
+      ownerInfo = ownerRef && ownerId && /^\d+$/.test(ownerId) ? await this.userInfo(a, ownerId) : null;
+      owner = ownerRef && ownerInfo
+        ? { name: refName(ownerRef) ?? 'Owner', uuid: typeof ownerRef._refObjectUUID === 'string' ? ownerRef._refObjectUUID : ownerInfo.uuid }
+        : null;
+    }
     const analystInfo = analyst ? await this.userInfo(a, analyst.ref.split('/').pop()!) : null;
     const analystMention: Mention | null = analyst ? { name: analyst.name, uuid: analystInfo?.uuid ?? null } : null;
     await this.post(a, '/conversationpost/create', { ConversationPost: { Artifact: `/${type}/${o.ObjectID}`, Text: moveCommentHtml(text, owner, analystMention) } });
@@ -571,7 +584,7 @@ export class Rally {
    * discusión) y el comentario «@PO se abre defect <enlace>…» + «Analista: @X». Todo es obligatorio: defecto, analista,
    * comentario y motivo. Solo test sets.
    */
-  async needReview(user: TeamUser, input: { id?: unknown; defectId?: unknown; text?: unknown; analyst?: unknown; reason?: unknown }):
+  async needReview(user: TeamUser, input: { id?: unknown; defectId?: unknown; text?: unknown; analyst?: unknown; reason?: unknown; owner?: unknown }):
     Promise<{ item: RallyItem; owner: string | null; analyst: string; commentError?: string }> {
     const a = await this.connected(user);
     const id = String(input.id ?? '').replace(/-/g, '').toUpperCase();
@@ -583,6 +596,8 @@ export class Rally {
     if (!text || text.length > 10_000) throw new ApiError(400, 'Escribe el comentario.');
     const analyst = parseUserRef(input.analyst);
     if (!analyst) throw new ApiError(400, 'Elige el analista.');
+    const ownerOverride = parseUserRef(input.owner);
+    if (input.owner != null && !ownerOverride) throw new ApiError(400, 'Persona a mencionar no válida.');
     const reason = blockedReasonText(input.reason);
     if (!reason) throw new ApiError(400, 'Escribe el motivo del bloqueo.');
     const [type, info] = entry;
@@ -599,7 +614,7 @@ export class Rally {
     const updated = await this.post(a, `/${type}/${o.ObjectID}?fetch=${FETCH}`, { [info.typeName]: { FlowState: flow.ref, Blocked: true, BlockedReason: reason } });
     const item = toRallyItem({ _type: type, ...updated }, a.base_url, a.rally_user_id)!;
     try {
-      const { owner } = await this.postMoveComment(a, type, o, text, analyst);
+      const { owner } = await this.postMoveComment(a, type, o, text, analyst, ownerOverride);
       return { item, owner, analyst: analyst.name };
     } catch (e) {
       return { item, owner: null, analyst: analyst.name, commentError: (e as Error).message };

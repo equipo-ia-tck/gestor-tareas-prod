@@ -3,9 +3,11 @@ import { Check, Pencil, Search, UserRound } from 'lucide-react';
 import type { RallyRef } from '../../domain/rally';
 import { rallyApi } from './rallyApi';
 import { Dialog } from './RallyPickers';
+import { OwnerMention } from './UserSearch';
 
 /** Respuesta de la ventana: con o sin analista, o `cancel` (la cruz, Esc o clic fuera) para no mover. */
-export type AnalystAnswer = { analyst: RallyRef | null; text: string } | 'cancel';
+/** `owner`: persona mencionada en lugar del Owner (null = el Owner del elemento). */
+export type AnalystAnswer = { analyst: RallyRef | null; text: string; owner: RallyRef | null } | 'cancel';
 
 /** Movimiento a la espera de saber si se marca analista (todavía no se ha hecho en Rally). */
 export interface PendingComment {
@@ -61,13 +63,14 @@ export function AnalystPrompt() {
   const [step, setStep] = useState<'ask' | 'pick'>('ask');
   const [text, setText] = useState('');
   const [editing, setEditing] = useState(false);
-  useEffect(() => { setStep('ask'); setText(pending?.text ?? ''); setEditing(false); }, [pending]);
+  const [owner, setOwner] = useState<RallyRef | null>(null);
+  useEffect(() => { setStep('ask'); setText(pending?.text ?? ''); setEditing(false); setOwner(null); }, [pending]);
   if (!pending) return null;
 
   const finalText = text.trim() || pending.text;
   const publish = (analyst: RallyRef | null) => {
     if (analyst) rememberAnalyst(analyst);
-    answer({ analyst, text: finalText });
+    answer({ analyst, text: finalText, owner });
   };
   const stopEditing = () => { setText(finalText); setEditing(false); };
 
@@ -78,7 +81,7 @@ export function AnalystPrompt() {
         <p className="text-xs text-zinc-500">{pending.id} · {pending.name}</p>
         {editing ? (
           <div className="mt-1">
-            {pending.owner && <span className="text-xs font-medium text-indigo-700 dark:text-indigo-300">@{pending.owner}</span>}
+            <OwnerMention owner={pending.owner} value={owner} onChange={setOwner} />
             <div className="flex items-start gap-1">
               <textarea autoFocus value={text} onChange={(e) => setText(e.target.value)} rows={3} aria-label="Comentario"
                 onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); stopEditing(); } }}
@@ -92,14 +95,14 @@ export function AnalystPrompt() {
         ) : (
           <div className="mt-1 flex items-start gap-1">
             <p className="flex-1 whitespace-pre-line">
-              {pending.owner && <span className="font-medium text-indigo-700 dark:text-indigo-300">@{pending.owner} </span>}
+              {(owner?.name ?? pending.owner) && <span className="font-medium text-indigo-700 dark:text-indigo-300">@{owner?.name ?? pending.owner} </span>}
               {finalText}
             </p>
             <button type="button" onClick={() => setEditing(true)} title="Modificar el comentario" aria-label="Modificar el comentario"
               className="rounded p-1 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"><Pencil className="size-3.5" /></button>
           </div>
         )}
-        {!pending.owner && <p className="mt-1 text-xs text-amber-600">No tiene Owner en Rally: no se etiqueta a nadie como PO.</p>}
+        {!pending.owner && !owner && <p className="mt-1 text-xs text-amber-600">No tiene Owner en Rally: no se etiqueta a nadie como PO (con el lápiz puedes mencionar a alguien).</p>}
       </div>
       {step === 'ask' ? (
         <div className="flex justify-end gap-2">

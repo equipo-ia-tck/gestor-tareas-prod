@@ -87,6 +87,7 @@ async function moveInRally(id: string, category: RallyCategory, flow: string | u
     const preview = await rallyApi.move(id, category, { dryRun: true, flow });
     let analyst: RallyRef | null = null;
     let text: string | null = null;
+    let owner: RallyRef | null = null;
     if (preview.comment) {
       // A Completed, el texto de la plantilla «Owner · Entrega de la guía» (si no, el previsto por el servidor).
       const suggested = category === 'done' && DONE_COMMENT ? DONE_COMMENT : preview.comment;
@@ -94,6 +95,7 @@ async function moveInRally(id: string, category: RallyCategory, flow: string | u
       if (answer === 'cancel') return 'cancel';
       analyst = answer.analyst;
       text = answer.text;
+      owner = answer.owner;
     }
     // Al bloquear, el comentario (sin las personas) va también al motivo de bloqueo de Rally.
     const blockedReason = category === 'blocked' ? (text ?? preview.comment ?? undefined) : undefined;
@@ -102,7 +104,7 @@ async function moveInRally(id: string, category: RallyCategory, flow: string | u
     if (!item.comment) { notify(`${id} en Rally: ${item.state}`); return item; }
     try {
       // El texto que se haya escrito en la ventana (lápiz) manda sobre el previsto.
-      const r = await rallyApi.moveComment(item.id, text ?? item.comment, analyst);
+      const r = await rallyApi.moveComment(item.id, text ?? item.comment, analyst, owner);
       notify(`${id} en Rally: ${item.state} · comentado${r.owner ? ` para ${r.owner}` : ''}${r.analyst ? ` · analista ${r.analyst}` : ''}`);
       // Entrega (a Completed): «Os mando la convocatoria» → se abre la reunión nueva con las personas mencionadas.
       if (category === 'done') askMeeting({ title: `Entrega de la guía · ${item.id} ${item.name}`, invite: r.people ?? [] });
@@ -153,7 +155,7 @@ export async function moveToNeedReview(task: Task, notify: (message: string) => 
   try {
     const answer = await askNeedReview({ id, name: known?.name ?? task.title, owner: known?.owner ?? null });
     if (answer === 'cancel') { notify(`Movimiento de ${id} cancelado`); return; }
-    const r = await rallyApi.needReview({ id, defectId: answer.defect.id, text: answer.text, analyst: answer.analyst, reason: answer.reason });
+    const r = await rallyApi.needReview({ id, defectId: answer.defect.id, text: answer.text, analyst: answer.analyst, reason: answer.reason, owner: answer.owner });
     rememberRally([r.item]);
     notify(r.commentError
       ? `${id} en Need Review y bloqueada, pero no se ha podido comentar: ${r.commentError}`

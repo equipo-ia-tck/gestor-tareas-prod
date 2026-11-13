@@ -58,7 +58,7 @@ export function RallyFlags({ item, task, reason, onChanged }: {
     if (answer === 'cancel') return null;
     const updated = await rallyApi.flag(item.id, { blocked: true, reason: answer.text });
     try {
-      await rallyApi.moveComment(item.id, answer.text, answer.analyst);
+      await rallyApi.moveComment(item.id, answer.text, answer.analyst, answer.owner);
     } catch (e) {
       setNote(`Bloqueada, pero no se ha podido comentar: ${(e as Error).message}`);
     }

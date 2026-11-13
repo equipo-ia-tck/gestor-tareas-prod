@@ -33,11 +33,12 @@ export const rallyApi = {
   message: (id: string, text: string, mentions: RallyRef[]) =>
     call<{ mentioned: string[] }>('POST', '/api/rally/message', { id, text, mentions }),
   /** TS a Need Review a la vez: columna, Blocked con motivo y comentario con PO, defecto y analista. */
-  needReview: (input: { id: string; defectId: string; text: string; analyst: RallyRef; reason: string }) =>
+  needReview: (input: { id: string; defectId: string; text: string; analyst: RallyRef; reason: string; owner?: RallyRef | null }) =>
     call<{ item: RallyItem; owner: string | null; analyst: string; commentError?: string }>('POST', '/api/rally/need-review', input),
   /** Comentario de un movimiento con el Owner (PO) y, si se elige, el analista. */
-  moveComment: (id: string, text: string, analyst: RallyRef | null) =>
-    call<{ text: string; owner: string | null; analyst: string | null; people?: { name: string; email: string | null }[] }>('POST', '/api/rally/move-comment', { id, text, analyst }),
+  /** `owner`: otra persona a mencionar en lugar del Owner (null = el Owner). */
+  moveComment: (id: string, text: string, analyst: RallyRef | null, owner: RallyRef | null = null) =>
+    call<{ text: string; owner: string | null; analyst: string | null; people?: { name: string; email: string | null }[] }>('POST', '/api/rally/move-comment', { id, text, analyst, owner }),
   comment: (item: RallyItem, text: string) =>
     call<{ post: RallyDetail['discussion'][number] }>('POST', '/api/rally/comment', { kind: item.kind, objectId: item.objectId, text }).then((r) => r.post),
   attach: (item: RallyItem, file: { name: string; contentType: string; content: string }) =>

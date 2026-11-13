@@ -278,12 +278,16 @@ describe('Rally: mover', () => {
     // Texto modificado con el lápiz (con saltos de línea); vacío no.
     await nueva.rally.moveCommentPost(nueva.marta, { id: 'US1', text: 'Guía bloqueada\nfalta el diseño', analyst: null });
     expect(comments(nueva.posts)[2].Text).toBe(`<p><span class="mention" data-mention="2a75bf52-cfd9-4550-97ec-fc6383373083">@Pepa PO</span> Guía bloqueada<br />falta el diseño</p>`);
+    // Otra persona en lugar del Owner (elegida en la ventana).
+    const otro = await nueva.rally.moveCommentPost(nueva.marta, { id: 'US1', text: 'Hola', analyst: null, owner: { ref: '/user/88', name: 'Ana PO IT' } });
+    expect(otro).toMatchObject({ owner: 'Ana PO IT', people: [{ name: 'Ana PO IT', email: 'u88@wpp.com' }] });
+    expect(comments(nueva.posts)[3].Text).toBe(`<p><span class="mention" data-mention="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb">@Ana PO IT</span> Hola</p>`);
     await expect(nueva.rally.moveCommentPost(nueva.marta, { id: 'US1', text: '  ' })).rejects.toThrow(/no válido/);
     await expect(nueva.rally.moveCommentPost(nueva.marta, { id: 'US1', text: MOVE_COMMENTS.done, analyst: { ref: 'http://x', name: 'a' } })).rejects.toThrow(/Analista/);
 
     for (const category of ['doing', 'blocked', 'done', 'accepted']) {
       const moved = await nueva.rally.move(nueva.marta, { id: 'US1', category });
-      expect(moved.comment).toBe(category === 'accepted' ? undefined : MOVE_COMMENTS[category as 'doing']);
+      expect(moved.comment).toBe(MOVE_COMMENTS[category as 'doing']);
     }
   });
 
@@ -293,7 +297,7 @@ describe('Rally: mover', () => {
     expect(doing).toMatchObject({ state: 'In-Progress', category: 'doing', comment: MOVE_COMMENTS.doing });
     const defined = await rally.move(marta, { id: 'US1', category: 'todo', dryRun: true });
     expect(defined).toMatchObject({ state: 'Defined', comment: MOVE_COMMENTS.defined });
-    expect((await rally.move(marta, { id: 'US1', category: 'accepted', dryRun: true })).comment).toBeUndefined();
+    expect((await rally.move(marta, { id: 'US1', category: 'accepted', dryRun: true })).comment).toBe(MOVE_COMMENTS.accepted);
     expect(posts).toEqual([]);
   });
 
@@ -311,7 +315,8 @@ describe('Rally: mover', () => {
     expect(moveComment(at('In-Progress', 'doing'), at('Need Review', 'doing'))).toBeNull();
     expect(moveComment(at('In-Progress', 'doing'), at('Blocked', 'blocked'))).toBe(MOVE_COMMENTS.blocked);
     expect(moveComment(at('In-Progress', 'doing'), at('Completed', 'done'))).toBe(MOVE_COMMENTS.done);
-    expect(moveComment(at('Completed', 'done'), at('Accepted', 'accepted'))).toBeNull();
+    expect(moveComment(at('Completed', 'done'), at('Accepted', 'accepted'))).toBe(MOVE_COMMENTS.accepted);
+    expect(moveComment(at('Accepted', 'accepted'), at('Accepted', 'accepted'))).toBeNull();
   });
 
   it('no escribe si ya está en esa categoría; las tareas cambian su State', async () => {

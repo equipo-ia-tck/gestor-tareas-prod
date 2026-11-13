@@ -509,8 +509,9 @@ Petición de la usuaria (oct 2026): traer Rally al gestor sin tocar el resto (en
   se ve igual pero no notifica). El UUID del Owner viene en su referencia; el del analista se pide por ObjectID (`userUuid`). Textos: «Guía definida correctamente» (New → Defined), «Se comienza a trabajar en la guía solicitada» (a En
   curso), «Guía bloqueada» o, a Completed, la plantilla «Owner · Entrega de la guía» (`plantillas/guia-5-entrega.md`, la del Mensaje al marcar Ready) sin sus huecos (`templateComment`, `doneComment.ts`; el servidor sigue proponiendo «Se finaliza la guía a la espera de validación»). Publicado ese comentario, se abre «Reunión nueva» (`MeetingPrompt`, la `NewMeeting` del Calendario) con el PO y el analista mencionados como asistentes (email de Rally: `moveCommentPost` devuelve `people`) y se puede añadir más gente. Al pasar a Bloqueado se marca
   siempre el botón Blocked y el texto final del comentario (sin menciones, en una línea, máx. 256) va a BlockedReason en el
-  mismo movimiento (`blockedReason` de `move`, `blockedReasonText`). Accepted y volver atrás no
-  comentan; si el comentario falla, el movimiento se mantiene y el aviso lo dice. New → Defined: pasar en el gestor a un
+  mismo movimiento (`blockedReason` de `move`, `blockedReasonText`). A Accepted, «Tras la revisión y OK del PO, PO IT y analista, se entrega la guía y se da por Accepted la US. Gracias!»
+  (`MOVE_COMMENTS.accepted`); volver atrás no comenta. Con el lápiz (y en Need Review) se puede pulsar la mención del Owner y
+  buscar en Rally a otra persona en su lugar (`OwnerMention` en `UserSearch.tsx`; `owner` en `move-comment` y `need-review`); si el comentario falla, el movimiento se mantiene y el aviso lo dice. New → Defined: pasar en el gestor a un
   estado de Por hacer que no sea el primero (Refinada, Diseñado) manda `todo` y el servidor lo lleva a Defined si está en New.
 - **Ready y Blocked** (`RallyFlags`, `POST /api/rally/flag`): botones en la ficha de Rally (pantalla Rally y panel de la tarea)
   que solo cambian esas marcas, nunca la columna. Blocked abre la misma ventana que mover a Bloqueado (comentario con el PO,
