@@ -87,6 +87,17 @@ export async function rallyRoute(rally: Rally, user: TeamUser, method: string, p
         throw e;
       }
     }
+    case 'POST /api/rally/attachment-delete': {
+      const body = await readBody();
+      try {
+        await rally.deleteAttachment(user, body);
+        log(`adjunto ${String(body.objectId)} eliminado`);
+        return { ok: true };
+      } catch (e) {
+        log(`eliminar adjunto ${String(body.objectId)} · ERROR: ${(e as Error).message}`);
+        throw e;
+      }
+    }
     case 'POST /api/rally/lookup':
       return { items: await rally.lookup(user, await readBody()) };
     case 'GET /api/rally/users':

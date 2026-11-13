@@ -43,6 +43,8 @@ export const rallyApi = {
     call<{ post: RallyDetail['discussion'][number] }>('POST', '/api/rally/comment', { kind: item.kind, objectId: item.objectId, text }).then((r) => r.post),
   attach: (item: RallyItem, file: { name: string; contentType: string; content: string }) =>
     call<{ file: RallyDetail['attachments'][number] }>('POST', '/api/rally/attach', { kind: item.kind, objectId: item.objectId, ...file }).then((r) => r.file),
+  /** Elimina un adjunto en Rally (no se puede deshacer). */
+  deleteAttachment: (objectId: string) => call<{ ok: boolean }>('POST', '/api/rally/attachment-delete', { objectId }),
   projects: () => call<{ projects: RallyProject[] }>('GET', '/api/rally/projects').then((r) => r.projects),
   items: (days: number, projects: string[], tags: string[] = []) =>
     call<{ items: RallyItem[]; truncated: { kind: RallyKind; total: number; shown: number }[] }>('GET', `/api/rally/items?${new URLSearchParams([['days', String(days)], ['projects', projects.join(',')], ...tags.map((t) => ['tag', t])])}`)

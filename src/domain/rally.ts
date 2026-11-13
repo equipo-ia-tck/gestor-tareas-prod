@@ -146,7 +146,8 @@ export interface RallyDetail {
   /** Elementos hijos agrupados: "Tareas", "Test Cases", "Defectos", "User Stories hijas". */
   related: { label: string; items: RallyItem[] }[];
   discussion: { author: string | null; date: string; text: string }[];
-  attachments: { name: string; size: number }[];
+  /** `objectId`: el del adjunto en Rally (para eliminarlo). */
+  attachments: { name: string; size: number; objectId?: string }[];
 }
 
 export type RallyGroupBy = 'column' | 'category' | 'state' | 'iteration' | 'assignee' | 'tag';

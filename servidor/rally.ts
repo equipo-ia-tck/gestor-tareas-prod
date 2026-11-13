@@ -349,6 +349,22 @@ export class Rally {
     return result.Object as RallyObject;
   }
 
+  /** Borra un objeto de Rally (DELETE de la WSAPI). */
+  private async remove(a: { base_url: string; api_key: string }, path: string): Promise<void> {
+    let res: Response;
+    try {
+      res = await this.fetch(`${a.base_url}/slm/webservice/v2.0${path}`, { method: 'DELETE', headers: { ZSESSIONID: a.api_key, Accept: 'application/json' } });
+    } catch {
+      throw new ApiError(502, 'No se puede conectar con Rally. Revisa la conexión (o la VPN).');
+    }
+    const json = await res.json().catch(() => null) as RallyObject | null;
+    const errors = ((json?.OperationResult as RallyObject | undefined)?.Errors ?? []) as string[];
+    const denied = res.status === 401 || res.status === 403 || errors.some((e) => /not authorized|permission|read.?only|unauthorized/i.test(e));
+    if (denied) throw new ApiError(400, 'Rally no deja eliminarlo con esta clave: tiene que ser de acceso total (Full Access) y tener permiso en el proyecto.');
+    if (errors.length) throw new ApiError(502, `Rally: ${errors.join(' ')}`);
+    if (!res.ok) throw new ApiError(502, `Rally ha respondido con un error (${res.status}).`);
+  }
+
   /** Comprueba la clave pidiendo el usuario de Rally y la guarda. */
   async connect(user: TeamUser, input: { apiKey?: unknown; baseUrl?: unknown }): Promise<RallyStatus> {
     const apiKey = String(input.apiKey ?? '').trim();
@@ -1052,9 +1068,24 @@ export class Rally {
     const contentType = /^[\w.+-]+\/[\w.+-]+$/.test(String(input.contentType ?? '')) ? String(input.contentType) : 'application/octet-stream';
     const stored = await this.post(a, '/attachmentcontent/create', { AttachmentContent: { Content: content } });
     const ref = this.relative(a, stored._ref) ?? `/attachmentcontent/${String(stored.ObjectID ?? '')}`;
-    const file = await this.post(a, '/attachment/create?fetch=Name,Size',
+    const file = await this.post(a, '/attachment/create?fetch=Name,Size,ObjectID',
       { Attachment: { Artifact: `/${entry[0]}/${input.objectId}`, Content: ref, ContentType: contentType, Name: name, Size: size } });
-    return { name: String(file.Name ?? name), size: Number(file.Size ?? size) };
+    return { name: String(file.Name ?? name), size: Number(file.Size ?? size), ...(file.ObjectID ? { objectId: String(file.ObjectID) } : {}) };
+  }
+
+  /**
+   * Elimina un adjunto de Rally (no se puede deshacer): primero el adjunto y después su contenido, que Rally guarda
+   * aparte (si el contenido no se puede borrar, el adjunto ya no se ve, así que no es un error).
+   */
+  async deleteAttachment(user: TeamUser, input: { objectId?: unknown }): Promise<void> {
+    const a = await this.connected(user);
+    const id = String(input.objectId ?? '');
+    if (!/^\d+$/.test(id)) throw new ApiError(400, 'Adjunto de Rally no válido.');
+    const [file] = await this.list(a, '/attachment', { query: `(ObjectID = ${id})`, fetch: 'Content', pagesize: '1' });
+    if (!file) throw new ApiError(404, 'Ese adjunto ya no existe en Rally.');
+    await this.remove(a, `/attachment/${id}`);
+    const content = this.relative(a, (file.Content as RallyObject | undefined)?._ref);
+    if (content && /^\/attachmentcontent\/\d+$/.test(content)) await this.remove(a, content).catch(() => undefined);
   }
 
   /** Nombre visible de cada campo de un tipo (ElementName → Name), en caché por servidor y tipo. */
@@ -1128,7 +1159,7 @@ export class Rally {
     const [tags, posts, files, ...lists] = await Promise.all([
       fetchSub('Tags', 'Name'),
       fetchSub('Discussion', 'Text,User,CreationDate', 'CreationDate'),
-      fetchSub('Attachments', 'Name,Size'),
+      fetchSub('Attachments', 'Name,Size,ObjectID'),
       ...RELATED.map(([k]) => fetchSub(k, FETCH)),
     ]);
     return {
@@ -1142,7 +1173,7 @@ export class Rally {
         items: lists[i].map((r) => toRallyItem(r, a.base_url, a.rally_user_id)).filter((x): x is RallyItem => !!x),
       })).filter((g) => g.items.length),
       discussion: posts.map((p) => ({ author: refName(p.User), date: String(p.CreationDate ?? ''), text: htmlToText(String(p.Text ?? '')) })),
-      attachments: files.map((f) => ({ name: String(f.Name ?? ''), size: Number(f.Size ?? 0) })),
+      attachments: files.map((f) => ({ name: String(f.Name ?? ''), size: Number(f.Size ?? 0), ...(f.ObjectID ? { objectId: String(f.ObjectID) } : {}) })),
     };
   }
 

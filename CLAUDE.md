@@ -438,7 +438,8 @@ Petición de la usuaria (oct 2026): traer Rally al gestor sin tocar el resto (en
 - **Servidor** (`servidor/rally.ts`, WSAPI v2 con cabecera `ZSESSIONID`): la clave de API de cada usuario se guarda solo en
   la tabla `rally_accounts` y nunca vuelve al navegador. URL por defecto `https://eu1.rallydev.com`. Las consultas van
   anidadas de dos en dos (`joinQuery`). Escribe tres cosas: la columna (FlowState, o ScheduleState/State) al mover, comentarios
-  (`conversationpost/create`) y adjuntos (`attachmentcontent` + `attachment`, máx. 25 MB). Crear devuelve `CreateResult` y
+  (`conversationpost/create`) y adjuntos (`attachmentcontent` + `attachment`, máx. 25 MB). Los adjuntos también se eliminan desde la ficha
+  (papelera con confirmación; `deleteAttachment`: DELETE del adjunto y de su contenido, `POST /api/rally/attachment-delete`). Crear devuelve `CreateResult` y
   actualizar `OperationResult`. Hace falta una clave Full Access para escribir.
 - **Crear en Rally** (`rally.create`, `POST /api/rally/create`): User Story, Defect, Defect Suite (`DS`) y Test Set en un
   proyecto; tareas dentro de una US o un defecto (`WorkProduct`). «Nuevo en Rally» (`RallyCreateForm`) es un panel lateral

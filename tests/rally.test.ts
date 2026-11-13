@@ -450,6 +450,14 @@ describe('Rally: mover', () => {
     await expect(rally.attach(marta, { kind: 'DE', objectId: '5', name: 'x', content: '!!' })).rejects.toThrow(/no válido/);
   });
 
+  it('elimina un adjunto y su contenido con DELETE', async () => {
+    const { rally, marta, gets } = await setup({ ObjectID: 31, Content: { _ref: `${ws}/attachmentcontent/900` } });
+    await rally.deleteAttachment(marta, { objectId: '31' });
+    const deletes = gets.map((u) => u.pathname.replace('/slm/webservice/v2.0', '')).filter((p) => !p.startsWith('/attachment?') && p !== '/attachment');
+    expect(deletes).toEqual(['/attachment/31', '/attachmentcontent/900']);
+    await expect(rally.deleteAttachment(marta, { objectId: '../x' })).rejects.toThrow(/no válido/);
+  });
+
   it('crea User Stories en un proyecto y tareas dentro de su US, con Owner y Assignee', async () => {
     const { rally, marta, posts } = await setup(us);
     const item = await rally.create(marta, { kind: 'US', name: '  Nuevo   login ', description: 'a < b', projectId: '7', assignToMe: true });

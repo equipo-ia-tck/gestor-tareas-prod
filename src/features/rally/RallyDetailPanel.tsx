@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { ExternalLink, Paperclip, Plus, Send, Upload, X } from 'lucide-react';
+import { ExternalLink, Paperclip, Trash2, Plus, Send, Upload, X } from 'lucide-react';
 import type { RallyDetail, RallyItem } from '../../domain/rally';
 import type { Task } from '../../domain/types';
 import { MAX_UPLOAD, rallyApi, toBase64, tooBigMessage } from './rallyApi';
@@ -317,11 +317,27 @@ function Discussion({ item, posts }: { item: RallyItem; posts: RallyDetail['disc
 /** Adjuntos de Rally: se abren en Rally y se pueden subir más (botón o soltando archivos encima), de uno en uno. */
 function Attachments({ item, files }: { item: RallyItem; files: RallyDetail['attachments'] }) {
   const [added, setAdded] = useState<RallyDetail['attachments']>([]);
+  const [removed, setRemoved] = useState<string[]>([]);
+  const [deleting, setDeleting] = useState<string | null>(null);
   const [uploading, setUploading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [over, setOver] = useState(false);
   const input = useRef<HTMLInputElement>(null);
-  const all = [...files, ...added];
+  const all = [...files, ...added].filter((f) => !f.objectId || !removed.includes(f.objectId));
+
+  const remove = async (f: RallyDetail['attachments'][number]) => {
+    if (!f.objectId || !window.confirm(`¿Eliminar «${f.name}» de Rally? No se puede deshacer.`)) return;
+    setError(null);
+    setDeleting(f.objectId);
+    try {
+      await rallyApi.deleteAttachment(f.objectId);
+      setRemoved((l) => [...l, f.objectId!]);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setDeleting(null);
+    }
+  };
 
   const upload = async (list: File[]) => {
     setError(null);
@@ -359,6 +375,12 @@ function Attachments({ item, files }: { item: RallyItem; files: RallyDetail['att
                 <Paperclip className="size-3.5 shrink-0 text-zinc-400" />
                 <a href={item.url} target="_blank" rel="noreferrer" className="min-w-0 flex-1 truncate hover:underline" title="Se abre en Rally">{f.name}</a>
                 <span className="shrink-0 text-xs text-zinc-400">{formatSize(f.size)}</span>
+                {f.objectId && (
+                  <button type="button" onClick={() => void remove(f)} disabled={!!deleting} title={`Eliminar ${f.name} de Rally`} aria-label={`Eliminar ${f.name} de Rally`}
+                    className="shrink-0 rounded p-0.5 text-zinc-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:hover:bg-red-950">
+                    {deleting === f.objectId ? <span className="px-0.5 text-[11px]">…</span> : <Trash2 className="size-3.5" />}
+                  </button>
+                )}
               </li>
             ))}
           </ul>
