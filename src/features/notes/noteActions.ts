@@ -1,6 +1,6 @@
 import { repo } from '../../data/services';
-import { actionItems, setChecked, setTaskMarker, type ActionItem } from '../../domain/markdown';
-import type { Note, Task } from '../../domain/types';
+import { actionItems, plainLine, setChecked, setTaskMarker, type ActionItem } from '../../domain/markdown';
+import type { NewTask, Note, Task } from '../../domain/types';
 import type { CaptureContext } from '../../parser/types';
 import { parseCapture } from '../../parser/parseCapture';
 import { submitCapture } from '../capture/submitCapture';
@@ -39,4 +39,24 @@ export async function toggleAction(note: Note, line: number, taskId: string | nu
     if (task) await repo.setCompleted(task.id, checked);
     await repo.updateNote(note.id, { body: setChecked(note.body, line, checked) });
   });
+}
+
+/**
+ * Convierte una línea de una nota (con @persona o #proyecto) en tarea: pasa por el parser de captura (persona,
+ * proyecto, fecha, !1…) y la línea queda enlazada con [[t:id]], así no se vuelve a ofrecer. Sin #proyecto, la tarea va
+ * al de `defaults` o al de la nota. Un solo "Deshacer".
+ */
+export async function createTaskFromLine(note: Note, line: number, ctx: CaptureContext, defaults: Partial<NewTask> = {}, label = 'Tarea creada desde la nota'): Promise<Task | null> {
+  const raw = note.body.split('\n')[line];
+  if (raw === undefined) return null;
+  // "@Diana: revisar…" → "@Diana revisar…" (la persona va al campo Personas y no se queda un ":" suelto).
+  const text = plainLine(raw).replace(/^(@[\p{L}\p{N}_\-.]*[\p{L}\p{N}_])\s*[:,]\s*/u, '$1 ');
+  const parsed = parseCapture(text, ctx).filter((p) => p.title);
+  if (!parsed.length) return null;
+  let task: Task | null = null;
+  await repo.batch(label, async () => {
+    [task] = await submitCapture(parsed.slice(0, 1), { project_id: note.project_id, notes: fromNote(note), ...defaults });
+    await repo.updateNote(note.id, { body: setTaskMarker(note.body, line, task.id) });
+  });
+  return task;
 }
