@@ -6,16 +6,17 @@ import { askAnalyst } from './AnalystPrompt';
 import { rallyApi } from './rallyApi';
 import { rememberRally } from './rallyStore';
 import { RallyMessage } from './RallyMessage';
-import { UnreadyPrompt } from './UnreadyPrompt';
 
 const BLOCK_COMMENT = 'Guía bloqueada';
+/** Comentario que se propone al quitar Ready (con el PO y el analista, como al mover). */
+export const UNREADY_TEXT = 'Tengo la lista validada por si la quieres revisar antes de la reunión con PO y PO IT';
 
 /**
  * Botones Ready y Blocked de la ficha, como en Rally. No cambian el elemento de columna (ni la tarea de bloque en el
  * gestor). Blocked abre la misma ventana que mover a Bloqueado: comentario con el PO (editable con el lápiz) y analista;
  * al aceptar marca Blocked con ese texto como motivo y lo publica en la discusión. Cerrar la ventana no cambia nada.
  * Marcar Ready abre después «Mensaje» (`RallyMessage`: plantillas y personas de Rally etiquetadas); Ready queda marcado
- * aunque se cierre sin mensaje. Quitar Ready propone avisar al analista (`UnreadyPrompt`: «Tengo la lista validada…»).
+ * aunque se cierre sin mensaje. Quitar Ready abre la ventana de los movimientos (`askAnalyst`) con «Tengo la lista validada…».
  */
 export function RallyFlags({ item, task, reason, onChanged }: {
   item: RallyItem;
@@ -25,7 +26,6 @@ export function RallyFlags({ item, task, reason, onChanged }: {
   onChanged: (item: RallyItem) => void;
 }) {
   const [message, setMessage] = useState<RallyItem | null>(null);
-  const [unready, setUnready] = useState<RallyItem | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -48,7 +48,21 @@ export function RallyFlags({ item, task, reason, onChanged }: {
   const toggleReady = () => run(async () => {
     const updated = await rallyApi.flag(item.id, { ready: !item.ready });
     if (updated.ready) setMessage(updated);
-    else if (item.ready) setUnready(updated);
+    else if (item.ready) {
+      // Ready ya está quitado: ahora la misma ventana que al mover (lápiz, mención del PO cambiable y analista).
+      rememberRally([updated]);
+      onChanged(updated);
+      const answer = await askAnalyst({ id: item.id, name: item.name, text: UNREADY_TEXT, owner: item.owner,
+        closeHint: 'Ready ya está quitado. Si cierras esta ventana no se comenta nada.' });
+      if (answer !== 'cancel') {
+        try {
+          const r = await rallyApi.moveComment(item.id, answer.text, answer.analyst, answer.owner);
+          setNote(`Comentado en ${item.id}${r.owner ? ` para ${r.owner}` : ''}${r.analyst ? ` · analista ${r.analyst}` : ''}`);
+        } catch (e) {
+          setNote(`Ready quitado, pero no se ha podido comentar: ${(e as Error).message}`);
+        }
+      }
+    }
     return updated;
   });
   const toggleBlocked = () => run(async () => {
@@ -94,7 +108,6 @@ export function RallyFlags({ item, task, reason, onChanged }: {
         <RallyMessage item={message} task={task} onClose={() => setMessage(null)}
           onPosted={(m) => { setNote(m); onChanged(message); }} />
       )}
-      {unready && <UnreadyPrompt item={unready} onClose={() => setUnready(null)} onPosted={setNote} />}
     </div>
   );
 }

@@ -524,7 +524,7 @@ Petición de la usuaria (oct 2026): traer Rally al gestor sin tocar el resto (en
   lápiz y analista; cerrar no cambia nada) y su texto va a BlockedReason; desbloquear borra el motivo. Para que la marca no
   cambie de bloque, `rallyCategory` solo tiene en cuenta Blocked cuando el elemento no tiene FlowState (tareas de Rally).
 - **Mensaje al marcar Ready** (`RallyMessage`, `POST /api/rally/message`, `messageHtml`): las plantillas de «Preparar mensaje»
-  con las personas buscadas en Rally; cada «@Nombre» elegido se publica como mención de Rally (avisa). «Etiquetar a» añade más. **Al quitar Ready** (`UnreadyPrompt`) se propone publicar «@Analista Tengo la lista validada por si la quieres revisar antes de la reunión con PO y PO IT» (texto editable, analista buscado en Rally, de entrada el último; va por `message`); «No comentar» o cerrar no publica.
+  con las personas buscadas en Rally; cada «@Nombre» elegido se publica como mención de Rally (avisa). «Etiquetar a» añade más. **Al quitar Ready** se abre la misma ventana que al mover (`askAnalyst`: lápiz, mención del PO cambiable y analista) con «Tengo la lista validada por si la quieres revisar antes de la reunión con PO y PO IT» y se publica con `move-comment`; cerrar no publica (Ready ya está quitado).
 - **Enlaces**: `commentHtml` convierte http(s):// y www. en `<a>` (Rally no enlaza el texto plano). Vale para comentarios,
   mensajes, descripción y notas al crear.
 - **Tablero «Como en Rally»** (`RallyBoard`, por defecto en el Tablero mixto; «Por grupo» vuelve a las categorías,
