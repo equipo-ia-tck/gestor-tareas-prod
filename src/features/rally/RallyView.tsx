@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { ExternalLink, Layers, Pin, Plus, RefreshCw, Search, Unplug, Wand2, X } from 'lucide-react';
+import { Columns3, ExternalLink, Layers, Pin, Plus, RefreshCw, Search, Unplug, Wand2, X } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
 import { ActionButton, Section } from '../../components/TaskList';
 import { Avatar } from '../../components/ui/Badges';
+import { Popover } from '../../components/ui/Popover';
 import { ProjectOptions } from '../../components/ui/ProjectOptions';
 import { inputClass } from '../../components/ui/styles';
 import { repo } from '../../data/services';
@@ -193,6 +194,18 @@ function ProjectChips({ projects, selected, onToggle, pinned, onPin }: {
   );
 }
 const GROUP_LABEL: Record<RallyGroupBy, string> = { column: 'estado del tablero', category: 'categoría', state: 'estado exacto de Rally', iteration: 'iteración', assignee: 'persona', tag: 'etiqueta' };
+/** Qué se enseña en cada fila (se recuerda en localStorage). Lo secundario va debajo del nombre, así el nombre cabe entero. */
+interface RallyColumns {
+  owner: boolean; state: boolean; assignee: boolean; tags: boolean; project: boolean; iteration: boolean;
+  /** El nombre en varias líneas (si no, en una y cortado). */
+  wrap: boolean;
+}
+const DEFAULT_COLUMNS: RallyColumns = { owner: true, state: true, assignee: true, tags: true, project: true, iteration: false, wrap: true };
+const COLUMN_LABELS: [keyof RallyColumns, string][] = [
+  ['wrap', 'Nombre completo (en varias líneas)'], ['owner', 'Owner'], ['state', 'Estado'],
+  ['assignee', 'Asignado a (debajo del nombre)'], ['tags', 'Etiquetas (debajo)'], ['project', 'Proyecto (debajo)'], ['iteration', 'Iteración (debajo)'],
+];
+
 const NO_GROUP: Partial<Record<RallyGroupBy, string>> = { iteration: 'Sin iteración', assignee: 'Sin asignar', tag: 'Sin etiqueta' };
 
 function RallyItems() {
@@ -223,7 +236,10 @@ function RallyItems() {
   const [prefill, setPrefill] = useState<RallyPrefill | null>(null);
   const closePanel = useCallback(() => setOpen(null), []);
   // Con el panel abierto, la vista usa todo el ancho y el panel es una columna más (como en el Tablero).
-  useWideLayout(!!open);
+  // Siempre a todo el ancho: con la ficha abierta y sin ella, para que los nombres quepan.
+  useWideLayout(true);
+  const [storedColumns, setColumns] = usePersistentState<RallyColumns>('rally-columns', DEFAULT_COLUMNS);
+  const cols = { ...DEFAULT_COLUMNS, ...storedColumns };
 
   useEffect(() => {
     rallyApi.projects().then(setRallyProjects, (e: Error) => setError(e.message));
@@ -345,6 +361,22 @@ function RallyItems() {
         <select className={`${inputClass} w-auto py-0.5 text-xs`} value={groupBy} onChange={(e) => setGroupBy(e.target.value as RallyGroupBy)} aria-label="Agrupar por">
           {(Object.keys(GROUP_LABEL) as RallyGroupBy[]).map((g) => <option key={g} value={g}>Agrupar por {GROUP_LABEL[g]}</option>)}
         </select>
+        <Popover width="w-64" trigger={(toggle, isOpen) => (
+          <button type="button" onClick={toggle} aria-expanded={isOpen}
+            className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2 py-0.5 text-xs text-zinc-600 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800">
+            <Columns3 className="size-3.5" />Columnas
+          </button>
+        )}>
+          {() => (<div className="p-2 text-sm">
+            <p className="mb-1 text-xs font-semibold tracking-wide text-zinc-500 uppercase">Qué ver en cada fila</p>
+            {COLUMN_LABELS.map(([key, label]) => (
+              <label key={key} className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 hover:bg-zinc-100 dark:hover:bg-zinc-800">
+                <input type="checkbox" checked={cols[key]} onChange={(e) => setColumns({ ...cols, [key]: e.target.checked })} />{label}
+              </label>
+            ))}
+            <button type="button" onClick={() => setColumns(DEFAULT_COLUMNS)} className="mt-1 px-1 text-xs text-indigo-600 hover:underline dark:text-indigo-400">Volver a lo de serie</button>
+          </div>)}
+        </Popover>
         <span className="ml-auto inline-flex items-center gap-2">
           {loadedAt && <span className="text-xs text-zinc-400">Actualizado {loadedAt.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}</span>}
           <ActionButton icon={<Plus className="size-4" />} onClick={() => { setPrefill(null); setCreating(!!rallyProjects); }}>Nuevo en Rally</ActionButton>
@@ -387,8 +419,9 @@ function RallyItems() {
 
       {visible.length > 0 && (
         <div className="-mx-2 mb-1 hidden gap-2 border-b border-zinc-200 px-2 pb-1 text-[11px] font-semibold tracking-wide text-zinc-400 uppercase md:flex dark:border-zinc-700">
-          <span className="w-7" /><span className="w-24">ID</span><span className="flex-1">Name</span><span className="w-40">Owner</span>
-          <span className="w-36 text-right">Estado</span><span className="w-24" />
+          <span className="w-7" /><span className="w-24">ID</span><span className="flex-1">Name</span>
+          {cols.owner && <span className="w-40">Owner</span>}
+          {cols.state && <span className="w-36 text-right">Estado</span>}<span className="w-24" />
         </div>
       )}
       {groupRally(visible, groupBy).map((g) => (
@@ -404,24 +437,35 @@ function RallyItems() {
                   <a href={it.url} target="_blank" rel="noreferrer" className="inline-flex w-24 shrink-0 items-center gap-0.5 font-mono text-xs text-indigo-600 hover:underline" title="Abrir en Rally">
                     {it.id}<ExternalLink className="size-3" />
                   </a>
-                  {/* Columnas fijas (ID, Owner, Estado) para que cuadren con la cabecera; lo variable va junto al nombre. */}
-                  <span className="flex min-w-0 flex-1 items-center gap-2">
-                    <span className="min-w-0 truncate" title={it.name}>{it.name}</span>
-                    {groupBy !== 'assignee' && it.assignee && it.assignee !== it.owner && (
-                      <span className={`hidden max-w-32 shrink-0 truncate text-xs md:inline ${it.mine ? 'font-semibold text-indigo-600 dark:text-indigo-400' : 'text-zinc-400'}`} title={`Assignee en Rally: ${it.assignee}`}>
-                        → {it.mine ? 'Tú' : it.assignee}
-                      </span>
-                    )}
-                    {groupBy !== 'tag' && it.tags.slice(0, 2).map((t) => (
-                      <span key={t} className={`hidden max-w-28 shrink-0 truncate rounded px-1.5 text-[11px] 2xl:inline ${tags.some((x) => x.name === t) ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300' : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'}`} title={it.tags.join(', ')}>{t}</span>
-                    ))}
-                    {groupBy !== 'tag' && it.tags.length > 2 && <span className="hidden shrink-0 text-[11px] text-zinc-400 2xl:inline" title={it.tags.join(', ')}>+{it.tags.length - 2}</span>}
-                    {!projectMode && it.project && <span className="hidden max-w-40 shrink-0 truncate text-xs text-zinc-400 lg:inline" title={it.project}>{it.project}</span>}
+                  {/* Columnas fijas (ID, Owner, Estado) para que cuadren con la cabecera; lo secundario va debajo del nombre. */}
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className={cols.wrap ? 'break-words' : 'truncate'} title={it.name}>{it.name}</span>
+                    {(() => {
+                      const showAssignee = cols.assignee && groupBy !== 'assignee' && it.assignee && it.assignee !== it.owner;
+                      const showTags = cols.tags && groupBy !== 'tag' && it.tags.length > 0;
+                      const showProject = cols.project && !projectMode && it.project;
+                      const showIteration = cols.iteration && groupBy !== 'iteration' && it.iteration;
+                      if (!showAssignee && !showTags && !showProject && !showIteration) return null;
+                      return (
+                        <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-zinc-400">
+                          {showAssignee && (
+                            <span className={it.mine ? 'font-semibold text-indigo-600 dark:text-indigo-400' : ''} title={`Assignee en Rally: ${it.assignee}`}>→ {it.mine ? 'Tú' : it.assignee}</span>
+                          )}
+                          {showProject && <span title="Proyecto en Rally">{it.project}</span>}
+                          {showIteration && <span title="Iteración">{it.iteration}</span>}
+                          {showTags && it.tags.map((t) => (
+                            <span key={t} className={`rounded px-1.5 text-[11px] ${tags.some((x) => x.name === t) ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300' : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'}`}>{t}</span>
+                          ))}
+                        </span>
+                      );
+                    })()}
                   </span>
-                  <span className="hidden w-40 shrink-0 items-center gap-1.5 text-xs text-zinc-600 md:inline-flex dark:text-zinc-300" title="Owner en Rally">
-                    {it.owner ? <><Avatar name={it.owner} size={18} /><span className="truncate">{it.owner}</span></> : <span className="text-zinc-400">Sin owner</span>}
-                  </span>
-                  <span className="flex w-36 shrink-0 justify-end">
+                  {cols.owner && (
+                    <span className="hidden w-40 shrink-0 items-center gap-1.5 text-xs text-zinc-600 md:inline-flex dark:text-zinc-300" title="Owner en Rally">
+                      {it.owner ? <><Avatar name={it.owner} size={18} /><span className="truncate">{it.owner}</span></> : <span className="text-zinc-400">Sin owner</span>}
+                    </span>
+                  )}
+                  {cols.state && <span className="flex w-36 shrink-0 justify-end">
                     {(() => {
                       // El estado con el nombre de la columna del Tablero (así se busca igual en los dos sitios).
                       const col = boardColumnOf(it);
@@ -435,7 +479,7 @@ function RallyItems() {
                         </span>
                       );
                     })()}
-                  </span>
+                  </span>}
                   {task ? (
                     <button type="button" onClick={() => openTask(task)} className="w-24 shrink-0 rounded-md px-2 py-0.5 text-xs text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950">
                       {task.status === 'done' ? '✓ Hecha aquí' : 'En el gestor'}
