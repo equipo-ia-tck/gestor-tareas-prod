@@ -51,3 +51,14 @@ describe('plantillas de mensajes', () => {
       .toBe('Hola <PO IT>,\nHe creado el defect DE125701.\ncc Ana, <PO IT>');
   });
 });
+
+describe('templateComment', () => {
+  it('la entrega de la guía sin huecos: «Hola,» y sin la línea de cc', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { templateComment } = await import('../src/domain/templates');
+    const text = templateComment(parseTemplate('guia-5-entrega', readFileSync('plantillas/guia-5-entrega.md', 'utf8')));
+    expect(text.startsWith('Hola,\n\nDejo adjunta la guía')).toBe(true);
+    expect(text.endsWith('Un saludo')).toBe(true);
+    expect(text).not.toMatch(/\{|cc/);
+  });
+});

@@ -98,3 +98,21 @@ export function fillTemplate(tpl: MessageTemplate, task: Task, ctx: TemplateCont
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
+
+/**
+ * Texto de una plantilla para un comentario de Rally, sin preguntar nada: los huecos `{?…}` se quitan («Hola {?PO},» →
+ * «Hola,») y una línea que solo tenía huecos (o un «cc» con huecos) desaparece. La persona se menciona aparte.
+ */
+export function templateComment(tpl: MessageTemplate): string {
+  return tpl.body
+    .split('\n')
+    .flatMap((line) => {
+      if (!line.match(PROMPT)) return [line];
+      const left = line.replace(PROMPT, '').replace(/\s+([,.;:])/g, '$1').replace(/([,;])(\s*[,;])+/g, '$1').replace(/\s{2,}/g, ' ').trim();
+      // Solo quedan separadores o una palabra corta («cc», «y»): fuera la línea.
+      return /^[\p{L}]{0,3}[\s,;:.y]*$/u.test(left) ? [] : [left];
+    })
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}

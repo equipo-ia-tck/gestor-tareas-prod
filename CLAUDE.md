@@ -507,7 +507,7 @@ Petición de la usuaria (oct 2026): traer Rally al gestor sin tocar el resto (en
   @X» (`mentionHtml`). **Las menciones tienen que ir como las guarda el editor de Rally**,
   `<span class="mention" data-mention="<_refObjectUUID>">@Nombre</span>`, o Rally no avisa por correo (un enlace a la ficha
   se ve igual pero no notifica). El UUID del Owner viene en su referencia; el del analista se pide por ObjectID (`userUuid`). Textos: «Guía definida correctamente» (New → Defined), «Se comienza a trabajar en la guía solicitada» (a En
-  curso), «Guía bloqueada» o «Se finaliza la guía a la espera de validación» (a Completed). Al pasar a Bloqueado se marca
+  curso), «Guía bloqueada» o, a Completed, la plantilla «Owner · Entrega de la guía» (`plantillas/guia-5-entrega.md`, la del Mensaje al marcar Ready) sin sus huecos (`templateComment`, `doneComment.ts`; el servidor sigue proponiendo «Se finaliza la guía a la espera de validación»). Al pasar a Bloqueado se marca
   siempre el botón Blocked y el texto final del comentario (sin menciones, en una línea, máx. 256) va a BlockedReason en el
   mismo movimiento (`blockedReason` de `move`, `blockedReasonText`). Accepted y volver atrás no
   comentan; si el comentario falla, el movimiento se mantiene y el aviso lo dice. New → Defined: pasar en el gestor a un

@@ -5,6 +5,7 @@ import type { Task } from '../../domain/types';
 import { rallyApi } from './rallyApi';
 import { askAnalyst } from './AnalystPrompt';
 import { askNeedReview } from './NeedReviewPrompt';
+import { DONE_COMMENT } from './doneComment';
 import { rallyItem, rememberRally } from './rallyStore';
 
 let running = false;
@@ -86,7 +87,9 @@ async function moveInRally(id: string, category: RallyCategory, flow: string | u
     let analyst: RallyRef | null = null;
     let text: string | null = null;
     if (preview.comment) {
-      const answer = await askAnalyst({ id: preview.id, name: preview.name, text: preview.comment, owner: preview.owner });
+      // A Completed, el texto de la plantilla «Owner · Entrega de la guía» (si no, el previsto por el servidor).
+      const suggested = category === 'done' && DONE_COMMENT ? DONE_COMMENT : preview.comment;
+      const answer = await askAnalyst({ id: preview.id, name: preview.name, text: suggested, owner: preview.owner });
       if (answer === 'cancel') return 'cancel';
       analyst = answer.analyst;
       text = answer.text;
