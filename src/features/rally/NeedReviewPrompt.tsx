@@ -40,7 +40,8 @@ function answer(a: NeedReviewAnswer) {
 
 /**
  * TS a Need Review: primero el comentario («@PO se abre defect <enlace>…» + «Analista: @X», con buscador de defectos de
- * Rally que pone el enlace solo) y después el motivo del bloqueo (solo va a BlockedReason, no a la discusión). Todo es
+ * Rally que pone el enlace solo) y después el motivo del bloqueo (de entrada, el ID del defecto; solo va a BlockedReason,
+ * no a la discusión). Todo es
  * obligatorio y se hace a la vez al final; cerrar en cualquier paso cancela todo.
  */
 export function NeedReviewPrompt() {
@@ -59,6 +60,8 @@ export function NeedReviewPrompt() {
   const chooseDefect = (d: RallyPick | null) => {
     const before = link(defect);
     setText((t) => (t.includes(before) ? t.replace(before, link(d)) : t));
+    // El motivo del bloqueo es el ID del defecto (DE12345), salvo que ya se haya escrito otro a mano.
+    setReason((r) => (!r.trim() || r.trim() === defect?.id ? d?.id ?? '' : r));
     setDefect(d);
   };
   const canNext = !!defect && !!analyst && !!text.trim() && !text.includes(DEFECT_HOLE);
@@ -96,7 +99,7 @@ export function NeedReviewPrompt() {
         </div>
       ) : (
         <div className="space-y-3">
-          <p className="text-xs text-zinc-500">Se marca Blocked en Rally con este motivo. No se publica en la discusión.</p>
+          <p className="text-xs text-zinc-500">Se marca Blocked en Rally con este motivo (de entrada, el ID del defecto). No se publica en la discusión.</p>
           <textarea autoFocus value={reason} onChange={(e) => setReason(e.target.value)} rows={3} maxLength={256} aria-label="Motivo del bloqueo"
             placeholder="¿Por qué está bloqueado?"
             className="w-full resize-y rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-600 dark:bg-zinc-800" />

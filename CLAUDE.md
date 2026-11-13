@@ -528,7 +528,8 @@ Petición de la usuaria (oct 2026): traer Rally al gestor sin tocar el resto (en
 - **TS a Need Review** (`NeedReviewPrompt`, `moveToNeedReview`, `POST /api/rally/need-review`): en el Tablero «Como en Rally»
   solo los TS entran en Need Review (el resto se rechaza con aviso). Se abre una ventana con buscador de defectos de Rally
   (`pick` con `types: ['DE']`, que ahora devuelve también `url`) que pone el enlace en «@PO se abre defect <enlace> por errores
-  encontrado en la validación…» + «Analista: @X», y después pide el motivo del bloqueo. Todo es obligatorio y se hace a la vez
+  encontrado en la validación…» + «Analista: @X», y después pide el motivo del bloqueo (viene relleno con el ID del
+  defecto elegido, `DE12345`, y se puede cambiar). Todo es obligatorio y se hace a la vez
   en el servidor (`needReview`: FlowState Need Review + Blocked + BlockedReason en un solo cambio y después el comentario); el
   motivo no va a la discusión. Cerrar en cualquier paso cancela todo.
 - **Pantalla Rally** (`features/rally/`): proyectos elegibles (banner), agrupación por categoría, columna, iteración o persona,
