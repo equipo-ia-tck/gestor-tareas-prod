@@ -171,7 +171,7 @@ function DefectSearch({ value, onChange }: { value: RallyPick | null; onChange: 
 }
 
 /** Analista (obligatorio): el último elegido de entrada y búsqueda en Rally. */
-function AnalystSearch({ value, onChange }: { value: RallyRef | null; onChange: (u: RallyRef) => void }) {
+export function AnalystSearch({ value, onChange }: { value: RallyRef | null; onChange: (u: RallyRef) => void }) {
   const [q, setQ] = useState('');
   const { found, error } = useSearch(q, (term) => rallyApi.searchUsers(term), 2);
   return (

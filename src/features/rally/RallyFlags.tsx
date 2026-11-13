@@ -6,6 +6,7 @@ import { askAnalyst } from './AnalystPrompt';
 import { rallyApi } from './rallyApi';
 import { rememberRally } from './rallyStore';
 import { RallyMessage } from './RallyMessage';
+import { UnreadyPrompt } from './UnreadyPrompt';
 
 const BLOCK_COMMENT = 'Guía bloqueada';
 
@@ -14,7 +15,7 @@ const BLOCK_COMMENT = 'Guía bloqueada';
  * gestor). Blocked abre la misma ventana que mover a Bloqueado: comentario con el PO (editable con el lápiz) y analista;
  * al aceptar marca Blocked con ese texto como motivo y lo publica en la discusión. Cerrar la ventana no cambia nada.
  * Marcar Ready abre después «Mensaje» (`RallyMessage`: plantillas y personas de Rally etiquetadas); Ready queda marcado
- * aunque se cierre sin mensaje.
+ * aunque se cierre sin mensaje. Quitar Ready propone avisar al analista (`UnreadyPrompt`: «Tengo la lista validada…»).
  */
 export function RallyFlags({ item, task, reason, onChanged }: {
   item: RallyItem;
@@ -24,6 +25,7 @@ export function RallyFlags({ item, task, reason, onChanged }: {
   onChanged: (item: RallyItem) => void;
 }) {
   const [message, setMessage] = useState<RallyItem | null>(null);
+  const [unready, setUnready] = useState<RallyItem | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -46,6 +48,7 @@ export function RallyFlags({ item, task, reason, onChanged }: {
   const toggleReady = () => run(async () => {
     const updated = await rallyApi.flag(item.id, { ready: !item.ready });
     if (updated.ready) setMessage(updated);
+    else if (item.ready) setUnready(updated);
     return updated;
   });
   const toggleBlocked = () => run(async () => {
@@ -91,6 +94,7 @@ export function RallyFlags({ item, task, reason, onChanged }: {
         <RallyMessage item={message} task={task} onClose={() => setMessage(null)}
           onPosted={(m) => { setNote(m); onChanged(message); }} />
       )}
+      {unready && <UnreadyPrompt item={unready} onClose={() => setUnready(null)} onPosted={setNote} />}
     </div>
   );
 }
