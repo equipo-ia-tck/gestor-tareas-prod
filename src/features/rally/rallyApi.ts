@@ -24,8 +24,9 @@ export const rallyApi = {
   pick: (filter: { types: string[]; q: string; project: string; release: string; page: number }) =>
     call<{ items: RallyPick[]; total: number }>('GET', `/api/rally/pick?${new URLSearchParams({ ...filter, types: filter.types.join(','), page: String(filter.page) })}`),
   tags: (q: string, page: number) => call<{ items: RallyRef[]; total: number }>('GET', `/api/rally/tags?q=${encodeURIComponent(q)}&page=${page}`),
-  formOptions: (kind: RallyCreatableKind, projectId: string) =>
-    call<RallyFormOptions>('GET', `/api/rally/form?kind=${kind}&project=${projectId}`),
+  /** `ruleFields`: campos que piden las reglas de trabajo del proyecto (se recuerdan tras un error al crear). */
+  formOptions: (kind: RallyCreatableKind, projectId: string, ruleFields: string[] = []) =>
+    call<RallyFormOptions>('GET', `/api/rally/form?${new URLSearchParams([['kind', kind], ['project', projectId], ...ruleFields.map((f) => ['rule', f])])}`),
   /** Botones Ready y Blocked (sin cambiar de columna). `reason`: motivo al bloquear (el texto del comentario). */
   flag: (id: string, change: { ready?: boolean; blocked?: boolean; reason?: string }) =>
     call<{ item: RallyItem }>('POST', '/api/rally/flag', { id, ...change }).then((r) => r.item),

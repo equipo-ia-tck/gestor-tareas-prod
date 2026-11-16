@@ -447,7 +447,10 @@ Petición de la usuaria (oct 2026): traer Rally al gestor sin tocar el resto (en
   con el mismo formulario que el «New Item» de Rally: Ready/Blocked, color, Owner, Assignee, proyecto, Schedule State y Flow
   State (elegir uno mueve el otro; se envía solo FlowState si hay columna), estimación, descripción, padre, etiquetas,
   release, iteración, milestones, Expedite, feature, adjuntos (se suben después de crear), notas, campos de defecto
-  (Severity, Priority, State, Environment) y los **campos personalizados obligatorios** del tipo. Las opciones salen de
+  (Severity, Priority, State, Environment) y los **campos personalizados obligatorios** del tipo. Las **reglas de trabajo** del proyecto («Work Rule Error: X is required», p. ej. APPGAR,
+  Tipo, Canal, Propagado a producción, Source Team) no salen en la definición del tipo: al fallar el alta, `workRuleFields` lee
+  sus nombres del error, se recuerdan por tipo y proyecto (localStorage `gestor-tareas:rally-rule-fields:<tipo>:<proyecto>`) y
+  `formOptions(…, ruleFields)` (`?rule=`) los añade a los obligatorios con sus valores, marcados «regla del proyecto». Las opciones salen de
   `GET /api/rally/form` (`formOptions`: columnas, valores permitidos de la definición del tipo, releases e iteraciones del
   proyecto, miembros y permisos del proyecto, etiquetas y milestones; en caché 10 min). Las referencias se validan por
   tipo (`/release/123`…). Si el tipo no tiene `c_Assignee`, se reintenta sin él. La ficha de una US/DE sigue teniendo el

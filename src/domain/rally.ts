@@ -34,7 +34,8 @@ export interface RallyFormOptions {
   /** Valores permitidos de los campos de defecto (Severity, Priority, State, Environment); vacío si no aplica. */
   values: Record<string, string[]>;
   /** Campos personalizados obligatorios del tipo, para poder crearlo. */
-  custom: { field: string; label: string; values: string[] }[];
+  /** Campos personalizados obligatorios; `rule`: los pide una regla de trabajo del proyecto (no el tipo). */
+  custom: { field: string; label: string; values: string[]; rule?: boolean }[];
 }
 
 /** Resultado del buscador «Elegir padre» (`GET /api/rally/pick`). */
@@ -353,4 +354,17 @@ export function rallyColumnOf(rallyState: string | undefined, category: StateCat
   if (exact) return exact.name;
   if (chosen && RALLY_COLUMNS.some((c) => c.name === chosen)) return chosen;
   return (RALLY_COLUMNS.find((c) => c.home && c.category === category) ?? RALLY_COLUMNS[0]).name;
+}
+
+/**
+ * Campos que pide una regla de trabajo de Rally en el error al crear, por su nombre visible:
+ * «WREDefect.Source Team:Work Rule Error: … Source Team is required (WR45…)» → «Source Team».
+ */
+export function workRuleFields(message: string): string[] {
+  const out: string[] = [];
+  for (const m of message.matchAll(/WRE[A-Za-z]+\.(.+?):\s*Work Rule Error/g)) {
+    const name = m[1].trim();
+    if (name && !out.includes(name)) out.push(name);
+  }
+  return out;
 }

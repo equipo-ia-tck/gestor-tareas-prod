@@ -119,7 +119,7 @@ export async function rallyRoute(rally: Rally, user: TeamUser, method: string, p
     case 'GET /api/rally/tags':
       return rally.searchTags(user, Object.fromEntries(params));
     case 'GET /api/rally/form':
-      return rally.formOptions(user, params.get('kind'), params.get('project'));
+      return rally.formOptions(user, params.get('kind'), params.get('project'), params.getAll('rule'));
     case 'GET /api/rally/detail':
       return rally.detail(user, params.get('kind'), params.get('id'));
     case 'GET /api/rally/items': {

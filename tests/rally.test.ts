@@ -2,7 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
 import { Api } from './fakeAccounts.ts';
 import { mentionsIn, commentHtml, fieldValue, htmlToText, joinQuery, MOVE_COMMENTS, blockedReasonText, messageHtml, moveComment, normalizeBaseUrl, Rally, rallyCategory, toRallyItem } from '../servidor/rally.ts';
-import { groupRally, isRallyId, rallyColumnOf, linkedTask, rallyIdsOf, rallyMoves, rallyPushes, taskFromRally, tasksByRallyId, type RallyItem } from '../src/domain/rally';
+import { workRuleFields, groupRally, isRallyId, rallyColumnOf, linkedTask, rallyIdsOf, rallyMoves, rallyPushes, taskFromRally, tasksByRallyId, type RallyItem } from '../src/domain/rally';
 import { DEFAULT_ITEM_TYPES } from '../src/domain/workflows';
 import { makeTask } from './factories';
 
@@ -596,6 +596,37 @@ describe('Rally: mover', () => {
     expect(starts).toHaveLength(25);
     expect(report.truncated).toEqual([{ kind: 'US', total: 6200, shown: 5000 }]);
     expect(report.items.filter((i) => i.kind === 'US')).toHaveLength(5000);
+  });
+
+  it('añade al formulario los campos que piden las reglas de trabajo del proyecto', async () => {
+    const db = new DatabaseSync(':memory:');
+    const api = new Api(db);
+    const marta = api.register({ login: 'marta@vml.com', name: 'Marta', password: 'contraseña-larga', code: api.teamCode }).user;
+    const ws = `${BASE}/slm/webservice/v2.0`;
+    const attrs = [
+      { ElementName: 'c_APPGAR', Name: 'APPGAR', Custom: true, Required: false, AllowedValues: { _ref: `${ws}/AttributeDefinition/9/AllowedValues`, Count: 2 } },
+      { ElementName: 'c_PropagadoaProduccion', Name: 'Propagado a producción', Custom: true, Required: false },
+      { ElementName: 'c_Otro', Name: 'Otro', Custom: true, Required: false },
+    ];
+    const fetcher = (async (url: string) => {
+      const u = new URL(url);
+      const path = u.pathname.replace('/slm/webservice/v2.0', '');
+      if (path === '/user') return new Response(JSON.stringify({ User: { ObjectID: 42, DisplayName: 'Marta' } }));
+      const Results = path === '/typedefinition' ? [{ Attributes: { _ref: `${ws}/TypeDefinition/1/Attributes`, Count: 3 } }]
+        : path === '/TypeDefinition/1/Attributes' ? attrs
+          : path === '/AttributeDefinition/9/AllowedValues' ? [{ StringValue: 'APP1' }, { StringValue: 'APP2' }] : [];
+      return new Response(JSON.stringify({ QueryResult: { Errors: [], Results, TotalResultCount: Results.length } }));
+    }) as unknown as typeof fetch;
+    const rally = new Rally(db, fetcher);
+    await rally.connect(marta, { apiKey: '_clave' });
+    expect((await rally.formOptions(marta, 'DE', '7')).custom).toEqual([]);
+    const ruled = workRuleFields('Rally: WREDefect.APPGAR:Work Rule Error: Error 500 al guardar el perfil: APPGAR is required (WR31: APPGAR. This rule applies…) '
+      + 'WREDefect.Propagado a producción:Work Rule Error: Error 500 al guardar el perfil: Propagado a producción is required (WR231…)');
+    expect(ruled).toEqual(['APPGAR', 'Propagado a producción']);
+    expect((await rally.formOptions(marta, 'DE', '7', ruled)).custom).toEqual([
+      { field: 'c_APPGAR', label: 'APPGAR', values: ['APP1', 'APP2'], rule: true },
+      { field: 'c_PropagadoaProduccion', label: 'Propagado a producción', values: [], rule: true },
+    ]);
   });
 
   it('crea features con estado de portfolio, talla, fechas planificadas y padre', async () => {

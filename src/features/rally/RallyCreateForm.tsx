@@ -2,12 +2,31 @@ import { useMemo, useEffect, useRef, useState, type FormEvent, type ReactNode } 
 import { Ban, Check, Paperclip, Plus, Wand2, X } from 'lucide-react';
 import { inputClass } from '../../components/ui/styles';
 import {
-  RALLY_COLORS, type RallyCreatableKind, type RallyCreateInput, type RallyFormOptions, type RallyItem, type RallyPick, type RallyProject, type RallyRef,
+  RALLY_COLORS, workRuleFields, type RallyCreatableKind, type RallyCreateInput, type RallyFormOptions, type RallyItem, type RallyPick, type RallyProject, type RallyRef,
 } from '../../domain/rally';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { MAX_UPLOAD, MAX_UPLOAD_LABEL, rallyApi, toBase64, tooBigMessage } from './rallyApi';
 import { localLoad, ParentField, PersonPicker, ValuesField } from './RallyPickers';
 import { fold } from '../../domain/text';
+
+/**
+ * Campos que las reglas de trabajo («Work Rule») de un proyecto piden para un tipo. Rally no los marca como obligatorios:
+ * se aprenden del error al crear y se recuerdan por tipo y proyecto en este navegador.
+ */
+const ruleKey = (kind: string, projectId: string) => `gestor-tareas:rally-rule-fields:${kind}:${projectId}`;
+function ruleFieldsFor(kind: string, projectId: string): string[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(ruleKey(kind, projectId)) ?? '[]') as unknown;
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+function rememberRuleFields(kind: string, projectId: string, names: string[]) {
+  const all = [...new Set([...ruleFieldsFor(kind, projectId), ...names])];
+  try { localStorage.setItem(ruleKey(kind, projectId), JSON.stringify(all)); } catch { /* solo esta vez */ }
+  return all;
+}
 
 /**
  * Datos ya rellenados por «Crear con petición». Personas, etiquetas y padre llegan buscados en Rally; estado, release,
@@ -119,6 +138,8 @@ export function RallyCreateForm({ projects, defaultProjectId, defaultTags = [], 
 
   const [options, setOptions] = useState<RallyFormOptions | null>(null);
   const [optionsError, setOptionsError] = useState<string | null>(null);
+  /** Sube al aprender campos de una regla de trabajo, para volver a pedir las opciones con ellos. */
+  const [ruleVersion, setRuleVersion] = useState(0);
 
   const [name, setName] = useState(prefill?.name ?? '');
   const [ready, setReady] = useState(prefill?.ready ?? false);
@@ -170,7 +191,7 @@ export function RallyCreateForm({ projects, defaultProjectId, defaultTags = [], 
     let live = true;
     setOptions(null);
     setOptionsError(null);
-    rallyApi.formOptions(kind, projectId).then((o) => {
+    rallyApi.formOptions(kind, projectId, ruleFieldsFor(kind, projectId)).then((o) => {
       if (!live) return;
       setOptions(o);
       const has = (list: RallyRef[], r: string) => list.some((x) => x.ref === r);
@@ -227,7 +248,7 @@ export function RallyCreateForm({ projects, defaultProjectId, defaultTags = [], 
     }, (e: Error) => live && setOptionsError(e.message));
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- assignToMe solo da el valor inicial
-  }, [kind, projectId]);
+  }, [kind, projectId, ruleVersion]);
 
   // Columnas del Schedule State elegido (como en Rally, elegir uno lleva a su primera columna y al revés).
   const flowFor = (s: string) => options?.flowStates.find((f) => f.scheduleState === s)?.ref;
@@ -273,7 +294,19 @@ export function RallyCreateForm({ projects, defaultProjectId, defaultTags = [], 
     try {
       item = await rallyApi.create(input);
     } catch (err) {
-      setError((err as Error).message);
+      const message = (err as Error).message;
+      // Reglas de trabajo del proyecto: se añaden sus campos al formulario (y se recuerdan) para rellenarlos y reintentar.
+      const ruled = workRuleFields(message);
+      const fresh = ruled.filter((f) => !(options?.custom ?? []).some((c) => fold(c.label) === fold(f)));
+      if (ruled.length) {
+        rememberRuleFields(kind, projectId, ruled);
+        if (fresh.length) setRuleVersion((v) => v + 1);
+        setError(fresh.length
+          ? `Rally pide estos campos por una regla del proyecto: ${ruled.join(', ')}. Ya están abajo, en «Campos obligatorios»: rellénalos y vuelve a pulsar Create.`
+          : `Rally sigue pidiendo: ${ruled.join(', ')}. Revisa esos campos abajo y vuelve a pulsar Create.\n\n${message}`);
+      } else {
+        setError(message);
+      }
       setBusy(null);
       return;
     }
@@ -520,7 +553,7 @@ export function RallyCreateForm({ projects, defaultProjectId, defaultTags = [], 
             <section className="space-y-3 border-t border-zinc-200 pt-3 dark:border-zinc-700">
               <p className="text-xs text-zinc-500">Campos obligatorios de vuestro Rally</p>
               {options!.custom.map((c) => (
-                <Field key={c.field} label={c.label} required>
+                <Field key={c.field} label={c.rule ? `${c.label} · regla del proyecto` : c.label} required>
                   {c.values.length
                     ? select(custom[c.field] ?? '', (v) => setCustom((x) => ({ ...x, [c.field]: v })), c.values.map((v) => ({ value: v, label: v })), 'Elige…', c.label)
                     : <input className={inputClass} value={custom[c.field] ?? ''} onChange={(e) => setCustom((x) => ({ ...x, [c.field]: e.target.value }))} aria-label={c.label} />}
@@ -531,7 +564,7 @@ export function RallyCreateForm({ projects, defaultProjectId, defaultTags = [], 
         </div>
 
         <footer className="space-y-2 border-t border-zinc-200 bg-white px-6 py-3 text-sm dark:border-zinc-700 dark:bg-zinc-900">
-          {error && <p className="rounded-md bg-red-50 px-2 py-1 text-xs text-red-700 dark:bg-red-950 dark:text-red-300">{error}</p>}
+          {error && <p className="rounded-md bg-red-50 px-2 py-1 text-xs whitespace-pre-line text-red-700 dark:bg-red-950 dark:text-red-300">{error}</p>}
           {tooBig && <p className="rounded-md bg-red-50 px-2 py-1 text-xs text-red-700 dark:bg-red-950 dark:text-red-300">{tooBigMessage(tooBig)}</p>}
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <label className="inline-flex items-center gap-1.5 whitespace-nowrap"><input type="checkbox" checked={addToGestor} onChange={(e) => setAddToGestor(e.target.checked)} /> Añadir también al gestor</label>

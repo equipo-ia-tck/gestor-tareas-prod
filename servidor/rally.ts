@@ -245,6 +245,9 @@ export function mentionsIn(html: string): Mention[] {
   return out;
 }
 
+/** Clave para comparar nombres de campo («Propagado a producción» = «propagadoaproduccion»). */
+const fieldKey = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
 /** Motivo de bloqueo a partir del comentario: sin saltos de línea y como mucho 256 caracteres. */
 export function blockedReasonText(text: unknown): string | null {
   if (typeof text !== 'string') return null;
@@ -735,23 +738,34 @@ export class Rally {
    * Atributos de un tipo con sus valores permitidos: los estándar del formulario y los personalizados obligatorios
    * (sin ellos Rally no deja crear).
    */
-  private attributes(a: { base_url: string; api_key: string }, typeName: string) {
-    return this.cached(`attrs ${a.base_url} ${typeName}`, async () => {
-      const def = await this.list(a, '/typedefinition', { query: `(ElementName = ${typeName})`, fetch: 'Attributes' });
-      const ref = this.relative(a, (def[0]?.Attributes as RallyObject | undefined)?._ref);
-      const attrs = ref ? await this.collection(a, ref, 'ElementName,Name,Required,ReadOnly,Custom,AllowedValues') : [];
-      const wanted = attrs.filter((x) => FORM_VALUES.includes(String(x.ElementName)) || (x.Custom === true && x.Required === true && x.ReadOnly !== true));
+  private attributes(a: { base_url: string; api_key: string }, typeName: string, extra: string[] = []) {
+    // Campos que piden las reglas de trabajo («Work Rule») del proyecto: Rally no los marca como obligatorios en el tipo.
+    const extraKeys = new Set(extra.map(fieldKey).filter(Boolean));
+    return this.cached(`attrs ${a.base_url} ${typeName} ${[...extraKeys].sort().join('|')}`, async () => {
+      const attrs = await this.attributeDefs(a, typeName);
+      const byRule = (x: RallyObject) => x.Custom === true && x.ReadOnly !== true
+        && (extraKeys.has(fieldKey(String(x.Name ?? ''))) || extraKeys.has(fieldKey(String(x.ElementName ?? '').replace(/^c_/, ''))));
+      const wanted = attrs.filter((x) => FORM_VALUES.includes(String(x.ElementName)) || (x.Custom === true && x.Required === true && x.ReadOnly !== true) || byRule(x));
       return Promise.all(wanted.map(async (x) => {
         const allowed = x.AllowedValues as RallyObject | undefined;
         const vref = allowed && Number(allowed.Count) > 0 ? this.relative(a, allowed._ref) : null;
         const values = vref ? (await this.collection(a, vref, 'StringValue').catch(() => [])).map((v) => String(v.StringValue ?? '')).filter(Boolean) : [];
-        return { field: String(x.ElementName), label: String(x.Name ?? x.ElementName), custom: x.Custom === true, values };
+        return { field: String(x.ElementName), label: String(x.Name ?? x.ElementName), custom: x.Custom === true, values, rule: byRule(x) && x.Required !== true };
       }));
     });
   }
 
+  /** Atributos de un tipo (definición), en caché. */
+  private attributeDefs(a: { base_url: string; api_key: string }, typeName: string) {
+    return this.cached(`attrdefs ${a.base_url} ${typeName}`, async () => {
+      const def = await this.list(a, '/typedefinition', { query: `(ElementName = ${typeName})`, fetch: 'Attributes' });
+      const ref = this.relative(a, (def[0]?.Attributes as RallyObject | undefined)?._ref);
+      return ref ? await this.collection(a, ref, 'ElementName,Name,Required,ReadOnly,Custom,AllowedValues') : [];
+    });
+  }
+
   /** Opciones del formulario «New Item» para un tipo en un proyecto. */
-  async formOptions(user: TeamUser, kind: unknown, projectId: unknown): Promise<RallyFormOptions> {
+  async formOptions(user: TeamUser, kind: unknown, projectId: unknown, ruleFields: string[] = []): Promise<RallyFormOptions> {
     const a = await this.connected(user);
     const entry = Object.entries(KINDS).find(([, info]) => info.kind === kind);
     if (!entry || !CREATABLE.includes(String(kind))) throw new ApiError(400, 'Tipo de Rally no válido.');
@@ -764,7 +778,7 @@ export class Rally {
     const feature = info.kind === 'FE';
     const [flows, attrs, releases, iterations, members, permissions, milestones, portfolioStates, estimates] = await Promise.all([
       type === 'task' || feature ? Promise.resolve([]) : soft(this.list(a, '/flowstate', { ...inProject, fetch: 'Name,ScheduleStateMapping', order: 'OrderIndex' }), []),
-      soft(this.attributes(a, info.typeName), []),
+      soft(this.attributes(a, info.typeName, ruleFields.slice(0, 30)), []),
       soft(this.list(a, '/release', { ...inProject, order: 'ReleaseDate DESC', pagesize: '50' }), []),
       feature ? Promise.resolve([]) : soft(this.list(a, '/iteration', { ...inProject, order: 'StartDate DESC', pagesize: '50' }), []),
       soft(this.list(a, `/project/${pid}/TeamMembers`, { fetch: 'DisplayName,UserName' }), []),
@@ -799,7 +813,7 @@ export class Rally {
       portfolioStates: refs(portfolioStates.filter((st) => st.Enabled !== false)),
       preliminaryEstimates: refs(estimates),
       values,
-      custom: attrs.filter((x) => x.custom).map(({ field, label, values: v }) => ({ field, label, values: v })),
+      custom: attrs.filter((x) => x.custom).map(({ field, label, values: v, rule }) => ({ field, label, values: v, ...(rule ? { rule: true } : {}) })),
     };
   }
 
