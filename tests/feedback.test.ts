@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { browserSummary, feedbackTaskTitle } from '../src/domain/feedback';
+import { areaForHash, browserSummary, feedbackPriority, feedbackTaskTitle } from '../src/domain/feedback';
 
 describe('feedback', () => {
   it('navegador en pocas palabras', () => {
@@ -9,10 +9,21 @@ describe('feedback', () => {
   });
 
   it('título de la tarea: tipo y primera línea recortada', () => {
-    expect(feedbackTaskTitle({ kind: 'bug', body: 'El tablero no carga\nDetalles…' })).toBe('Algo roto: El tablero no carga');
-    const long = feedbackTaskTitle({ kind: 'improvement', body: 'x'.repeat(200) });
+    expect(feedbackTaskTitle({ kind: 'bug', title: 'El tablero no carga', body: 'Detalles…' })).toBe('Algo no funciona: El tablero no carga');
+    expect(feedbackTaskTitle({ kind: 'other', title: '', body: 'Antiguo\nmás' })).toBe('Otro: Antiguo');
+    const long = feedbackTaskTitle({ kind: 'improvement', title: 'x'.repeat(200), body: '' });
     expect(long.startsWith('Mejora: ')).toBe(true);
     expect(long.endsWith('…')).toBe(true);
     expect(long.length).toBeLessThanOrEqual(8 + 90);
+  });
+
+  it('parte de la web según la pantalla, y prioridad según el impacto', () => {
+    expect(areaForHash('#/board')).toBe('board');
+    expect(areaForHash('#/project/abc')).toBe('projects');
+    expect(areaForHash('#/person/Diana')).toBe('people');
+    expect(areaForHash('')).toBe('today');
+    expect(areaForHash('#/raro')).toBe('other');
+    expect(areaForHash('#/board', true)).toBe('task');
+    expect([feedbackPriority({ impact: 'blocking' }), feedbackPriority({ impact: 'minor' }), feedbackPriority({ impact: null })]).toEqual([1, 3, 4]);
   });
 });
