@@ -749,6 +749,20 @@ En Vercel no hay servidor que lea la carpeta de OneDrive del Mac, así que el Ma
   (persona, #proyecto, fecha, !1…; "@Diana: …" pierde los dos puntos), la tarea va al proyecto de la línea o al de la nota y
   la línea recibe `[[t:id]]`, así enseña «✓ Tarea» con su estado y no se duplica. Un solo «Deshacer».
 
+## Fase 29: feedback de los usuarios (rama `feedback`)
+
+- **Supabase** (`supabase/migrations/006_feedback.sql`, después de 001 a 005): tabla `feedback` (autor, nombre y usuario en el
+  momento, `kind: improvement | bug | other`, texto, pantalla, navegador, `status: new | doing | done | dismissed`, `task_id`).
+  Nadie la lee directamente: `send_feedback` (cualquier cuenta activa, máx. 30 por hora), `admin_feedback` y
+  `admin_update_feedback` (solo administradores). Al darse de baja, el feedback se queda sin autor enlazado. Test en
+  `tests/supabase.test.ts`.
+- **Botón flotante** «Feedback» abajo a la derecha en todas las pantallas (`features/feedback/FeedbackButton.tsx`; se aparta
+  cuando el panel de detalle es columna): tipo (Mejora · Algo roto · Otro) y texto; la pantalla (`location.hash`) y el
+  navegador van solos. El usuario no ve después lo que envió (decisión de la usuaria).
+- **Más → Feedback** (`#/feedback`, solo administradores en la barra lateral y en la pantalla): filtros por estado (Abiertos =
+  Nuevo + En curso) y tipo, cambiar el estado y «→ Tarea» (tarea con etiqueta `feedback`, el texto y los datos en la
+  descripción; el feedback guarda `task_id` y pasa a En curso si era Nuevo). Si falta la migración, el error lo dice.
+
 ### Más adelante
 
 - **Electron**: la app es web estática con rutas por hash y datos en IndexedDB, así que se puede empaquetar sin cambios

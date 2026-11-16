@@ -1,5 +1,5 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
-import { Calendar, ChevronDown, ChevronRight, ClipboardCheck, FolderOpen, History, Plus, Inbox, KanbanSquare, Layers, NotebookPen, Settings, Sun, Users, type LucideIcon } from 'lucide-react';
+import { Calendar, ChevronDown, ChevronRight, ClipboardCheck, FolderOpen, History, MessageSquarePlus, Plus, Inbox, KanbanSquare, Layers, NotebookPen, Settings, Sun, Users, type LucideIcon } from 'lucide-react';
 import { Avatar } from '../components/ui/Badges';
 import { useApp } from './AppContext';
 import { repo } from '../data/services';
@@ -106,7 +106,8 @@ function ProjectNav({ node, route }: { node: ProjectNode; route: Route }) {
 /** Vistas de uso ocasional, plegadas para no ocupar sitio. */
 function MoreSection({ route }: { route: Route }) {
   const [open, setOpen] = usePersistentState('sidebar-more', false);
-  const active = ['log', 'review'].includes(route.view);
+  const { isAdmin } = useSync();
+  const active = ['log', 'review', 'feedback'].includes(route.view);
   const show = open || active;
   return (
     <>
@@ -118,6 +119,7 @@ function MoreSection({ route }: { route: Route }) {
         <>
           <NavItem icon={ClipboardCheck} href={routeHref({ view: 'review' })} active={route.view === 'review'}>Revisión semanal</NavItem>
           <NavItem icon={History} href={routeHref({ view: 'log' })} active={route.view === 'log'}>Registro</NavItem>
+          {isAdmin && <NavItem icon={MessageSquarePlus} href={routeHref({ view: 'feedback' })} active={route.view === 'feedback'}>Feedback</NavItem>}
         </>
       )}
     </>

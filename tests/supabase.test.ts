@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
  * Prueba la base de datos de Supabase (supabase/migrations) en un Postgres de verdad (PGlite), imitando
  * lo mínimo de Supabase: roles anon/authenticated y auth.uid()/auth.email() de la sesión.
  */
-const MIGRATION = ['001_equipo.sql', '002_baja_y_contrasenas.sql', '003_alta_sin_invitacion.sql', '004_claves_conectores.sql', '005_calendario_subido.sql'].map((f) => readFileSync(`supabase/migrations/${f}`, 'utf8')).join('\n');
+const MIGRATION = ['001_equipo.sql', '002_baja_y_contrasenas.sql', '003_alta_sin_invitacion.sql', '004_claves_conectores.sql', '005_calendario_subido.sql', '006_feedback.sql'].map((f) => readFileSync(`supabase/migrations/${f}`, 'utf8')).join('\n');
 let db: PGlite;
 
 const SUPABASE_STUB = `
@@ -251,5 +251,27 @@ describe('base de datos del equipo en Supabase', () => {
     await rpc(marta, 'revoke_upload_token');
     await expect(upload(second, [])).rejects.toThrow(/no válida/);
     expect(await as(marta, 'select * from connector_uploads')).toEqual([]);
+  });
+
+  it('feedback: lo envía cualquiera, solo lo leen y gestionan los administradores', async () => {
+    const marta = await newUser('marta@vml.com');
+    await rpc(marta, 'register_profile', { p_name: 'Marta García', p_code: '' });
+    const ana = await newUser('ana@vml.com');
+    await rpc(ana, 'register_profile', { p_name: 'Ana', p_code: '' });
+
+    await rpc(ana, 'send_feedback', { p_kind: 'bug', p_body: '  El tablero no carga  ', p_page: '#/board', p_user_agent: 'Chrome' });
+    await expect(rpc(ana, 'send_feedback', { p_kind: 'bug', p_body: '   ', p_page: '', p_user_agent: '' })).rejects.toThrow(/Escribe/);
+    await expect(rpc(ana, 'send_feedback', { p_kind: 'otra', p_body: 'x', p_page: '', p_user_agent: '' })).rejects.toThrow();
+    await expect(rpc(ana, 'admin_feedback')).rejects.toThrow(/administra/);
+    await expect(as(ana, 'select * from feedback')).rejects.toThrow();
+
+    const list = await rpc(marta, 'admin_feedback') as { id: string; body: string; authorName: string; kind: string; page: string; status: string }[];
+    expect(list).toHaveLength(1);
+    expect(list[0]).toMatchObject({ body: 'El tablero no carga', authorName: 'Ana', kind: 'bug', page: '#/board', status: 'new' });
+
+    await expect(rpc(ana, 'admin_update_feedback', { p_id: list[0].id, p_status: 'done', p_task_id: null })).rejects.toThrow(/administra/);
+    expect(await rpc(marta, 'admin_update_feedback', { p_id: list[0].id, p_status: null, p_task_id: 't1' })).toMatchObject({ status: 'new', taskId: 't1' });
+    expect(await rpc(marta, 'admin_update_feedback', { p_id: list[0].id, p_status: 'doing', p_task_id: null })).toMatchObject({ status: 'doing', taskId: 't1' });
+    await expect(rpc(marta, 'admin_update_feedback', { p_id: list[0].id, p_status: 'raro', p_task_id: null })).rejects.toThrow();
   });
 });

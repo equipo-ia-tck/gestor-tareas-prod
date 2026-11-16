@@ -4,6 +4,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { DEFAULT_ITEM_TYPES } from '../domain/workflows';
 import type { Space } from '../domain/spaces';
 import type { TasksDB } from './db';
+import type { Feedback, FeedbackKind, FeedbackStatus } from '../domain/feedback';
 
 /**
  * Sincronización con la base de datos del equipo en Supabase (supabase/migrations/001_equipo.sql).
@@ -72,6 +73,8 @@ function friendly(message: string): string {
   if (/token has expired|invalid.*token|otp/i.test(message)) return 'El código no es correcto o ha caducado. Pide otro.';
   if (/should be different from the old/i.test(message)) return 'La contraseña nueva tiene que ser distinta de la anterior.';
   if (/failed to fetch|network/i.test(message)) return 'No hay conexión con la base de datos del equipo.';
+  if (/could not find the function public\.(send_feedback|admin_feedback|admin_update_feedback)/i.test(message))
+    return 'Falta preparar el feedback en Supabase: un administrador tiene que ejecutar supabase/migrations/006_feedback.sql.';
   return message;
 }
 
@@ -247,6 +250,14 @@ export class SyncClient {
     return code;
   };
   adminJoinSpace = (id: string) => this.spaceAction('admin_join_space', { p_space: id });
+
+  // ---------- Feedback (migración 006): enviarlo, cualquiera; leerlo y gestionarlo, solo administradores ----------
+
+  sendFeedback = (kind: FeedbackKind, body: string, page: string) =>
+    this.rpc<void>('send_feedback', { p_kind: kind, p_body: body, p_page: page, p_user_agent: navigator.userAgent });
+  adminFeedback = () => this.rpc<Feedback[]>('admin_feedback');
+  updateFeedback = (id: string, patch: { status?: FeedbackStatus; taskId?: string }) =>
+    this.rpc<Feedback>('admin_update_feedback', { p_id: id, p_status: patch.status ?? null, p_task_id: patch.taskId ?? null });
   /** Comprueba la contraseña actual (volviendo a entrar) antes de cambiarla. */
   changePassword = async (current: string, password: string) => {
     const email = this.state.user?.login;
