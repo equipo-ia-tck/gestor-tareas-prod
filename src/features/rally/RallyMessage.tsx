@@ -28,11 +28,14 @@ function pseudoTask(item: RallyItem, typeId: string): Task {
  * «Mensaje» al marcar Ready: el mismo preparador de mensajes del panel de la tarea (plantillas de `plantillas/`), pero
  * las personas se buscan en Rally y se publican en la discusión como menciones de Rally (avisan por correo).
  */
-export function RallyMessage({ item, task, onClose, onPosted }: {
+export function RallyMessage({ item, task, onClose, onPosted, onConfirm }: {
   item: RallyItem;
   task?: Task;
+  /** La cruz, Esc o clic fuera: no se marca Ready. */
   onClose: () => void;
   onPosted: (message: string) => void;
+  /** Marca Ready en Rally: antes de publicar el mensaje o con «Sin mensaje». */
+  onConfirm: () => Promise<void>;
 }) {
   const { itemTypes, projectMap } = useApp();
   const toast = useToast();
@@ -90,6 +93,7 @@ export function RallyMessage({ item, task, onClose, onPosted }: {
     setBusy(true);
     setError(null);
     try {
+      await onConfirm();
       const r = await rallyApi.message(item.id, text, tagged);
       onPosted(`Mensaje publicado en ${item.id}${r.mentioned.length ? ` · etiquetados: ${r.mentioned.join(', ')}` : ''}`);
       onClose();
@@ -111,7 +115,7 @@ export function RallyMessage({ item, task, onClose, onPosted }: {
   return (
     <Dialog title="Mensaje · Ready" width="max-w-xl" onClose={onClose}>
       <div className="min-h-0 space-y-2 overflow-y-auto">
-        <p className="text-xs text-zinc-500">{item.id} · {item.name} · Ready marcado en Rally</p>
+        <p className="text-xs text-zinc-500">{item.id} · {item.name} · Ready se marca al publicar (o con «Sin mensaje»); si cierras con la cruz, no se marca</p>
         {options.length > 1 && (
           <select value={templateId} aria-label="Plantilla" onChange={(e) => pick(e.target.value)}
             className="w-full rounded-md border border-zinc-200 bg-white px-2 py-1 dark:border-zinc-700 dark:bg-zinc-900">
@@ -162,7 +166,12 @@ export function RallyMessage({ item, task, onClose, onPosted }: {
         {error && <p className="text-xs text-red-600">{error}</p>}
       </div>
       <div className="mt-3 flex items-center justify-end gap-2">
-        <button type="button" onClick={onClose}
+        <button type="button" disabled={busy} onClick={() => {
+          setBusy(true);
+          setError(null);
+          onConfirm().then(onClose, (e: Error) => { setError(e.message); setBusy(false); });
+        }}
+          title="Marca Ready sin publicar ningún mensaje"
           className="mr-auto rounded-md px-3 py-1.5 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800">Sin mensaje</button>
         <button type="button" onClick={() => void copy()}
           className="flex items-center gap-1.5 rounded-md border border-zinc-200 px-3 py-1.5 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800">

@@ -15,8 +15,8 @@ export const UNREADY_TEXT = 'Tengo la lista validada por si la quieres revisar a
  * Botones Ready y Blocked de la ficha, como en Rally. No cambian el elemento de columna (ni la tarea de bloque en el
  * gestor). Blocked abre la misma ventana que mover a Bloqueado: comentario con el PO (editable con el lápiz) y analista;
  * al aceptar marca Blocked con ese texto como motivo y lo publica en la discusión. Cerrar la ventana no cambia nada.
- * Marcar Ready abre después «Mensaje» (`RallyMessage`: plantillas y personas de Rally etiquetadas); Ready queda marcado
- * aunque se cierre sin mensaje. Quitar Ready abre la ventana de los movimientos (`askAnalyst`) con «Tengo la lista validada…».
+ * Marcar Ready abre antes «Mensaje» (`RallyMessage`: plantillas y personas de Rally etiquetadas); Ready se marca al publicar o con «Sin mensaje», y cerrar con la cruz no lo marca
+ * (Esc o clic fuera tampoco). Quitar Ready abre la ventana de los movimientos (`askAnalyst`) con «Tengo la lista validada…».
  */
 export function RallyFlags({ item, task, reason, onChanged }: {
   item: RallyItem;
@@ -46,7 +46,9 @@ export function RallyFlags({ item, task, reason, onChanged }: {
   };
 
   const toggleReady = () => run(async () => {
-    const updated = await rallyApi.flag(item.id, { ready: !item.ready });
+    // Marcar Ready: primero el mensaje; Ready se marca al publicar o con «Sin mensaje» (la cruz no marca nada).
+    if (!item.ready) { setMessage(item); return null; }
+    const updated = await rallyApi.flag(item.id, { ready: false });
     if (updated.ready) setMessage(updated);
     else if (item.ready) {
       // Ready ya está quitado: ahora la misma ventana que al mover (lápiz, mención del PO cambiable y analista).
@@ -106,7 +108,12 @@ export function RallyFlags({ item, task, reason, onChanged }: {
       {note && <p className="mt-1 text-xs text-amber-600">{note}</p>}
       {message && (
         <RallyMessage item={message} task={task} onClose={() => setMessage(null)}
-          onPosted={(m) => { setNote(m); onChanged(message); }} />
+          onConfirm={async () => {
+            const updated = await rallyApi.flag(message.id, { ready: true });
+            rememberRally([updated]);
+            onChanged(updated);
+          }}
+          onPosted={setNote} />
       )}
     </div>
   );
