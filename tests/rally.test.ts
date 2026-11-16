@@ -499,13 +499,13 @@ describe('Rally: mover', () => {
       kind: 'US', name: 'Alta', projectId: '7', ownerRef: '/user/5', assigneeRef: '/user/6', color: '#105CAB', ready: true,
       blocked: true, blockedReason: 'Falta API', scheduleState: 'Defined', flowStateRef: '/flowstate/2', planEstimate: 3, expedite: true,
       releaseRef: '/release/9', iterationRef: '/iteration/4', tagRefs: ['/tag/1'], milestoneRefs: ['/milestone/2'], notes: 'n',
-      parentId: 'US1', featureId: 'F1', custom: { c_Canal: 'Web' },
+      parentId: 'US1', featureId: 'F1', custom: { c_Canal: 'Web', 'c_Propagadoaproducción': 'No' },
     });
     expect(posts).toEqual([{ path: '/hierarchicalrequirement/create', body: { HierarchicalRequirement: {
       Name: 'Alta', Owner: '/user/5', Notes: 'n', Ready: true, Blocked: true, BlockedReason: 'Falta API', DisplayColor: '#105cab',
       Tags: [{ _ref: '/tag/1' }], Milestones: [{ _ref: '/milestone/2' }], Release: '/release/9', Iteration: '/iteration/4',
       FlowState: '/flowstate/2', PlanEstimate: 3, Expedite: true, Parent: '/hierarchicalrequirement/111',
-      PortfolioItem: '/portfolioitem/feature/111', Project: '/project/7', c_Canal: 'Web', c_Assignee: '/user/6' } } }]);
+      PortfolioItem: '/portfolioitem/feature/111', Project: '/project/7', c_Canal: 'Web', 'c_Propagadoaproducción': 'No', c_Assignee: '/user/6' } } }]);
     posts.length = 0;
     await rally.create(marta, { kind: 'TA', name: 'T', parentId: 'DE1', state: 'In-Progress', estimate: 2, toDo: 1 });
     expect(posts[0].body).toEqual({ Task: { Name: 'T', Owner: '/user/42', WorkProduct: '/defect/111', State: 'In-Progress', Estimate: 2, ToDo: 1, Project: '/project/7' } });
@@ -605,7 +605,7 @@ describe('Rally: mover', () => {
     const ws = `${BASE}/slm/webservice/v2.0`;
     const attrs = [
       { ElementName: 'c_APPGAR', Name: 'APPGAR', Custom: true, Required: false, AllowedValues: { _ref: `${ws}/AttributeDefinition/9/AllowedValues`, Count: 2 } },
-      { ElementName: 'c_PropagadoaProduccion', Name: 'Propagado a producción', Custom: true, Required: false },
+      { ElementName: 'c_Propagadoaproducción', Name: 'Propagado a producción', Custom: true, Required: false },
       { ElementName: 'c_Otro', Name: 'Otro', Custom: true, Required: false },
     ];
     const fetcher = (async (url: string) => {
@@ -625,8 +625,9 @@ describe('Rally: mover', () => {
     expect(ruled).toEqual(['APPGAR', 'Propagado a producción']);
     expect((await rally.formOptions(marta, 'DE', '7', ruled)).custom).toEqual([
       { field: 'c_APPGAR', label: 'APPGAR', values: ['APP1', 'APP2'], rule: true },
-      { field: 'c_PropagadoaProduccion', label: 'Propagado a producción', values: [], rule: true },
+      { field: 'c_Propagadoaproducción', label: 'Propagado a producción', values: [], rule: true },
     ]);
+    expect((await rally.formOptions(marta, 'DE', '7', [...ruled, 'Source Team'])).ruleMissing).toEqual(['Source Team']);
   });
 
   it('crea features con estado de portfolio, talla, fechas planificadas y padre', async () => {

@@ -549,6 +549,12 @@ export function RallyCreateForm({ projects, defaultProjectId, defaultTags = [], 
             <textarea className={`${inputClass} min-h-24 resize-y`} value={notes} onChange={(e) => setNotes(e.target.value)} aria-label="Notas" />
           </Field>
 
+          {(options?.ruleMissing?.length ?? 0) > 0 && (
+            <p className="rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+              Una regla del proyecto pide {options!.ruleMissing!.join(', ')}, pero no está entre los campos que se pueden rellenar desde aquí:
+              créalo en Rally o pide que revisen la regla.
+            </p>
+          )}
           {(options?.custom.length ?? 0) > 0 && (
             <section className="space-y-3 border-t border-zinc-200 pt-3 dark:border-zinc-700">
               <p className="text-xs text-zinc-500">Campos obligatorios de vuestro Rally</p>

@@ -755,12 +755,30 @@ export class Rally {
     });
   }
 
+  /** Campos pedidos por una regla que no están (o no se pueden escribir) entre los personalizados del tipo. */
+  private async unmatchedRuleFields(a: { base_url: string; api_key: string }, typeName: string, extra: string[]): Promise<string[]> {
+    if (!extra.length) return [];
+    const attrs = await this.attributeDefs(a, typeName);
+    const keys = new Set(attrs.filter((x) => x.Custom === true && x.ReadOnly !== true)
+      .flatMap((x) => [fieldKey(String(x.Name ?? '')), fieldKey(String(x.ElementName ?? '').replace(/^c_/, ''))]));
+    return extra.filter((f) => !keys.has(fieldKey(f)));
+  }
+
   /** Atributos de un tipo (definición), en caché. */
   private attributeDefs(a: { base_url: string; api_key: string }, typeName: string) {
     return this.cached(`attrdefs ${a.base_url} ${typeName}`, async () => {
       const def = await this.list(a, '/typedefinition', { query: `(ElementName = ${typeName})`, fetch: 'Attributes' });
       const ref = this.relative(a, (def[0]?.Attributes as RallyObject | undefined)?._ref);
-      return ref ? await this.collection(a, ref, 'ElementName,Name,Required,ReadOnly,Custom,AllowedValues') : [];
+      if (!ref) return [];
+      // Con muchos campos personalizados pasan de una página (200): se piden todas.
+      const all: RallyObject[] = [];
+      for (let start = 1; start < 2000; start += PAGE) {
+        const params = new URLSearchParams({ fetch: 'ElementName,Name,Required,ReadOnly,Custom,AllowedValues', pagesize: String(PAGE), start: String(start) });
+        const page = (((await this.get(a.base_url, a.api_key, `${ref}?${params}`)).QueryResult as RallyObject)?.Results ?? []) as RallyObject[];
+        all.push(...page);
+        if (page.length < PAGE) break;
+      }
+      return all;
     });
   }
 
@@ -776,9 +794,11 @@ export class Rally {
     const refs = (rows: RallyObject[]) => rows.map((r) => this.toRef(a, r)).filter((r): r is RallyRef => !!r);
     const soft = <T,>(p: Promise<T>, empty: T) => p.catch(() => empty);
     const feature = info.kind === 'FE';
-    const [flows, attrs, releases, iterations, members, permissions, milestones, portfolioStates, estimates] = await Promise.all([
+    const rules = ruleFields.slice(0, 30);
+    const [ruleMissing, flows, attrs, releases, iterations, members, permissions, milestones, portfolioStates, estimates] = await Promise.all([
+      soft(this.unmatchedRuleFields(a, info.typeName, rules), []),
       type === 'task' || feature ? Promise.resolve([]) : soft(this.list(a, '/flowstate', { ...inProject, fetch: 'Name,ScheduleStateMapping', order: 'OrderIndex' }), []),
-      soft(this.attributes(a, info.typeName, ruleFields.slice(0, 30)), []),
+      soft(this.attributes(a, info.typeName, rules), []),
       soft(this.list(a, '/release', { ...inProject, order: 'ReleaseDate DESC', pagesize: '50' }), []),
       feature ? Promise.resolve([]) : soft(this.list(a, '/iteration', { ...inProject, order: 'StartDate DESC', pagesize: '50' }), []),
       soft(this.list(a, `/project/${pid}/TeamMembers`, { fetch: 'DisplayName,UserName' }), []),
@@ -814,6 +834,7 @@ export class Rally {
       preliminaryEstimates: refs(estimates),
       values,
       custom: attrs.filter((x) => x.custom).map(({ field, label, values: v, rule }) => ({ field, label, values: v, ...(rule ? { rule: true } : {}) })),
+      ...(ruleMissing.length ? { ruleMissing } : {}),
     };
   }
 
@@ -1041,7 +1062,8 @@ export class Rally {
     fields.Project = `/project/${projectId}`;
     const custom = input.custom && typeof input.custom === 'object' ? input.custom as Record<string, unknown> : {};
     for (const [k, v] of Object.entries(custom).slice(0, 50)) {
-      if (!/^c_\w{1,80}$/.test(k)) throw new ApiError(400, `Campo personalizado no válido: ${k}.`);
+      // Los nombres internos pueden llevar tildes o ñ (c_Propagadoaproducción).
+      if (!/^c_[\p{L}\p{N}_]{1,80}$/u.test(k)) throw new ApiError(400, `Campo personalizado no válido: ${k}.`);
       const value = String(v ?? '').trim().slice(0, 30_000);
       if (value) fields[k] = value;
     }

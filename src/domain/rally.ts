@@ -36,6 +36,8 @@ export interface RallyFormOptions {
   /** Campos personalizados obligatorios del tipo, para poder crearlo. */
   /** Campos personalizados obligatorios; `rule`: los pide una regla de trabajo del proyecto (no el tipo). */
   custom: { field: string; label: string; values: string[]; rule?: boolean }[];
+  /** Campos que pide una regla pero no se encuentran entre los personalizados del tipo (no se pueden rellenar aquí). */
+  ruleMissing?: string[];
 }
 
 /** Resultado del buscador «Elegir padre» (`GET /api/rally/pick`). */
