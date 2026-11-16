@@ -763,6 +763,14 @@ En Vercel no hay servidor que lea la carpeta de OneDrive del Mac, así que el Ma
   Nuevo + En curso) y tipo, cambiar el estado y «→ Tarea» (tarea con etiqueta `feedback`, el texto y los datos en la
   descripción; el feedback guarda `task_id` y pasa a En curso si era Nuevo). Si falta la migración, el error lo dice.
 
+- **Formulario** (migración `007_feedback_formulario.sql`, después de 006; rama `feedback-formulario`): pestañas Algo no
+  funciona · Mejora · Idea nueva · Duda (`bug | improvement | idea | question`; `other` queda para lo antiguo), parte de la
+  web obligatoria (`FEEDBACK_AREAS`, propuesta sola con `areaForHash`, o «Ficha de una tarea» si el panel está abierto),
+  frase obligatoria (`title`), detalle opcional, «¿Cuánto te afecta?» solo en Algo no funciona (`impact`, que da la
+  prioridad de la tarea: !1 · !2 · !3) y tamaño de pantalla. Función nueva `send_feedback_form` (la vieja `send_feedback`
+  sigue para las pestañas abiertas con la versión anterior). Sin capturas, a propósito. En Más → Feedback: frase en
+  negrita, parte de la web e impacto, y filtro por parte de la web.
+
 ### Más adelante
 
 - **Electron**: la app es web estática con rutas por hash y datos en IndexedDB, así que se puede empaquetar sin cambios

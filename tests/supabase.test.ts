@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
  * Prueba la base de datos de Supabase (supabase/migrations) en un Postgres de verdad (PGlite), imitando
  * lo mínimo de Supabase: roles anon/authenticated y auth.uid()/auth.email() de la sesión.
  */
-const MIGRATION = ['001_equipo.sql', '002_baja_y_contrasenas.sql', '003_alta_sin_invitacion.sql', '004_claves_conectores.sql', '005_calendario_subido.sql', '006_feedback.sql'].map((f) => readFileSync(`supabase/migrations/${f}`, 'utf8')).join('\n');
+const MIGRATION = ['001_equipo.sql', '002_baja_y_contrasenas.sql', '003_alta_sin_invitacion.sql', '004_claves_conectores.sql', '005_calendario_subido.sql', '006_feedback.sql', '007_feedback_formulario.sql'].map((f) => readFileSync(`supabase/migrations/${f}`, 'utf8')).join('\n');
 let db: PGlite;
 
 const SUPABASE_STUB = `
@@ -273,5 +273,29 @@ describe('base de datos del equipo en Supabase', () => {
     expect(await rpc(marta, 'admin_update_feedback', { p_id: list[0].id, p_status: null, p_task_id: 't1' })).toMatchObject({ status: 'new', taskId: 't1' });
     expect(await rpc(marta, 'admin_update_feedback', { p_id: list[0].id, p_status: 'doing', p_task_id: null })).toMatchObject({ status: 'doing', taskId: 't1' });
     await expect(rpc(marta, 'admin_update_feedback', { p_id: list[0].id, p_status: 'raro', p_task_id: null })).rejects.toThrow();
+  });
+
+  it('feedback con formulario: frase y parte obligatorias, impacto solo si algo no funciona', async () => {
+    const marta = await newUser('marta@vml.com');
+    await rpc(marta, 'register_profile', { p_name: 'Marta García', p_code: '' });
+    const ana = await newUser('ana@vml.com');
+    await rpc(ana, 'register_profile', { p_name: 'Ana', p_code: '' });
+    const send = (args: Record<string, unknown>) => rpc(ana, 'send_feedback_form', {
+      p_kind: 'bug', p_area: 'board', p_title: 'No carga', p_body: '', p_impact: 'blocking', p_page: '#/board', p_screen: '1440×900', p_user_agent: 'Chrome', ...args,
+    });
+    await send({});
+    await send({ p_kind: 'idea', p_area: 'notes', p_title: ' Plantillas de acta ', p_body: 'Con asistentes', p_impact: 'blocking' });
+    await expect(send({ p_title: '  ' })).rejects.toThrow(/una frase/);
+    await expect(send({ p_area: '' })).rejects.toThrow(/parte de la web/);
+    await expect(send({ p_kind: 'raro' })).rejects.toThrow();
+    await expect(send({ p_impact: 'muchisimo' })).rejects.toThrow();
+    const list = await rpc(marta, 'admin_feedback') as Record<string, unknown>[];
+    expect(list.map((f) => [f.kind, f.area, f.title, f.body, f.impact, f.screen])).toEqual([
+      ['idea', 'notes', 'Plantillas de acta', 'Con asistentes', null, '1440×900'],
+      ['bug', 'board', 'No carga', '', 'blocking', '1440×900'],
+    ]);
+    // Lo enviado con la versión anterior se sigue leyendo.
+    await rpc(ana, 'send_feedback', { p_kind: 'other', p_body: 'Antiguo', p_page: '', p_user_agent: '' });
+    expect((await rpc(marta, 'admin_feedback') as Record<string, unknown>[])[0]).toMatchObject({ kind: 'other', title: '', body: 'Antiguo' });
   });
 });
