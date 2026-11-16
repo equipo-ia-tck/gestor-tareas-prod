@@ -79,9 +79,14 @@ export function RallyMessage({ item, task, onClose, onPosted }: {
   const tagged = mentions.filter((m) => text.includes(`@${m.name}`));
   const groups = [...new Set(options.map((t) => t.group))];
   const prompts = template ? promptsOf(template) : [];
+  // Todos los huecos de la plantilla son obligatorios para publicar (los que tienen valor por defecto, si lo tienen).
+  // «Etiquetar a», abajo, es opcional.
+  const missing = prompts.filter((p) => fill(template, answers).includes(`<${p.label}>`)).map((p) => p.label);
+  const leftovers = missing.length === 0 && prompts.some((p) => text.includes(`<${p.label}>`));
+  const canPublish = !!text.trim() && !busy && missing.length === 0 && !leftovers;
 
   const publish = async () => {
-    if (!text.trim() || busy) return;
+    if (!canPublish) return;
     setBusy(true);
     setError(null);
     try {
@@ -121,7 +126,7 @@ export function RallyMessage({ item, task, onClose, onPosted }: {
           <div className="grid grid-cols-[auto_1fr] items-center gap-x-2 gap-y-1">
             {prompts.map((p) => (
               <label key={p.label} className="contents">
-                <span className="text-xs text-zinc-500">{p.label}</span>
+                <span className={`text-xs ${missing.includes(p.label) ? 'text-red-600 dark:text-red-400' : 'text-zinc-500'}`}>{p.label} <span className="text-red-600">*</span></span>
                 {notPerson(p.label) ? (
                   <input value={answers[p.label] ?? ''} onChange={(e) => answer(p.label, e.target.value)} list={`rsug-${p.label}`}
                     placeholder="Escribe o elige…"
@@ -150,6 +155,10 @@ export function RallyMessage({ item, task, onClose, onPosted }: {
             {tagged.map((m, i) => <span key={m.ref}>{i > 0 && ', '}<b className="text-indigo-700 dark:text-indigo-300">@{m.name}</b></span>)}
           </p>
         )}
+        {missing.length > 0 && (
+          <p className="text-xs text-red-600 dark:text-red-400">Para publicar, rellena: {missing.join(', ')}.</p>
+        )}
+        {leftovers && <p className="text-xs text-red-600 dark:text-red-400">Quedan huecos «&lt;…&gt;» en el mensaje: complétalos o quítalos.</p>}
         {error && <p className="text-xs text-red-600">{error}</p>}
       </div>
       <div className="mt-3 flex items-center justify-end gap-2">
@@ -159,7 +168,8 @@ export function RallyMessage({ item, task, onClose, onPosted }: {
           className="flex items-center gap-1.5 rounded-md border border-zinc-200 px-3 py-1.5 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800">
           <Copy className="size-3.5" />Copiar
         </button>
-        <button type="button" disabled={!text.trim() || busy} onClick={() => void publish()}
+        <button type="button" disabled={!canPublish} onClick={() => void publish()}
+          title={missing.length ? `Falta: ${missing.join(', ')}` : undefined}
           className="flex items-center gap-1.5 rounded-md bg-indigo-600 px-3 py-1.5 font-medium text-white hover:bg-indigo-500 disabled:opacity-50">
           <Send className="size-3.5" />{busy ? 'Publicando…' : 'Publicar en Rally'}
         </button>
