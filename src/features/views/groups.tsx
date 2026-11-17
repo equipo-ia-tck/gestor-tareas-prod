@@ -84,11 +84,11 @@ export function GroupPicker({ name, compact = false }: { name: string; compact?:
   return (
     <Popover width="w-60" trigger={(toggle) => (
       <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggle(); }} title="Cambiar de grupo"
-        className={`flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs ${current
+        className={`flex max-w-full items-center gap-1 rounded-md border px-2 py-0.5 text-xs whitespace-nowrap ${current
           ? 'border-transparent font-medium' : 'border-dashed border-zinc-300 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-600 dark:hover:bg-zinc-800'}`}
         style={current ? { background: `${current.color}22`, color: current.color } : undefined}>
-        {current ? <span className="size-2 rounded-full" style={{ background: current.color }} /> : <FolderInput className="size-3.5" />}
-        {current?.name ?? (compact ? 'Grupo' : 'Añadir a un grupo')}
+        {current ? <span className="size-2 shrink-0 rounded-full" style={{ background: current.color }} /> : <FolderInput className="size-3.5" />}
+        <span className="truncate">{current?.name ?? (compact ? 'Grupo' : 'Añadir a un grupo')}</span>
       </button>
     )}>
       {(close) => (

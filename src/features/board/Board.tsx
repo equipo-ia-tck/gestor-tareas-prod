@@ -159,38 +159,50 @@ export function RallyBoard({ tasks, defaults, showProject = true }: Omit<Props, 
   return <BoardColumns columns={columns} showProject={showProject} />;
 }
 
-function BoardColumns({ columns, showProject }: { columns: ColumnDef[]; showProject: boolean }) {
+/** Cómo se ve el tablero (compartido entre los botones de la barra de filtros y las columnas). */
+function useBoardDisplay() {
   const [stored, setDisplay] = usePersistentState<BoardDisplay>('board-display', DEFAULT_DISPLAY);
-  const display = { ...DEFAULT_DISPLAY, ...stored };
+  return [{ ...DEFAULT_DISPLAY, ...stored }, setDisplay] as const;
+}
+
+/** «Compactas» y «Campos»: van en la fila de filtros del tablero (`BoardControls`), sin ocupar otra fila. */
+export function BoardDisplayButtons() {
+  const [display, setDisplay] = useBoardDisplay();
   const toggleField = (id: CardField) => setDisplay({ ...display, hide: display.hide.includes(id) ? display.hide.filter((f) => f !== id) : [...display.hide, id] });
-  const toggleColumn = (id: string) => setDisplay({ ...display, collapsed: display.collapsed.includes(id) ? display.collapsed.filter((c) => c !== id) : [...display.collapsed, id] });
   const btn = 'inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs';
   const off = 'border-zinc-200 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800';
   const on = 'border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950 dark:text-indigo-300';
   return (
     <>
-      <div className="mb-2 flex items-center justify-end gap-2">
-        <button type="button" onClick={() => setDisplay({ ...display, compact: !display.compact })} aria-pressed={display.compact}
-          title="Tarjetas más pequeñas: solo tipo, ID y nombre" className={`${btn} ${display.compact ? on : off}`}>
-          <Rows3 className="size-3.5" />Compactas
+      <button type="button" onClick={() => setDisplay({ ...display, compact: !display.compact })} aria-pressed={display.compact}
+        title="Tarjetas más pequeñas: solo tipo, ID y nombre" className={`${btn} ${display.compact ? on : off}`}>
+        <Rows3 className="size-3.5" />Compactas
+      </button>
+      <Popover align="right" width="w-52" trigger={(toggle) => (
+        <button type="button" onClick={toggle} className={`${btn} ${display.hide.length ? on : off}`}>
+          <SlidersHorizontal className="size-3.5" />Campos{display.hide.length ? ` · ${CARD_FIELDS.length - display.hide.length}/${CARD_FIELDS.length}` : ''}
         </button>
-        <Popover align="right" width="w-52" trigger={(toggle) => (
-          <button type="button" onClick={toggle} className={`${btn} ${display.hide.length ? on : off}`}>
-            <SlidersHorizontal className="size-3.5" />Campos{display.hide.length ? ` · ${CARD_FIELDS.length - display.hide.length}/${CARD_FIELDS.length}` : ''}
-          </button>
-        )}>
-          {() => (
-            <div className="p-1 text-sm">
-              <p className="px-2 py-1 text-xs text-zinc-500">Qué se ve en las tarjetas</p>
-              {CARD_FIELDS.map((f) => (
-                <label key={f.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 hover:bg-zinc-100 dark:hover:bg-zinc-800">
-                  <input type="checkbox" checked={!display.hide.includes(f.id)} onChange={() => toggleField(f.id)} />{f.label}
-                </label>
-              ))}
-            </div>
-          )}
-        </Popover>
-      </div>
+      )}>
+        {() => (
+          <div className="p-1 text-sm">
+            <p className="px-2 py-1 text-xs text-zinc-500">Qué se ve en las tarjetas</p>
+            {CARD_FIELDS.map((f) => (
+              <label key={f.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 hover:bg-zinc-100 dark:hover:bg-zinc-800">
+                <input type="checkbox" checked={!display.hide.includes(f.id)} onChange={() => toggleField(f.id)} />{f.label}
+              </label>
+            ))}
+          </div>
+        )}
+      </Popover>
+    </>
+  );
+}
+
+function BoardColumns({ columns, showProject }: { columns: ColumnDef[]; showProject: boolean }) {
+  const [display, setDisplay] = useBoardDisplay();
+  const toggleColumn = (id: string) => setDisplay({ ...display, collapsed: display.collapsed.includes(id) ? display.collapsed.filter((c) => c !== id) : [...display.collapsed, id] });
+  return (
+    <>
       {/* Alto máximo de la pantalla: cada columna tiene su scroll vertical y la barra horizontal queda siempre a la vista. */}
       <div className="-mx-6 flex max-h-[calc(100dvh-10rem)] min-h-80 gap-3 overflow-x-auto px-6 pb-3">
         {columns.map((c) => (

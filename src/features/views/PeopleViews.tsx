@@ -5,7 +5,6 @@ import { fuzzyScore } from '../../domain/text';
 import { navigate } from '../../app/router';
 import { teamsChatUrl } from '../../domain/teams';
 import { useApp } from '../../app/AppContext';
-import { routeHref } from '../../app/router';
 import { Section, TaskList } from '../../components/TaskList';
 import { Avatar } from '../../components/ui/Badges';
 import { repo } from '../../data/services';
@@ -97,19 +96,26 @@ function GroupBlock({ group, people }: { group: PersonGroup | null; people: Pers
       <ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
         {people.map((p) => (
           <li key={p.name} draggable onDragStart={(e) => setDraggedPerson(e, p.name)}>
-            <a href={routeHref({ view: 'person', name: p.name })} draggable={false} className="flex items-center gap-3 rounded-lg border border-zinc-200 bg-white p-3 hover:border-indigo-300 hover:shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-              <Avatar name={p.name} size={36} />
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-medium">{p.name}</p>
-                <p className="truncate text-xs text-zinc-500">{role(p.name) || 'Sin rol'}</p>
-                <div className="mt-1"><GroupPicker name={p.name} compact /></div>
+            {/* Un div y no un enlace: dentro va el botón del grupo, y un botón dentro de un enlace no funciona bien. */}
+            <div role="link" tabIndex={0} title={`Abrir la ficha de ${p.name}`}
+              onClick={(e) => { if (!(e.target as HTMLElement).closest('button, [data-popover]')) navigate({ view: 'person', name: p.name }); }}
+              onKeyDown={(e) => { if (e.key === 'Enter' && e.target === e.currentTarget) navigate({ view: 'person', name: p.name }); }}
+              className="flex h-full cursor-pointer flex-col gap-2 rounded-lg border border-zinc-200 bg-white p-3 hover:border-indigo-300 hover:shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+              <div className="flex items-center gap-3">
+                <Avatar name={p.name} size={36} />
+                <div className="min-w-0 flex-1">
+                  <p className="line-clamp-2 font-medium leading-snug break-words" title={p.name}>{p.name}</p>
+                  <p className="truncate text-xs text-zinc-500">{role(p.name) || 'Sin rol'}</p>
+                </div>
               </div>
-              <div className="text-right text-xs text-zinc-500">
-                <p>{p.tasks} tarea{p.tasks === 1 ? '' : 's'}{p.notes ? ` · ${p.notes} nota${p.notes === 1 ? '' : 's'}` : ''}</p>
-                {p.rally > 0 && <p className="text-indigo-600 dark:text-indigo-400">Owner de {p.rally} en Rally</p>}
-                {topics(p.name) > 0 && <p className="text-amber-600">{topics(p.name)} para hablar</p>}
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-zinc-500">
+                <GroupPicker name={p.name} compact />
+                <span className="flex-1" />
+                <span>{p.tasks} tarea{p.tasks === 1 ? '' : 's'}{p.notes ? ` · ${p.notes} nota${p.notes === 1 ? '' : 's'}` : ''}</span>
+                {p.rally > 0 && <span className="text-indigo-600 dark:text-indigo-400">· Owner de {p.rally} en Rally</span>}
+                {topics(p.name) > 0 && <span className="text-amber-600">· {topics(p.name)} para hablar</span>}
               </div>
-            </a>
+            </div>
           </li>
         ))}
       </ul>
