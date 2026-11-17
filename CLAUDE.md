@@ -807,6 +807,24 @@ En Vercel no hay servidor que lea la carpeta de OneDrive del Mac, así que el Ma
   estado deja solo sus columnas y el Panel cuenta lo filtrado. El estado `blocked` necesita la migración
   `008_feedback_bloqueado.sql` (después de 007); sin ella, el error lo dice.
 
+## Fase 31: pantalla Rally como la lista de Rally (rama `rally-como-rally`)
+
+Petición de la usuaria (nov 2026): parecerse a la «React Custom List» del dashboard de Owners de etiquetado, que el equipo
+ya usa.
+
+- **Cabecera**: buscador (`RallySearch`, desplegable con los resultados de todo Rally) · Nuevo en Rally · Crear con
+  petición · Actualizar · Desconectar (discreto). `RallyItems` pone la cabecera; `RallyView` solo la del formulario de conexión.
+- **Proyecto en un desplegable** (`ProjectPicker`): recientes (`rally-recent-projects`), buscador, todos los proyectos con
+  casillas (varios a la vez) y «Ver también» ↑ padres y ↓ hijos (`rally-scope`, los dos marcados por defecto). La primera
+  vez se elige Team.Digital Data (`rally-projects-v2`, null = nunca elegido); después, lo último. Sin proyectos = lo
+  asignado a mí. `projects()` trae `parentId` y `itemsReport(…, scope)` suma hijos (todos los niveles) y padres
+  (`projectScope`, máx. 300, lista de proyectos en caché 10 min).
+- **Sin periodo**: siempre todo lo de los proyectos elegidos (`days = 0`).
+- **Orden por Rank** (`DragAndDropRank`, `RallyItem.rank`, `byRank`: como texto; sin Rank, al final).
+- **Vistas guardadas** (`domain/rallyViews.ts`, `RALLY_VIEWS`, `rally-view`): las 15 de Rally con sus nombres. Condiciones
+  sobre etiquetas, Flow State, nombre y Ready; mismo campo = o, campos distintos = y (`inRallyView`). Se aplican sobre lo
+  cargado, antes del filtro por tipo y el buscador. Para cambiar una, se edita ese archivo.
+
 ### Más adelante
 
 - **Electron**: la app es web estática con rutas por hash y datos en IndexedDB, así que se puede empaquetar sin cambios

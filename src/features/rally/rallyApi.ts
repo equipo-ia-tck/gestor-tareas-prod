@@ -52,8 +52,11 @@ export const rallyApi = {
   /** Elimina un adjunto en Rally (no se puede deshacer). */
   deleteAttachment: (objectId: string) => call<{ ok: boolean }>('POST', '/api/rally/attachment-delete', { objectId }),
   projects: () => call<{ projects: RallyProject[] }>('GET', '/api/rally/projects').then((r) => r.projects),
-  items: (days: number, projects: string[], tags: string[] = []) =>
-    call<{ items: RallyItem[]; truncated: { kind: RallyKind; total: number; shown: number }[] }>('GET', `/api/rally/items?${new URLSearchParams([['days', String(days)], ['projects', projects.join(',')], ...tags.map((t) => ['tag', t])])}`)
+  /** `scope`: sumar los proyectos hijos (`down`) y padres (`up`) de los elegidos, como en Rally. */
+  items: (days: number, projects: string[], tags: string[] = [], scope: { down: boolean; up: boolean } = { down: false, up: false }) =>
+    call<{ items: RallyItem[]; truncated: { kind: RallyKind; total: number; shown: number }[] }>('GET', `/api/rally/items?${new URLSearchParams([
+      ['days', String(days)], ['projects', projects.join(',')], ...tags.map((t) => ['tag', t]), ['down', scope.down ? '1' : '0'], ['up', scope.up ? '1' : '0'],
+    ])}`)
 
 };
 

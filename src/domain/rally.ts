@@ -118,13 +118,15 @@ export interface RallyItem {
   mine: boolean;
   /** Etiquetas de Rally (los test sets se reparten por etiqueta, porque no tienen Assignee). */
   tags: string[];
+  /** Rank de Rally (DragAndDropRank): el orden de prioridad del backlog. Se compara como texto. */
+  rank?: string;
   updatedAt: string;
   url: string;
   /** Solo al mover: comentario que toca dejar en la discusión (lo publica la app tras preguntar por el analista). */
   comment?: string;
 }
 
-export interface RallyProject { id: string; name: string }
+export interface RallyProject { id: string; name: string; parentId?: string }
 
 /** Categoría para agrupar como el Tablero del gestor (Accepted aparte de Hecho, como en Rally). */
 export type RallyCategory = 'todo' | 'blocked' | 'doing' | 'done' | 'accepted';
