@@ -370,3 +370,23 @@ export function workRuleFields(message: string): string[] {
   }
   return out;
 }
+
+/**
+ * «@Algo» de un comentario que no corresponde a ninguna persona elegida en Rally (y, por tanto, no avisaría). No cuenta los
+ * emails (la @ va pegada a una palabra) ni las menciones ya elegidas, aunque tengan espacios («@Ana María»).
+ */
+export function unlinkedMentions(text: string, mentions: { name: string }[]): string[] {
+  let rest = text;
+  for (const m of [...mentions].sort((a, b) => b.name.length - a.name.length)) rest = rest.split(`@${m.name}`).join(' ');
+  return [...new Set([...rest.matchAll(/(?<![\p{L}\p{N}._-])@([\p{L}][\p{L}\p{N}._-]*)/gu)].map((m) => `@${m[1]}`))];
+}
+
+/** Texto que se está escribiendo tras una «@» justo antes del cursor (para sugerir personas), o null. */
+export function mentionQuery(text: string, caret: number): { start: number; query: string } | null {
+  const m = /(?:^|[\s(])@([^\s@][^@\n]{0,40})?$/u.exec(text.slice(0, caret));
+  if (!m) return null;
+  const query = m[1] ?? '';
+  // Como mucho tres palabras («@Ana María López»); más, ya no es un nombre.
+  if (query.split(' ').length > 3) return null;
+  return { start: caret - query.length - 1, query };
+}

@@ -1,6 +1,18 @@
 import { useMemo } from 'react';
 import { repo } from '../data/services';
+import { isRallyId } from '../domain/rally';
 import type { ISODate, Task, TaskPatch } from '../domain/types';
+
+/**
+ * Las tareas enlazadas a Rally también se mueven en Rally al completarlas o reabrirlas (y Rally avisa): con un clic sin querer
+ * se puede liar, así que se pregunta antes. True si se puede seguir.
+ */
+export function confirmRallyToggle(tasks: Task[], done: boolean): boolean {
+  const rally = tasks.filter((t) => isRallyId(t.external_id));
+  if (!rally.length) return true;
+  const what = rally.length === 1 ? `${rally[0].external_id} · ${rally[0].title}` : `${rally.length} elementos de Rally`;
+  return window.confirm(`¿${done ? 'Completar' : 'Reabrir'} ${what}?\n\nTambién se ${rally.length === 1 ? 'moverá' : 'moverán'} en Rally (${done ? 'a Completed' : 'fuera de Completed'}).`);
+}
 
 const n = (count: number, one: string, many: string) => (count === 1 ? one : `${count} ${many}`);
 
@@ -10,6 +22,7 @@ export function useTaskActions() {
     async toggleDone(tasks: Task[]) {
       if (!tasks.length) return;
       const done = tasks.some((t) => t.status !== 'done');
+      if (!confirmRallyToggle(tasks, done)) return;
       // Una sola: el repositorio pone la etiqueta (incluye "se repite…" en las recurrentes).
       if (tasks.length === 1) return repo.setCompleted(tasks[0].id, done);
       await repo.batch(

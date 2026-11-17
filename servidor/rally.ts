@@ -687,17 +687,21 @@ export class Rally {
     const text = String(input.text ?? '').trim();
     const entry = kindOfId(id);
     if (!entry || !text || text.length > 10_000) throw new ApiError(400, 'Mensaje de Rally no válido.');
-    const raw = Array.isArray(input.mentions) ? input.mentions.slice(0, 20) : [];
-    const refs = raw.map(parseUserRef);
-    if (refs.some((r) => !r)) throw new ApiError(400, 'Persona no válida.');
-    // Solo las que siguen en el texto (se pueden haber borrado al retocarlo).
-    const used = (refs as RallyRef[]).filter((r, i, all) => text.includes(`@${r.name}`) && all.findIndex((x) => x.ref === r.ref) === i);
+    const mentions = await this.mentionsFor(a, text, input.mentions);
     const [type] = entry;
     const [o] = await this.query(a, type, `(FormattedID = "${id}")`);
     if (!o) throw new ApiError(404, `${id} no existe en Rally.`);
-    const mentions = await Promise.all(used.map(async (r) => ({ name: r.name, uuid: (await this.userInfo(a, r.ref.split('/').pop()!))?.uuid ?? null })));
     await this.post(a, '/conversationpost/create', { ConversationPost: { Artifact: `/${type}/${o.ObjectID}`, Text: messageHtml(text, mentions) } });
-    return { mentioned: used.map((r) => r.name) };
+    return { mentioned: mentions.map((m) => m.name) };
+  }
+
+  /** Personas elegidas en Rally que siguen en el texto como «@Nombre», con el UUID que necesita la mención. */
+  private async mentionsFor(a: { base_url: string; api_key: string }, text: string, raw: unknown): Promise<Mention[]> {
+    const refs = (Array.isArray(raw) ? raw.slice(0, 20) : []).map(parseUserRef);
+    if (refs.some((r) => !r)) throw new ApiError(400, 'Persona no válida.');
+    // Solo las que siguen en el texto (se pueden haber borrado al retocarlo).
+    const used = (refs as RallyRef[]).filter((r, i, all) => text.includes(`@${r.name}`) && all.findIndex((x) => x.ref === r.ref) === i);
+    return Promise.all(used.map(async (r) => ({ name: r.name, uuid: (await this.userInfo(a, r.ref.split('/').pop()!))?.uuid ?? null })));
   }
 
   /**
@@ -1083,16 +1087,19 @@ export class Rally {
   }
 
   /** Publica un comentario en la discusión de un elemento, como el usuario de la clave. */
-  async comment(user: TeamUser, input: { kind?: unknown; objectId?: unknown; text?: unknown }): Promise<RallyDetail['discussion'][number]> {
+  async comment(user: TeamUser, input: { kind?: unknown; objectId?: unknown; text?: unknown; mentions?: unknown }): Promise<RallyDetail['discussion'][number]> {
     const a = await this.connected(user);
     const entry = Object.entries(KINDS).find(([, info]) => info.kind === input.kind);
     if (!entry || !/^\d+$/.test(String(input.objectId))) throw new ApiError(400, 'Elemento de Rally no válido.');
     const text = String(input.text ?? '').trim();
     if (!text) throw new ApiError(400, 'Escribe el comentario.');
     if (text.length > 10_000) throw new ApiError(400, 'El comentario es demasiado largo.');
+    // Las personas elegidas con «@» pasan a menciones de Rally (las que avisan por correo).
+    const mentions = await this.mentionsFor(a, text, input.mentions);
+    const html = mentions.length ? messageHtml(text, mentions) : commentHtml(text);
     const post = await this.post(a, '/conversationpost/create?fetch=Text,User,CreationDate,ObjectID',
-      { ConversationPost: { Artifact: `/${entry[0]}/${input.objectId}`, Text: commentHtml(text) } });
-    return { ...this.toPost(a, { ...post, Text: post.Text ?? commentHtml(text) }), author: refName(post.User) ?? a.rally_user, mine: true };
+      { ConversationPost: { Artifact: `/${entry[0]}/${input.objectId}`, Text: html } });
+    return { ...this.toPost(a, { ...post, Text: post.Text ?? html }), author: refName(post.User) ?? a.rally_user, mine: true };
   }
 
   /** Comentario de la discusión tal como lo enseña la app. */

@@ -6,6 +6,7 @@ import { externalUrl } from '../domain/releases';
 import { notesForTask, notesLinkingTask } from '../domain/notes';
 import { TaskNotes } from '../features/notes/TaskNotes';
 import { RallyTaskSection } from '../features/rally/RallyTaskSection';
+import { confirmRallyToggle } from '../hooks/useTaskActions';
 import { MessageButton } from '../features/templates/MessageComposer';
 import { useSync } from '../data/sync';
 import { shareInfo } from '../domain/sharing';
@@ -79,7 +80,7 @@ function PanelBody({ task, onClose }: { task: Task; onClose: () => void }) {
       <header className="flex items-center gap-2 border-b border-zinc-200 px-4 py-2 dark:border-zinc-800">
         <button
           type="button"
-          onClick={() => void repo.setCompleted(task.id, task.status !== 'done')}
+          onClick={() => { if (confirmRallyToggle([task], task.status !== 'done')) void repo.setCompleted(task.id, task.status !== 'done'); }}
           className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium ${task.status === 'done' ? 'border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' : 'border-zinc-300 hover:border-emerald-500 hover:text-emerald-700 dark:border-zinc-600'}`}
         >
           <Check className="size-3.5" />{task.status === 'done' ? 'Completada' : 'Marcar como completada'}

@@ -771,6 +771,30 @@ En Vercel no hay servidor que lea la carpeta de OneDrive del Mac, así que el Ma
   sigue para las pestañas abiertas con la versión anterior). Sin capturas, a propósito. En Más → Feedback: frase en
   negrita, parte de la web e impacto, y filtro por parte de la web.
 
+## Fase 30: primera tanda del feedback (rama `feedback-tanda-1`)
+
+- **Menciones en Rally**: la caja de la discusión y el «Mensaje» usan `MentionTextarea` («@» + 2 letras busca en Rally; Enter,
+  Tab o clic la elige). `comment` acepta `mentions` (como `messagePost`, con `mentionsFor`) y, sin menciones, publica igual
+  que antes. `unlinkedMentions` avisa y bloquea si queda una «@Nombre» sin enlazar (no avisaría). En el «Mensaje», cada
+  persona de la plantilla tiene que elegirse en Rally.
+- **Preparar mensaje** del panel: en tareas enlazadas a Rally abre `RallyMessage` sin `onConfirm` (Copiar y Publicar en
+  Rally, sin tocar Ready); en el resto, el preparador de siempre (Copiar y Teams).
+- **Tablero** (`BoardColumns`, `board-display` en localStorage): alto máximo de la pantalla con scroll por columna (la barra
+  horizontal siempre a la vista), columnas plegables, tarjetas «Compactas» y «Campos» (etiquetas, proyecto, ID, fecha e
+  iconos, personas, Owner). Los títulos largos se cortan dentro de la tarjeta.
+- **Completar una tarea enlazada a Rally** (circulito, tecla C, barra en bloque, panel) pide confirmación
+  (`confirmRallyToggle`), porque también la mueve en Rally.
+- **Revisión semanal**: los pasos muestran cuántas tareas tienen (no un número de orden).
+- **Pantalla Rally**: ID, Owner y Estado se ensanchan arrastrando el borde de la cabecera (`rally-widths`).
+- Modo oscuro: los botones claros con `hover:bg-X-100` llevan su `dark:hover`.
+- **Tareas fijas del equipo** (`domain/routines.ts`, `TEAM_ROUTINES`): lunes «Rellenar los objetivos de la semana…» y viernes
+  «Rellenar la gestión de la demanda», recurrentes semanales (serie `rutina:<id>`, etiqueta `rutina`, prioridad 2, `url`
+  opcional). `AppContext` las crea una vez por cuenta tras la primera sincronización (`SyncState.pulled`) y las apunta en
+  `settings.routines_added` (sin migración): si alguien las borra, no vuelven. Para añadir otra, se añade a la lista.
+- **Panel del feedback** (`FeedbackDashboard`, `feedbackStats`): recibidos, abiertos, sin mirar, % resuelto, días hasta Hecho,
+  barra de estados, recibidos y cerrados por semana, por parte de la web, por tipo (con fallos abiertos por impacto) y quién
+  envía. Pulsar una cifra filtra la lista. Plegable (`feedback-dashboard-open`).
+
 ### Más adelante
 
 - **Electron**: la app es web estática con rutas por hash y datos en IndexedDB, así que se puede empaquetar sin cambios

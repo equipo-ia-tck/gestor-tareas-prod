@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { repo } from '../data/services';
 import { labelColorMap } from '../domain/colors';
 import { postponeCounts } from '../domain/activity';
@@ -6,6 +6,7 @@ import { missingRallyTypes, RALLY_TYPE_IDS, withAcceptedState } from '../domain/
 import { knownPeople } from '../domain/selectors';
 import { matchesSpace, SPACES_ENABLED, spaceOf, spaceOfProject, type Space, type SpaceFilter } from '../domain/spaces';
 import { useSync } from '../data/sync';
+import { pendingRoutines, routineTask, TEAM_ROUTINES } from '../domain/routines';
 import { usePersistentState } from '../hooks/usePersistentState';
 import type { ActivityEntry, ISODate, ItemType, Label, Note, Person, Project, Release, Settings, Task } from '../domain/types';
 import { useActivity, useItemTypes, useLabels, useNotes, usePeople, useProjects, useReleases, useSettings, useTasks, useToday } from '../hooks/useData';
@@ -56,7 +57,7 @@ export function useApp() {
 export function AppProvider({ children }: { children: ReactNode }) {
   const allTasks = useTasks();
   const allProjects = useProjects(true);
-  const { spaces, team, user, isAdmin } = useSync();
+  const { spaces, team, user, isAdmin, pulled } = useSync();
   // El filtro es de cada cuenta (en un navegador compartido no se hereda el de la anterior).
   const [storedFilter, setSpaceFilter] = usePersistentState<SpaceFilter>(`space-filter:${user?.id ?? ''}`, 'all');
   // Si dejo de estar en el espacio filtrado, se vuelve a "Todo".
@@ -85,6 +86,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const activity = useActivity();
   const settings = useSettings();
   const today = useToday();
+  // Rutinas del equipo (objetivos del lunes, gestión de la demanda del viernes): se crean una vez por cuenta, cuando ya ha
+  // llegado la primera sincronización (así otro navegador no las duplica). Se lee del repositorio, no de los hooks, que
+  // pueden ir un paso por detrás.
+  const routinesChecked = useRef<string | null>(null);
+  useEffect(() => {
+    if (!user || !pulled || routinesChecked.current === user.id) return;
+    routinesChecked.current = user.id;
+    void (async () => {
+      const [list, current] = await Promise.all([repo.listTasks(), repo.getSettings()]);
+      const missing = pendingRoutines(TEAM_ROUTINES, list, current.routines_added);
+      if (!missing.length) return;
+      await repo.batch('Tareas fijas del equipo añadidas', async () => {
+        for (const r of missing) await repo.createTask(routineTask(r, today), { spaceDefault: false });
+      });
+      await repo.updateSettings({ routines_added: [...current.routines_added, ...missing.map((r) => r.id)] });
+    })();
+  }, [user, pulled, today]);
   const [detailId, setDetailId] = useState<string | null>(null);
 
   const value = useMemo<AppData>(() => {

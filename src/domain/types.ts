@@ -192,6 +192,8 @@ export interface Settings {
     /** Último día en que se completó la revisión semanal. */
     last_review_on: ISODate | null;
   };
+  /** Rutinas del equipo (`domain/routines.ts`) que ya se han creado como tarea en esta cuenta: no se vuelven a crear. */
+  routines_added: string[];
   /** Vistas guardadas de "Todo" (filtros con nombre). */
   saved_views: SavedView[];
   /** Grupos de personas, en el orden en que se muestran. */
@@ -239,6 +241,7 @@ export const DEFAULT_SETTINGS: Settings = {
   saved_views: [],
   groups: [],
   rally_templates: null,
+  routines_added: [],
 };
 
 export type NewTask = Partial<Omit<Task, 'id' | 'created_at' | 'updated_at' | 'last_touched_at'>> & {

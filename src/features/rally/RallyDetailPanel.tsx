@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ExternalLink, Paperclip, Pencil, Trash2, Plus, Send, Upload, X } from 'lucide-react';
-import type { RallyDetail, RallyItem } from '../../domain/rally';
+import { unlinkedMentions, type RallyDetail, type RallyItem, type RallyRef } from '../../domain/rally';
 import type { Task } from '../../domain/types';
 import { MAX_UPLOAD, rallyApi, toBase64, tooBigMessage } from './rallyApi';
 import { RallyFlags } from './RallyFlags';
+import { MentionTextarea, UnlinkedWarning } from './MentionTextarea';
 
 /** Campos que se ven primero (con el nombre que les da Rally); el resto va en "Más campos". */
 const PRIMARY = [
@@ -258,6 +259,8 @@ function NewRallyTask({ parent, onSelect }: { parent: RallyItem; onSelect: (item
 function Discussion({ item, posts }: { item: RallyItem; posts: RallyDetail['discussion'] }) {
   const [added, setAdded] = useState<RallyDetail['discussion']>([]);
   const [text, setText] = useState('');
+  const [mentions, setMentions] = useState<RallyRef[]>([]);
+  const unlinked = unlinkedMentions(text, mentions).length > 0;
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /** Cambios ya guardados en Rally (por ObjectID): texto nuevo o `null` si se ha eliminado. */
@@ -298,13 +301,14 @@ function Discussion({ item, posts }: { item: RallyItem; posts: RallyDetail['disc
   };
 
   const publish = async () => {
-    if (!text.trim() || sending) return;
+    if (!text.trim() || sending || unlinked) return;
     setSending(true);
     setError(null);
     try {
-      const post = await rallyApi.comment(item, text);
+      const post = await rallyApi.comment(item, text, mentions.filter((m) => text.includes(`@${m.name}`)));
       setAdded((list) => [...list, post]);
       setText('');
+      setMentions([]);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -352,22 +356,25 @@ function Discussion({ item, posts }: { item: RallyItem; posts: RallyDetail['disc
           ))}
         </ul>
       )}
-      <textarea
+      <MentionTextarea
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        onChange={setText}
+        mentions={mentions}
+        onMentions={setMentions}
         onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void publish(); } }}
-        placeholder="Escribe un comentario para Rally…"
+        placeholder="Escribe un comentario para Rally… (@ para mencionar)"
         rows={3}
         disabled={sending}
         className="w-full resize-y rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm outline-none focus:border-indigo-400 disabled:opacity-60 dark:border-zinc-600 dark:bg-zinc-900"
       />
+      <UnlinkedWarning text={text} mentions={mentions} />
       {error && <p className="mt-1 rounded-md bg-red-50 px-2 py-1 text-xs text-red-700 dark:bg-red-950 dark:text-red-300">{error}</p>}
       <div className="mt-1 flex items-center justify-end gap-2">
-        <span className="text-xs text-zinc-400">Se publica en Rally con tu nombre · ⌘↵</span>
+        <span className="text-xs text-zinc-400">Se publica en Rally con tu nombre · @ menciona y avisa · ⌘↵</span>
         <button
           type="button"
           onClick={() => void publish()}
-          disabled={!text.trim() || sending}
+          disabled={!text.trim() || sending || unlinked}
           className="inline-flex items-center gap-1 rounded-md bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-40"
         >
           <Send className="size-3" />{sending ? 'Publicando…' : 'Publicar en Rally'}

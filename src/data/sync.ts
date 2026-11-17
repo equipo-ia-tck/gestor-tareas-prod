@@ -31,6 +31,8 @@ export interface SyncState {
   isAdmin: boolean;
   /** Código de administración (solo para quien administra). */
   adminCode: string | null;
+  /** Ya ha llegado la primera sincronización de esta sesión (antes, el navegador puede no tener todo). */
+  pulled?: boolean;
   /** Dueño de cada registro compartido ("tasks:<id>" → id de cuenta). */
   owners: Record<string, string>;
 }
@@ -518,7 +520,7 @@ export class SyncClient {
         await this.db.meta.put({ key: 'sync-owners', value: owners });
       });
       if (full) this.lastFull = Date.now();
-      this.set({ owners, status: this.dirty.size ? this.state.status : 'ok' });
+      this.set({ owners, pulled: true, status: this.dirty.size ? this.state.status : 'ok' });
     } catch (e) {
       console.warn(e);
       this.set({ status: 'offline' });

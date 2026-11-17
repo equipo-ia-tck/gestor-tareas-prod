@@ -11,6 +11,7 @@ import {
 } from '../../domain/feedback';
 import { stateOf } from '../../domain/workflows';
 import { ViewHeader } from '../views/ViewHeader';
+import { FeedbackDashboard } from './FeedbackDashboard';
 
 const KIND_ICON = { bug: Bug, improvement: Sparkles, idea: Lightbulb, question: HelpCircle, other: MessageCircle } as const;
 const KIND_COLOR: Record<FeedbackKind, string> = {
@@ -74,6 +75,13 @@ export function FeedbackView() {
           className="flex items-center gap-1 rounded-md border border-zinc-300 px-2.5 py-1 text-sm hover:bg-zinc-100 dark:border-zinc-600 dark:hover:bg-zinc-800">
           <RefreshCw className="size-3.5" />Actualizar
         </button>} />
+
+      {items && items.length > 0 && (
+        <FeedbackDashboard items={items}
+          onStatus={(st) => { setStatus(st); setKind('all'); setArea('all'); }}
+          onKind={(k) => { setKind(k); setStatus('all'); setArea('all'); }}
+          onArea={(a) => { setArea(a); setStatus('open'); setKind('all'); }} />
+      )}
 
       <div className="mb-2 flex flex-wrap items-center gap-1.5">
         {([['open', 'Abiertos'], ...FEEDBACK_STATUSES.map((s) => [s.id, s.label]), ['all', 'Todos']] as [FeedbackStatus | 'open' | 'all', string][]).map(([id, label]) => (
@@ -154,7 +162,7 @@ function FeedbackCard({ f, onUpdate }: { f: Feedback; onUpdate: (patch: { status
           <span className="text-zinc-400">La tarea que se creó ya no existe (o es de otro administrador).</span>
         ) : (
           <button type="button" onClick={() => void toTask()}
-            className="rounded bg-indigo-50 px-2 py-0.5 font-medium text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-950 dark:text-indigo-300">→ Tarea</button>
+            className="rounded bg-indigo-50 px-2 py-0.5 font-medium text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-950 dark:text-indigo-300 dark:hover:bg-indigo-900/60">→ Tarea</button>
         )}
       </div>
     </li>

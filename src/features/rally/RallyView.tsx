@@ -206,6 +206,38 @@ const COLUMN_LABELS: [keyof RallyColumns, string][] = [
   ['assignee', 'Asignado a (debajo del nombre)'], ['tags', 'Etiquetas (debajo)'], ['project', 'Proyecto (debajo)'], ['iteration', 'Iteración (debajo)'],
 ];
 
+/** Ancho en píxeles de las columnas fijas (se arrastra el borde de la cabecera; doble clic vuelve al de serie). */
+interface RallyWidths { id: number; owner: number; state: number }
+const DEFAULT_WIDTHS: RallyWidths = { id: 96, owner: 160, state: 144 };
+
+/**
+ * Asa para ensanchar o estrechar una columna de la cabecera. `side`: en qué borde está (las de la derecha del nombre crecen
+ * hacia la izquierda, quitándole sitio al nombre).
+ */
+function ResizeHandle({ width, onChange, onReset, side }: { width: number; onChange: (w: number) => void; onReset: () => void; side: 'left' | 'right' }) {
+  return (
+    <span
+      role="separator"
+      aria-orientation="vertical"
+      title="Arrastra para cambiar el ancho · doble clic: el de serie"
+      onDoubleClick={onReset}
+      onMouseDown={(e) => {
+        e.preventDefault();
+        const x0 = e.clientX;
+        const move = (ev: MouseEvent) => {
+          const dx = ev.clientX - x0;
+          onChange(Math.round(Math.min(480, Math.max(56, side === 'right' ? width + dx : width - dx))));
+        };
+        const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); document.body.style.cursor = ''; };
+        document.body.style.cursor = 'col-resize';
+        window.addEventListener('mousemove', move);
+        window.addEventListener('mouseup', up);
+      }}
+      className={`absolute top-0 bottom-0 z-10 w-2 cursor-col-resize after:absolute after:inset-y-0 after:left-1/2 after:w-px after:bg-zinc-300 hover:after:bg-indigo-500 dark:after:bg-zinc-600 ${side === 'right' ? '-right-1' : '-left-1'}`}
+    />
+  );
+}
+
 const NO_GROUP: Partial<Record<RallyGroupBy, string>> = { iteration: 'Sin iteración', assignee: 'Sin asignar', tag: 'Sin etiqueta' };
 
 function RallyItems() {
@@ -240,6 +272,11 @@ function RallyItems() {
   useWideLayout(true);
   const [storedColumns, setColumns] = usePersistentState<RallyColumns>('rally-columns', DEFAULT_COLUMNS);
   const cols = { ...DEFAULT_COLUMNS, ...storedColumns };
+  const [storedWidths, setWidths] = usePersistentState<RallyWidths>('rally-widths', DEFAULT_WIDTHS);
+  const widths = { ...DEFAULT_WIDTHS, ...storedWidths };
+  const resize = (key: keyof RallyWidths, side: 'left' | 'right') => (
+    <ResizeHandle side={side} width={widths[key]} onChange={(w) => setWidths({ ...widths, [key]: w })} onReset={() => setWidths({ ...widths, [key]: DEFAULT_WIDTHS[key] })} />
+  );
 
   useEffect(() => {
     rallyApi.projects().then(setRallyProjects, (e: Error) => setError(e.message));
@@ -374,7 +411,7 @@ function RallyItems() {
                 <input type="checkbox" checked={cols[key]} onChange={(e) => setColumns({ ...cols, [key]: e.target.checked })} />{label}
               </label>
             ))}
-            <button type="button" onClick={() => setColumns(DEFAULT_COLUMNS)} className="mt-1 px-1 text-xs text-indigo-600 hover:underline dark:text-indigo-400">Volver a lo de serie</button>
+            <button type="button" onClick={() => { setColumns(DEFAULT_COLUMNS); setWidths(DEFAULT_WIDTHS); }} className="mt-1 px-1 text-xs text-indigo-600 hover:underline dark:text-indigo-400">Volver a lo de serie</button>
           </div>)}
         </Popover>
         <span className="ml-auto inline-flex items-center gap-2">
@@ -419,9 +456,9 @@ function RallyItems() {
 
       {visible.length > 0 && (
         <div className="-mx-2 mb-1 hidden gap-2 border-b border-zinc-200 px-2 pb-1 text-[11px] font-semibold tracking-wide text-zinc-400 uppercase md:flex dark:border-zinc-700">
-          <span className="w-7" /><span className="w-24">ID</span><span className="flex-1">Name</span>
-          {cols.owner && <span className="w-40">Owner</span>}
-          {cols.state && <span className="w-36 text-right">Estado</span>}<span className="w-24" />
+          <span className="w-7" /><span className="relative shrink-0" style={{ width: widths.id }}>ID{resize('id', 'right')}</span><span className="flex-1">Name</span>
+          {cols.owner && <span className="relative shrink-0 pl-1" style={{ width: widths.owner }}>{resize('owner', 'left')}Owner</span>}
+          {cols.state && <span className="relative shrink-0 text-right" style={{ width: widths.state }}>{resize('state', 'left')}Estado</span>}<span className="w-24" />
         </div>
       )}
       {groupRally(visible, groupBy).map((g) => (
@@ -434,7 +471,7 @@ function RallyItems() {
                 <li key={it.objectId} data-rally-row onClick={(e) => { if (!(e.target as HTMLElement).closest('a, button')) show(it); }}
                   className={`-mx-2 flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/60 ${it.done ? 'opacity-60' : ''} ${open?.objectId === it.objectId ? 'bg-indigo-50 ring-1 ring-indigo-300 dark:bg-indigo-950/50 dark:ring-indigo-800' : ''}`}>
                   <span className="w-7 shrink-0 rounded px-1 text-center text-[10px] font-bold text-white" style={{ background: colorOf(it.kind) }}>{it.kind}</span>
-                  <a href={it.url} target="_blank" rel="noreferrer" className="inline-flex w-24 shrink-0 items-center gap-0.5 font-mono text-xs text-indigo-600 hover:underline" title="Abrir en Rally">
+                  <a href={it.url} target="_blank" rel="noreferrer" className="inline-flex shrink-0 items-center gap-0.5 truncate font-mono text-xs text-indigo-600 hover:underline" style={{ width: widths.id }} title="Abrir en Rally">
                     {it.id}<ExternalLink className="size-3" />
                   </a>
                   {/* Columnas fijas (ID, Owner, Estado) para que cuadren con la cabecera; lo secundario va debajo del nombre. */}
@@ -461,11 +498,11 @@ function RallyItems() {
                     })()}
                   </span>
                   {cols.owner && (
-                    <span className="hidden w-40 shrink-0 items-center gap-1.5 text-xs text-zinc-600 md:inline-flex dark:text-zinc-300" title="Owner en Rally">
+                    <span className="hidden shrink-0 items-center gap-1.5 pl-1 text-xs text-zinc-600 md:inline-flex dark:text-zinc-300" style={{ width: widths.owner }} title="Owner en Rally">
                       {it.owner ? <><Avatar name={it.owner} size={18} /><span className="truncate">{it.owner}</span></> : <span className="text-zinc-400">Sin owner</span>}
                     </span>
                   )}
-                  {cols.state && <span className="flex w-36 shrink-0 justify-end">
+                  {cols.state && <span className="flex shrink-0 justify-end" style={{ width: widths.state }}>
                     {(() => {
                       // El estado con el nombre de la columna del Tablero (así se busca igual en los dos sitios).
                       const col = boardColumnOf(it);

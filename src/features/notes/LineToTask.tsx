@@ -31,10 +31,10 @@ export function LineToTask({ line, defaults = {}, topicPerson }: { line: NoteLin
   return (
     <span className="mr-2 inline-flex gap-1 opacity-60 group-hover:opacity-100">
       <button type="button" onClick={() => void create(false)} title="Crea la tarea con la persona, el proyecto y la fecha de la línea"
-        className="rounded bg-indigo-50 px-1.5 text-[11px] font-medium text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-950 dark:text-indigo-300">→ Tarea</button>
+        className="rounded bg-indigo-50 px-1.5 text-[11px] font-medium text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-950 dark:text-indigo-300 dark:hover:bg-indigo-900/60">→ Tarea</button>
       {topicFor && (
         <button type="button" onClick={() => void create(true)} title={`Tema pendiente con ${topicFor}`}
-          className="rounded bg-amber-50 px-1.5 text-[11px] font-medium text-amber-700 hover:bg-amber-100 dark:bg-amber-950 dark:text-amber-300">→ Para hablar</button>
+          className="rounded bg-amber-50 px-1.5 text-[11px] font-medium text-amber-700 hover:bg-amber-100 dark:bg-amber-950 dark:text-amber-300 dark:hover:bg-amber-900/60">→ Para hablar</button>
       )}
     </span>
   );

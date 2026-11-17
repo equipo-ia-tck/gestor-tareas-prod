@@ -1,5 +1,5 @@
 import { useMemo, useState, type KeyboardEvent } from 'react';
-import { AlignLeft, Calendar, Plus, Repeat } from 'lucide-react';
+import { AlignLeft, Calendar, ChevronsLeftRight, Plus, Repeat, Rows3, SlidersHorizontal } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
 import { Avatar, AvatarStack, ChecklistProgress, ExternalChip, LabelChip, PostponedChip, PriorityFlag, ReleaseChip, ReminderChip, TypeBadge } from '../../components/ui/Badges';
 import { repo } from '../../data/services';
@@ -15,6 +15,23 @@ import { useRallyItem, useRallyLookup } from '../rally/rallyStore';
 import { moveToRallyColumn, moveToNeedReview } from '../rally/rallyStates';
 import { useToast } from '../../components/Toast';
 import { isRallyId, RALLY_COLUMNS, rallyColumnOf } from '../../domain/rally';
+import { Popover } from '../../components/ui/Popover';
+import { usePersistentState } from '../../hooks/usePersistentState';
+
+/** Lo que se puede quitar de las tarjetas (botón «Campos»). */
+const CARD_FIELDS = [
+  { id: 'tags', label: 'Etiquetas' },
+  { id: 'project', label: 'Proyecto' },
+  { id: 'external', label: 'ID de Rally' },
+  { id: 'details', label: 'Fecha e iconos' },
+  { id: 'people', label: 'Personas' },
+  { id: 'owner', label: 'Owner de Rally' },
+] as const;
+type CardField = (typeof CARD_FIELDS)[number]['id'];
+
+/** Cómo se ve el tablero (cada persona, en su navegador): tarjetas compactas, campos ocultos y columnas plegadas. */
+interface BoardDisplay { compact: boolean; hide: CardField[]; collapsed: string[] }
+const DEFAULT_DISPLAY: BoardDisplay = { compact: false, hide: [], collapsed: [] };
 
 const NEED_REVIEW = 'Need Review';
 
@@ -143,37 +160,93 @@ export function RallyBoard({ tasks, defaults, showProject = true }: Omit<Props, 
 }
 
 function BoardColumns({ columns, showProject }: { columns: ColumnDef[]; showProject: boolean }) {
+  const [stored, setDisplay] = usePersistentState<BoardDisplay>('board-display', DEFAULT_DISPLAY);
+  const display = { ...DEFAULT_DISPLAY, ...stored };
+  const toggleField = (id: CardField) => setDisplay({ ...display, hide: display.hide.includes(id) ? display.hide.filter((f) => f !== id) : [...display.hide, id] });
+  const toggleColumn = (id: string) => setDisplay({ ...display, collapsed: display.collapsed.includes(id) ? display.collapsed.filter((c) => c !== id) : [...display.collapsed, id] });
+  const btn = 'inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs';
+  const off = 'border-zinc-200 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800';
+  const on = 'border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950 dark:text-indigo-300';
   return (
-    <div className="-mx-6 flex gap-3 overflow-x-auto px-6 pb-4">
-      {columns.map((c) => <Column key={c.id} column={c} showProject={showProject} />)}
-    </div>
+    <>
+      <div className="mb-2 flex items-center justify-end gap-2">
+        <button type="button" onClick={() => setDisplay({ ...display, compact: !display.compact })} aria-pressed={display.compact}
+          title="Tarjetas más pequeñas: solo tipo, ID y nombre" className={`${btn} ${display.compact ? on : off}`}>
+          <Rows3 className="size-3.5" />Compactas
+        </button>
+        <Popover align="right" width="w-52" trigger={(toggle) => (
+          <button type="button" onClick={toggle} className={`${btn} ${display.hide.length ? on : off}`}>
+            <SlidersHorizontal className="size-3.5" />Campos{display.hide.length ? ` · ${CARD_FIELDS.length - display.hide.length}/${CARD_FIELDS.length}` : ''}
+          </button>
+        )}>
+          {() => (
+            <div className="p-1 text-sm">
+              <p className="px-2 py-1 text-xs text-zinc-500">Qué se ve en las tarjetas</p>
+              {CARD_FIELDS.map((f) => (
+                <label key={f.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 hover:bg-zinc-100 dark:hover:bg-zinc-800">
+                  <input type="checkbox" checked={!display.hide.includes(f.id)} onChange={() => toggleField(f.id)} />{f.label}
+                </label>
+              ))}
+            </div>
+          )}
+        </Popover>
+      </div>
+      {/* Alto máximo de la pantalla: cada columna tiene su scroll vertical y la barra horizontal queda siempre a la vista. */}
+      <div className="-mx-6 flex max-h-[calc(100dvh-10rem)] min-h-80 gap-3 overflow-x-auto px-6 pb-3">
+        {columns.map((c) => (
+          <Column key={c.id} column={c} showProject={showProject} display={display}
+            collapsed={display.collapsed.includes(c.id)} onToggle={() => toggleColumn(c.id)} />
+        ))}
+      </div>
+    </>
   );
 }
 
-function Column({ column: c, showProject }: { column: ColumnDef; showProject: boolean }) {
+function Column({ column: c, showProject, display, collapsed, onToggle }: {
+  column: ColumnDef; showProject: boolean; display: BoardDisplay; collapsed: boolean; onToggle: () => void;
+}) {
   const { over, dropProps } = useTaskDrop(c.onDrop);
+  if (collapsed) {
+    // Plegada: una franja con el nombre en vertical y el número; se puede seguir soltando tarjetas encima.
+    return (
+      <section {...dropProps} aria-label={`${c.label} (plegada)`}
+        className={`flex w-10 shrink-0 flex-col items-center rounded-xl py-2 transition-colors ${over ? 'ring-2 ring-indigo-400' : ''}`}
+        style={{ background: tint(c.color, over ? 0.22 : 0.1) }}>
+        <button type="button" onClick={onToggle} title={`Desplegar ${c.label}`} className="flex flex-1 flex-col items-center gap-2 rounded px-1 hover:bg-black/5 dark:hover:bg-white/5">
+          <ChevronsLeftRight className="size-3.5 text-zinc-500" />
+          <span className="size-2.5 rounded-full" style={{ background: c.color }} />
+          <span className="text-xs text-zinc-500">{c.tasks.length}</span>
+          <span className="text-sm font-semibold [writing-mode:vertical-rl]">{c.label}</span>
+        </button>
+      </section>
+    );
+  }
   return (
     <section
       {...dropProps}
       aria-label={c.label}
       // Las columnas se reparten el ancho (también con el panel de la tarea abierto); por debajo de 11rem, scroll lateral.
-      className={`flex min-w-44 flex-1 basis-0 flex-col rounded-xl p-2 transition-colors ${over ? 'ring-2 ring-indigo-400' : ''}`}
+      className={`flex min-h-0 min-w-44 flex-1 basis-0 flex-col rounded-xl p-2 transition-colors ${over ? 'ring-2 ring-indigo-400' : ''}`}
       style={{ background: tint(c.color, over ? 0.22 : 0.1) }}
     >
-      <header className="mb-2 flex items-center gap-2 px-1">
-        <span className="size-2.5 rounded-full" style={{ background: c.color }} />
-        <h3 className="text-sm font-semibold">{c.label}</h3>
+      <header className="group/col mb-2 flex items-center gap-2 px-1">
+        <span className="size-2.5 shrink-0 rounded-full" style={{ background: c.color }} />
+        <h3 className="min-w-0 truncate text-sm font-semibold">{c.label}</h3>
         <span className="text-xs text-zinc-500">{c.tasks.length}</span>
+        <button type="button" onClick={onToggle} title={`Plegar ${c.label}`} aria-label={`Plegar ${c.label}`}
+          className="ml-auto rounded p-0.5 text-zinc-400 opacity-0 hover:bg-black/5 hover:text-zinc-700 group-hover/col:opacity-100 focus:opacity-100 dark:hover:bg-white/5 dark:hover:text-zinc-200">
+          <ChevronsLeftRight className="size-3.5" />
+        </button>
       </header>
-      <ul className="flex min-h-8 flex-col gap-2">
-        {c.tasks.map((t) => <Card key={t.id} task={t} showProject={showProject} />)}
+      <ul className="-mx-1 flex min-h-8 flex-1 flex-col gap-2 overflow-y-auto px-1 pb-1">
+        {c.tasks.map((t) => <Card key={t.id} task={t} showProject={showProject} display={display} />)}
       </ul>
       <AddCard add={c.add} />
     </section>
   );
 }
 
-function Card({ task, showProject }: { task: Task; showProject: boolean }) {
+function Card({ task, showProject, display }: { task: Task; showProject: boolean; display: BoardDisplay }) {
   const { itemTypes, projectMap, labelColors, today, editTask, detailId } = useApp();
   const type = findType(itemTypes, task.type_id);
   const project = task.project_id ? projectMap.get(task.project_id) : undefined;
@@ -181,6 +254,8 @@ function Card({ task, showProject }: { task: Task; showProject: boolean }) {
   const late = !done && task.due_date !== null && task.due_date < today;
   const dueToday = !done && task.due_date === today;
   const rally = useRallyItem(task.external_id);
+  // En compactas solo quedan tipo, ID y nombre.
+  const shows = (f: CardField) => !display.hide.includes(f) && (!display.compact || f === 'external');
 
   return (
     <li
@@ -188,37 +263,39 @@ function Card({ task, showProject }: { task: Task; showProject: boolean }) {
       onDragStart={(e) => setDraggedTasks(e, [task.id])}
       data-opens-task
       onClick={() => editTask(task)}
-      className={`cursor-pointer rounded-lg border bg-white p-2.5 shadow-sm transition hover:shadow-md dark:bg-zinc-900
+      className={`min-w-0 shrink-0 cursor-pointer rounded-lg border bg-white shadow-sm transition [overflow-wrap:anywhere] hover:shadow-md dark:bg-zinc-900 ${display.compact ? 'p-1.5' : 'p-2.5'}
         ${detailId === task.id ? 'border-indigo-400 ring-1 ring-indigo-400' : 'border-zinc-200 dark:border-zinc-700'}`}
       style={project && showProject ? { borderLeft: `3px solid ${project.color}` } : undefined}
     >
-      {task.tags.length > 0 && (
+      {shows('tags') && task.tags.length > 0 && (
         <div className="mb-1.5 flex flex-wrap gap-1">{task.tags.map((t) => <LabelChip key={t} name={t} colors={labelColors} small />)}</div>
       )}
       <p className={`flex items-start gap-1.5 text-sm leading-snug ${done ? 'text-zinc-400 line-through' : ''}`}>
         <TypeBadge type={type} />
-        <span className="flex-1">{task.title}</span>
+        <span className={`min-w-0 flex-1 ${display.compact ? 'line-clamp-2' : ''}`}>{task.title}</span>
         <PriorityFlag priority={task.priority} />
       </p>
-      {showProject && project && <p className="mt-1 truncate text-[11px] text-zinc-500">{project.name}</p>}
-      {(task.external_id || task.release_id) && (
+      {shows('project') && showProject && project && <p className="mt-1 truncate text-[11px] text-zinc-500">{project.name}</p>}
+      {shows('external') && (task.external_id || task.release_id) && (
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5"><ExternalChip task={task} type={type} /><ReleaseChip releaseId={task.release_id} /></div>
       )}
-      <div className="mt-2 flex items-center gap-2 text-[11px] text-zinc-500 dark:text-zinc-400">
-        {task.due_date && (
+      {(shows('details') || shows('people')) && <div className="mt-2 flex items-center gap-2 text-[11px] text-zinc-500 dark:text-zinc-400">
+        {shows('details') && task.due_date && (
           <span className={`inline-flex items-center gap-0.5 rounded px-1 ${late ? 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300' : dueToday ? 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300' : ''}`}>
             <Calendar className="size-3" />{formatDay(task.due_date, today)}
           </span>
         )}
-        <ChecklistProgress items={task.checklist} />
-        {!done && <ReminderChip at={task.remind_at} />}
-        {!done && <PostponedChip taskId={task.id} />}
-        {task.notes && <AlignLeft className="size-3" />}
-        {task.recurrence_rule && <Repeat className="size-3" />}
+        {shows('details') && <>
+          <ChecklistProgress items={task.checklist} />
+          {!done && <ReminderChip at={task.remind_at} />}
+          {!done && <PostponedChip taskId={task.id} />}
+          {task.notes && <AlignLeft className="size-3" />}
+          {task.recurrence_rule && <Repeat className="size-3" />}
+        </>}
         <span className="flex-1" />
-        <AvatarStack names={task.people} size={20} />
-      </div>
-      {rally?.owner && (
+        {shows('people') && <AvatarStack names={task.people} size={20} />}
+      </div>}
+      {shows('owner') && rally?.owner && (
         <div className="mt-2 flex items-center gap-1.5 border-t border-zinc-100 pt-1.5 dark:border-zinc-800" title="Owner en Rally">
           <Avatar name={rally.owner} size={22} />
           <span className="min-w-0 leading-tight">

@@ -63,7 +63,7 @@ function TaskChip({ task }: { task: Task }) {
   const { editTask } = useApp();
   return (
     <button type="button" onClick={(e) => { e.stopPropagation(); editTask(task); }} title="Abrir la tarea"
-      className="inline-flex shrink-0 items-center gap-0.5 rounded bg-indigo-50 px-1 text-[10px] font-medium text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-950 dark:text-indigo-300">
+      className="inline-flex shrink-0 items-center gap-0.5 rounded bg-indigo-50 px-1 text-[10px] font-medium text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-950 dark:text-indigo-300 dark:hover:bg-indigo-900/60">
       <ExternalLink className="size-2.5" />tarea
     </button>
   );
@@ -86,7 +86,7 @@ function InlineView({ item }: { item: Inline }): ReactNode {
       const name = item.name.replace(/-/g, ' ');
       return (
         <button type="button" onClick={(e) => { e.stopPropagation(); navigate({ view: 'person', name }); }}
-          className="inline-flex items-center gap-1 rounded-full bg-sky-50 py-px pr-1.5 pl-0.5 align-baseline text-[0.9em] font-medium text-sky-800 hover:bg-sky-100 dark:bg-sky-950 dark:text-sky-200">
+          className="inline-flex items-center gap-1 rounded-full bg-sky-50 py-px pr-1.5 pl-0.5 align-baseline text-[0.9em] font-medium text-sky-800 hover:bg-sky-100 dark:bg-sky-950 dark:text-sky-200 dark:hover:bg-sky-900/60">
           <Avatar name={name} size={14} />{name}
         </button>
       );

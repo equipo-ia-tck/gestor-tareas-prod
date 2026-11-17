@@ -84,6 +84,7 @@ export const settingsSchema = z.object({
     .default(DEFAULT_SETTINGS.ui),
   saved_views: z.array(z.object({ id: z.string(), name: z.string(), filter: taskFilterSchema })).default([]),
   groups: z.array(z.object({ id: z.string().min(1), name: z.string().min(1), color: z.string() })).default([]),
+  routines_added: z.array(z.string()).default([]),
   rally_templates: z.array(z.object({ id: z.string().min(1), label: z.string(), text: z.string() })).nullable().default(null),
 });
 

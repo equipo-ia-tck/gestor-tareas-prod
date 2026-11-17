@@ -112,3 +112,68 @@ export function feedbackTaskTitle(f: Pick<Feedback, 'kind' | 'title' | 'body'>):
 /** Prioridad de la tarea: la del impacto (solo si algo no funciona); si no, la normal. */
 export const feedbackPriority = (f: Pick<Feedback, 'impact'>): Priority =>
   FEEDBACK_IMPACTS.find((x) => x.id === f.impact)?.priority ?? 4;
+
+const isOpen = (f: Feedback) => f.status === 'new' || f.status === 'doing';
+const isClosed = (f: Feedback) => f.status === 'done' || f.status === 'dismissed';
+const DAY = 86_400_000;
+
+export interface FeedbackStats {
+  total: number;
+  byStatus: Record<FeedbackStatus, number>;
+  open: number;
+  /** Días de media desde que llega hasta que se marca Hecho (null si aún no hay ninguno). */
+  avgDaysToDone: number | null;
+  byKind: { id: FeedbackKind; label: string; total: number; open: number }[];
+  byArea: { id: string; label: string; total: number; open: number }[];
+  /** Algo no funciona, abiertos, por impacto. */
+  openBugs: { id: FeedbackImpact; label: string; count: number }[];
+  /** Últimas semanas (lunes a domingo), de la más antigua a la actual: recibidos y cerrados (Hecho o Descartado). */
+  weeks: { start: string; received: number; closed: number }[];
+  authors: { name: string; total: number }[];
+}
+
+/** Lunes (local) de la semana de una fecha, como YYYY-MM-DD. */
+function weekStart(d: Date): string {
+  const m = new Date(d.getFullYear(), d.getMonth(), d.getDate() - ((d.getDay() + 6) % 7));
+  return `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, '0')}-${String(m.getDate()).padStart(2, '0')}`;
+}
+
+/** Cifras del panel de Más → Feedback. El cierre se fecha con `updatedAt` (el último cambio de estado). */
+export function feedbackStats(items: Feedback[], now = new Date(), weeksBack = 8): FeedbackStats {
+  const byStatus = { new: 0, doing: 0, done: 0, dismissed: 0 } as Record<FeedbackStatus, number>;
+  for (const f of items) byStatus[f.status]++;
+  const done = items.filter((f) => f.status === 'done');
+  const avg = done.length ? done.reduce((s, f) => s + Math.max(0, Date.parse(f.updatedAt) - Date.parse(f.createdAt)), 0) / done.length / DAY : null;
+
+  const kinds = [...FEEDBACK_KINDS.map((k) => ({ id: k.id as FeedbackKind, label: k.label })), { id: 'other' as const, label: 'Otro' }];
+  const byKind = kinds.map((k) => ({ ...k, total: items.filter((f) => f.kind === k.id).length, open: items.filter((f) => f.kind === k.id && isOpen(f)).length }))
+    .filter((k) => k.total > 0);
+  const byArea = FEEDBACK_AREAS.map((a) => ({ ...a, total: items.filter((f) => f.area === a.id).length, open: items.filter((f) => f.area === a.id && isOpen(f)).length }))
+    .filter((a) => a.total > 0)
+    .sort((a, b) => b.open - a.open || b.total - a.total);
+  const openBugs = FEEDBACK_IMPACTS.map((i) => ({ id: i.id, label: i.label, count: items.filter((f) => f.kind === 'bug' && isOpen(f) && f.impact === i.id).length }));
+
+  const weeks: FeedbackStats['weeks'] = [];
+  for (let i = weeksBack - 1; i >= 0; i--) weeks.push({ start: weekStart(new Date(now.getTime() - i * 7 * DAY)), received: 0, closed: 0 });
+  const slot = (iso: string) => weeks.find((w) => w.start === weekStart(new Date(iso)));
+  for (const f of items) {
+    const r = slot(f.createdAt);
+    if (r) r.received++;
+    if (isClosed(f)) { const c = slot(f.updatedAt); if (c) c.closed++; }
+  }
+
+  const authors = new Map<string, number>();
+  for (const f of items) { const n = f.authorName || f.authorLogin || 'Sin nombre'; authors.set(n, (authors.get(n) ?? 0) + 1); }
+
+  return {
+    total: items.length,
+    byStatus,
+    open: byStatus.new + byStatus.doing,
+    avgDaysToDone: avg,
+    byKind,
+    byArea,
+    openBugs,
+    weeks,
+    authors: [...authors].map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total),
+  };
+}
