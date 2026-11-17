@@ -167,13 +167,13 @@ export interface RallyStatus {
 }
 
 export const RALLY_KINDS: { kind: RallyKind; label: string }[] = [
-  { kind: 'FE', label: 'Features' },
   { kind: 'US', label: 'User Stories' },
-  { kind: 'DE', label: 'Defectos' },
-  { kind: 'DS', label: 'Defect Suites' },
-  { kind: 'TA', label: 'Tareas' },
   { kind: 'TS', label: 'Test Sets' },
+  { kind: 'DE', label: 'Defectos' },
+  { kind: 'FE', label: 'Features' },
   { kind: 'TC', label: 'Test Cases' },
+  { kind: 'TA', label: 'Tareas' },
+  { kind: 'DS', label: 'Defect Suites' },
 ];
 
 const norm = (id: string | null) => (id ?? '').replace(/-/g, '').toUpperCase();

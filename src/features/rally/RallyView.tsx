@@ -102,7 +102,6 @@ function ConnectForm({ initialUrl, onConnected }: { initialUrl: string; onConnec
 const chipClass = (on: boolean) => `rounded-full border px-2.5 py-0.5 text-xs font-medium ${on
   ? 'border-indigo-500 bg-indigo-600 text-white' : 'border-zinc-300 bg-white text-zinc-600 hover:border-zinc-400 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300'}`;
 
-const NO_ONE = '__nadie';
 /** Proyecto que se elige solo la primera vez (el del equipo). */
 const DEFAULT_PROJECT = 'Team.Digital Data';
 const MAX_RECENT = 5;
@@ -250,8 +249,6 @@ function RallyItems({ user, onDisconnect }: { user: string | null; onDisconnect:
   const [tags, setTags] = usePersistentState<RallyRef[]>('rally-tag-filter', []);
   const [kinds, setKinds] = usePersistentState<RallyKind[]>('rally-kinds', RALLY_KINDS.map((k) => k.kind));
   const [hideDone, setHideDone] = usePersistentState('rally-hide-done', false);
-  const [onlyMine, setOnlyMine] = usePersistentState('rally-only-mine', false);
-  const [person, setPerson] = useState('');
   const [groupBy, setGroupBy] = usePersistentState<RallyGroupBy>('rally-group-by-v2', 'column');
   const [projectId, setProjectId] = usePersistentState('rally-project', '');
   // Elemento abierto en el panel de la derecha.
@@ -313,21 +310,18 @@ function RallyItems({ user, onDisconnect }: { user: string | null; onDisconnect:
 
   useEffect(() => {
     setItems(null);
-    setPerson('');
     void load();
     const timer = setInterval(() => void load(), REFRESH_MS);
     return () => clearInterval(timer);
   }, [load]);
 
   const byId = useMemo(() => tasksByRallyId(tasks), [tasks]);
-  const base = (items ?? []).filter((it) => (!hideDone || !it.done) && (!browsing || !onlyMine || it.mine)
-    && (!person || (person === NO_ONE ? !it.assignee : it.assignee === person)));
+  const base = (items ?? []).filter((it) => !hideDone || !it.done);
   const searchWords = fold(search).split(/\s+/).filter(Boolean);
   const matchesSearch = (it: RallyItem) => searchWords.every((w) =>
     fold([it.id, it.name, it.owner, it.assignee, it.project, it.iteration, ...it.tags].filter(Boolean).join(' ')).replace(/-/g, '').includes(w.replace(/-/g, '')));
   const inView = base.filter((it) => inRallyView(view, it));
   const visible = inView.filter((it) => kinds.includes(it.kind) && matchesSearch(it));
-  const people = [...new Set((items ?? []).map((it) => it.assignee).filter((a): a is string => !!a))].sort((a, b) => a.localeCompare(b, 'es'));
   const toAdd = visible.filter((it) => !it.done && !linkedTask(it, byId));
   const target = projects.some((p) => p.id === projectId) ? projectId : null;
 
@@ -365,85 +359,58 @@ function RallyItems({ user, onDisconnect }: { user: string | null; onDisconnect:
     />
     <div className={open ? 'xl:grid xl:grid-cols-[minmax(0,1fr)_460px] xl:items-start xl:gap-6' : ''}>
       <div className="min-w-0">
-      <section className="mb-4 rounded-lg border border-indigo-200 bg-indigo-50/60 p-3 dark:border-indigo-900 dark:bg-indigo-950/40">
+      <section className="mb-3 space-y-2 rounded-lg border border-indigo-200 bg-indigo-50/60 p-3 dark:border-indigo-900 dark:bg-indigo-950/40">
+        {/* Qué traer de Rally: proyecto, vista guardada y etiquetas, en una línea. */}
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-semibold text-indigo-700 dark:text-indigo-300">Proyecto</span>
           {rallyProjects
             ? <ProjectPicker projects={rallyProjects} selected={selected} onChange={setSelected} scope={scope} onScope={setScope} recent={recent} />
             : <span className="text-xs text-zinc-400">Cargando proyectos…</span>}
           <button type="button" className={chipClass(!browsing)} onClick={() => { setSelected([]); setTags([]); }} title="Lo que tiene Assignee u Owner = tú">Asignado a mí</button>
-          <span className="ml-3 text-xs font-semibold text-indigo-700 dark:text-indigo-300">Vista</span>
-          <select value={view.id} onChange={(e) => setViewId(e.target.value)} aria-label="Vista guardada"
-            className={`${inputClass} w-64 py-1`}>
+          <span className="ml-2 text-xs font-semibold text-indigo-700 dark:text-indigo-300">Vista</span>
+          <select value={view.id} onChange={(e) => setViewId(e.target.value)} aria-label="Vista guardada" className={`${inputClass} w-60 py-1`}>
             {RALLY_VIEWS.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
           </select>
-        </div>
-        <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
-          <span className="text-xs font-semibold text-indigo-700 dark:text-indigo-300">Etiquetas</span>
-          <div className="w-full max-w-md">
+          <span className="ml-2 text-xs font-semibold text-indigo-700 dark:text-indigo-300">Etiquetas</span>
+          <div className="min-w-56 flex-1">
             <ValuesField title="Filtrar por etiquetas" value={tags} onChange={setTags} load={rallyApi.tags} recentKey="rally-recent-tags" />
           </div>
-          <span className="text-xs text-zinc-500">
-            {tagKey ? `Lo que tenga ${tags.length > 1 ? 'alguna de estas etiquetas' : 'esta etiqueta'}, ${projectMode ? 'en los proyectos elegidos' : 'en todo Rally'}.`
-              : 'Para los TS, que se reparten por etiqueta (no tienen Assignee).'}
-          </span>
         </div>
-        {browsing && (
-          <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
-            <label className="inline-flex items-center gap-1.5">
-              <input type="checkbox" checked={onlyMine} onChange={(e) => setOnlyMine(e.target.checked)} /> Solo lo mío
-            </label>
-            <select className={`${inputClass} w-56 py-1`} value={person} onChange={(e) => setPerson(e.target.value)} aria-label="Persona" disabled={onlyMine}>
-              <option value="">Todas las personas</option>
-              {people.map((name) => <option key={name} value={name}>{name}</option>)}
-              <option value={NO_ONE}>Sin asignar</option>
-            </select>
-          </div>
-        )}
+        {/* Tipos, terminadas y agrupación. */}
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          {RALLY_KINDS.map(({ kind, label }) => {
+            const on = kinds.includes(kind);
+            return (
+              <button key={kind} type="button" title={label} onClick={() => setKinds(on ? kinds.filter((k) => k !== kind) : [...kinds, kind])}
+                className={`rounded-full border px-2.5 py-0.5 text-xs font-medium ${on ? 'border-indigo-500 bg-white text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300' : 'border-zinc-300 text-zinc-500 dark:border-zinc-600'}`}>
+                {kind} · {inView.filter((it) => it.kind === kind).length}
+              </button>
+            );
+          })}
+          <label className="ml-2 inline-flex items-center gap-1 text-xs text-zinc-600 dark:text-zinc-300">
+            <input type="checkbox" checked={hideDone} onChange={(e) => setHideDone(e.target.checked)} /> Ocultar terminadas
+          </label>
+          <select className={`${inputClass} w-auto py-0.5 text-xs`} value={groupBy} onChange={(e) => setGroupBy(e.target.value as RallyGroupBy)} aria-label="Agrupar por">
+            {(Object.keys(GROUP_LABEL) as RallyGroupBy[]).map((g) => <option key={g} value={g}>Agrupar por {GROUP_LABEL[g]}</option>)}
+          </select>
+        </div>
       </section>
 
+      {/* Llevar a mis tareas lo que se ve: cada elemento de Rally pasa a ser una tarea del gestor enlazada (con su ID). */}
       <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
-        {RALLY_KINDS.map(({ kind, label }) => {
-          const on = kinds.includes(kind);
-          return (
-            <button key={kind} type="button" title={label} onClick={() => setKinds(on ? kinds.filter((k) => k !== kind) : [...kinds, kind])}
-              className={`rounded-full border px-2.5 py-0.5 text-xs font-medium ${on ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300' : 'border-zinc-300 text-zinc-500 dark:border-zinc-600'}`}>
-              {kind} · {inView.filter((it) => it.kind === kind).length}
-            </button>
-          );
-        })}
-        <label className="ml-1 inline-flex items-center gap-1 text-xs text-zinc-500">
-          <input type="checkbox" checked={hideDone} onChange={(e) => setHideDone(e.target.checked)} /> Ocultar terminadas
-        </label>
-        <select className={`${inputClass} w-auto py-0.5 text-xs`} value={groupBy} onChange={(e) => setGroupBy(e.target.value as RallyGroupBy)} aria-label="Agrupar por">
-          {(Object.keys(GROUP_LABEL) as RallyGroupBy[]).map((g) => <option key={g} value={g}>Agrupar por {GROUP_LABEL[g]}</option>)}
-        </select>
-        <Popover width="w-64" trigger={(toggle, isOpen) => (
-          <button type="button" onClick={toggle} aria-expanded={isOpen}
-            className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2 py-0.5 text-xs text-zinc-600 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800">
-            <Columns3 className="size-3.5" />Columnas
-          </button>
-        )}>
-          {() => (<div className="p-2 text-sm">
-            <p className="mb-1 text-xs font-semibold tracking-wide text-zinc-500 uppercase">Qué ver en cada fila</p>
-            {COLUMN_LABELS.map(([key, label]) => (
-              <label key={key} className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 hover:bg-zinc-100 dark:hover:bg-zinc-800">
-                <input type="checkbox" checked={cols[key]} onChange={(e) => setColumns({ ...cols, [key]: e.target.checked })} />{label}
-              </label>
-            ))}
-            <button type="button" onClick={() => { setColumns(DEFAULT_COLUMNS); setWidths(DEFAULT_WIDTHS); }} className="mt-1 px-1 text-xs text-indigo-600 hover:underline dark:text-indigo-400">Volver a lo de serie</button>
-          </div>)}
-        </Popover>
-      </div>
-
-      <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg bg-zinc-50 px-3 py-2 text-sm dark:bg-zinc-900">
-        <span className="text-zinc-500">Añadir al gestor en</span>
-        <select className={`${inputClass} w-48 py-1`} value={target ?? ''} onChange={(e) => setProjectId(e.target.value)} aria-label="Proyecto de destino">
+        <span className="text-zinc-500" title="Crea en el gestor una tarea por cada elemento de Rally de la lista que aún no tengas. Las tareas quedan enlazadas: cambian de estado solas cuando cambian en Rally.">
+          Pasar a mis tareas del gestor, en
+        </span>
+        <select className={`${inputClass} w-48 py-1`} value={target ?? ''} onChange={(e) => setProjectId(e.target.value)} aria-label="Proyecto del gestor donde se crean las tareas">
           <option value="">Bandeja (sin proyecto)</option>
           <ProjectOptions />
         </select>
-        {toAdd.length > 0 && <ActionButton icon={<Plus className="size-4" />} onClick={() => void add(toAdd)}>Añadir las {toAdd.length} pendientes que se ven</ActionButton>}
-        <span className="text-xs text-zinc-400">Las tareas añadidas se mueven solas a la categoría que tengan en Rally.</span>
+        {toAdd.length > 0 ? (
+          <ActionButton icon={<Plus className="size-4" />} onClick={() => void add(toAdd)}
+            title="Una tarea por cada elemento pendiente de la lista que aún no está en el gestor (se queda enlazada a Rally)">
+            Crear {toAdd.length} {toAdd.length === 1 ? 'tarea' : 'tareas'}
+          </ActionButton>
+        ) : <span className="text-xs text-zinc-400">Todo lo pendiente de la lista ya está en el gestor.</span>}
       </div>
 
       {asking && rallyProjects && (
@@ -472,7 +439,26 @@ function RallyItems({ user, onDisconnect }: { user: string | null; onDisconnect:
         <div className="-mx-2 mb-1 hidden gap-2 border-b border-zinc-200 px-2 pb-1 text-[11px] font-semibold tracking-wide text-zinc-400 uppercase md:flex dark:border-zinc-700">
           <span className="w-7" /><span className="relative shrink-0" style={{ width: widths.id }}>ID{resize('id', 'right')}</span><span className="flex-1">Name</span>
           {cols.owner && <span className="relative shrink-0 pl-1" style={{ width: widths.owner }}>{resize('owner', 'left')}Owner</span>}
-          {cols.state && <span className="relative shrink-0 text-right" style={{ width: widths.state }}>{resize('state', 'left')}Estado</span>}<span className="w-24" />
+          {cols.state && <span className="relative shrink-0 text-right" style={{ width: widths.state }}>{resize('state', 'left')}Estado</span>}
+          {/* Qué columnas se ven: aquí, en la cabecera de la lista. */}
+          <span className="flex w-24 justify-end normal-case tracking-normal">
+            <Popover align="right" width="w-64" trigger={(toggle, isOpen) => (
+              <button type="button" onClick={toggle} aria-expanded={isOpen}
+                className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2 py-0.5 text-xs text-zinc-600 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800">
+                <Columns3 className="size-3.5" />Columnas
+              </button>
+            )}>
+              {() => (<div className="p-2 text-sm">
+                <p className="mb-1 text-xs font-semibold tracking-wide text-zinc-500 uppercase">Qué ver en cada fila</p>
+                {COLUMN_LABELS.map(([key, label]) => (
+                  <label key={key} className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 hover:bg-zinc-100 dark:hover:bg-zinc-800">
+                    <input type="checkbox" checked={cols[key]} onChange={(e) => setColumns({ ...cols, [key]: e.target.checked })} />{label}
+                  </label>
+                ))}
+                <button type="button" onClick={() => { setColumns(DEFAULT_COLUMNS); setWidths(DEFAULT_WIDTHS); }} className="mt-1 px-1 text-xs text-indigo-600 hover:underline dark:text-indigo-400">Volver a lo de serie</button>
+              </div>)}
+            </Popover>
+          </span>
         </div>
       )}
       {groupRally(visible, groupBy).map((g) => (

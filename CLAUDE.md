@@ -820,6 +820,9 @@ ya usa.
   asignado a mí. `projects()` trae `parentId` y `itemsReport(…, scope)` suma hijos (todos los niveles) y padres
   (`projectScope`, máx. 300, lista de proyectos en caché 10 min).
 - **Sin periodo**: siempre todo lo de los proyectos elegidos (`days = 0`).
+- **Un solo recuadro de filtros**: en una línea Proyecto · Asignado a mí · Vista · Etiquetas; debajo los tipos (en el orden
+  US TS DE FE TC TA DS), «Ocultar terminadas» y agrupar. Sin «Solo lo mío» ni Persona. «Columnas» va en la cabecera de la
+  lista. «Pasar a mis tareas del gestor, en [proyecto] · Crear N tareas» (antes «Añadir al gestor en») en una sola fila.
 - **Orden por Rank** (`DragAndDropRank`, `RallyItem.rank`, `byRank`: como texto; sin Rank, al final).
 - **Vistas guardadas** (`domain/rallyViews.ts`, `RALLY_VIEWS`, `rally-view`): las 15 de Rally con sus nombres. Condiciones
   sobre etiquetas, Flow State, nombre y Ready; mismo campo = o, campos distintos = y (`inRallyView`). Se aplican sobre lo
