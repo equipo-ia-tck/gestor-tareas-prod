@@ -56,6 +56,7 @@ export function SpacesCard() {
           </span>
           <button type="button" onClick={() => void sync().logout()} className={button}><LogOut className="size-3.5" />Cerrar sesión</button>
         </div>
+        <p className="mt-2 text-xs text-zinc-500">Para mejorar la herramienta se apunta cuántas veces entras y qué pantallas abres cada día (nunca lo que escribes). Solo lo ven los administradores.</p>
         <ChangePassword run={run} />
         <DeleteAccount login={user?.login ?? ''} />
       </div>

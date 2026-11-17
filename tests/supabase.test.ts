@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
  * Prueba la base de datos de Supabase (supabase/migrations) en un Postgres de verdad (PGlite), imitando
  * lo mínimo de Supabase: roles anon/authenticated y auth.uid()/auth.email() de la sesión.
  */
-const MIGRATION = ['001_equipo.sql', '002_baja_y_contrasenas.sql', '003_alta_sin_invitacion.sql', '004_claves_conectores.sql', '005_calendario_subido.sql', '006_feedback.sql', '007_feedback_formulario.sql', '008_feedback_bloqueado.sql'].map((f) => readFileSync(`supabase/migrations/${f}`, 'utf8')).join('\n');
+const MIGRATION = ['001_equipo.sql', '002_baja_y_contrasenas.sql', '003_alta_sin_invitacion.sql', '004_claves_conectores.sql', '005_calendario_subido.sql', '006_feedback.sql', '007_feedback_formulario.sql', '008_feedback_bloqueado.sql', '009_analitica.sql'].map((f) => readFileSync(`supabase/migrations/${f}`, 'utf8')).join('\n');
 let db: PGlite;
 
 const SUPABASE_STUB = `
@@ -299,5 +299,28 @@ describe('base de datos del equipo en Supabase', () => {
     // Lo enviado con la versión anterior se sigue leyendo.
     await rpc(ana, 'send_feedback', { p_kind: 'other', p_body: 'Antiguo', p_page: '', p_user_agent: '' });
     expect((await rpc(marta, 'admin_feedback') as Record<string, unknown>[])[0]).toMatchObject({ kind: 'other', title: '', body: 'Antiguo' });
+  });
+
+  it('analítica: cada uno apunta lo suyo, solo los administradores lo leen y sin textos en la pantalla', async () => {
+    const marta = await newUser('marta@vml.com');
+    await rpc(marta, 'register_profile', { p_name: 'Marta García', p_code: '' });
+    const ana = await newUser('ana@vml.com');
+    await rpc(ana, 'register_profile', { p_name: 'Ana', p_code: '' });
+
+    await rpc(ana, 'log_usage', { p_kind: 'session', p_screen: 'board' });
+    await rpc(ana, 'log_usage', { p_kind: 'screen', p_screen: 'board' });
+    await rpc(ana, 'log_usage', { p_kind: 'screen', p_screen: 'board' });
+    await rpc(ana, 'log_usage', { p_kind: 'screen', p_screen: 'rally' });
+    await expect(rpc(ana, 'log_usage', { p_kind: 'screen', p_screen: 'project/Mi proyecto secreto' })).rejects.toThrow(/Pantalla/);
+    await expect(rpc(ana, 'log_usage', { p_kind: 'clic', p_screen: '' })).rejects.toThrow();
+    await expect(as(ana, 'select * from usage_events')).rejects.toThrow();
+    await expect(rpc(ana, 'admin_usage', { p_from: '2000-01-01', p_to: '2100-01-01' })).rejects.toThrow(/administra/);
+
+    const r = await rpc(marta, 'admin_usage', { p_from: '2000-01-01', p_to: '2100-01-01' }) as { users: { name: string }[]; rows: { user: string; kind: string; screen: string; count: number }[] };
+    expect(r.users.map((u) => u.name)).toEqual(['Ana', 'Marta García']);
+    const counts = Object.fromEntries(r.rows.map((x) => [`${x.kind}:${x.screen}`, x.count]));
+    expect(counts).toEqual({ 'session:': 1, 'screen:board': 2, 'screen:rally': 1 });
+    expect(r.rows.every((x) => x.user === ana.id)).toBe(true);
+    expect((await rpc(marta, 'admin_usage', { p_from: '2000-01-01', p_to: '2000-01-02' }) as { rows: unknown[] }).rows).toEqual([]);
   });
 });

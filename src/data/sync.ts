@@ -4,6 +4,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { DEFAULT_ITEM_TYPES } from '../domain/workflows';
 import type { Space } from '../domain/spaces';
 import type { TasksDB } from './db';
+import type { UsageKind, UsageReport } from '../domain/usage';
 import type { Feedback, FeedbackImpact, FeedbackKind, FeedbackStatus } from '../domain/feedback';
 
 /**
@@ -79,6 +80,8 @@ function friendly(message: string): string {
     return 'Falta preparar el feedback en Supabase: un administrador tiene que ejecutar supabase/migrations/006_feedback.sql.';
   if (/could not find the function public\.send_feedback_form/i.test(message))
     return 'Falta actualizar el feedback en Supabase: un administrador tiene que ejecutar supabase/migrations/007_feedback_formulario.sql.';
+  if (/could not find the function public\.admin_usage/i.test(message))
+    return 'Falta preparar la analítica en Supabase: un administrador tiene que ejecutar supabase/migrations/009_analitica.sql.';
   if (/feedback_status_check/i.test(message))
     return 'Falta el estado «Bloqueado» del feedback en Supabase: un administrador tiene que ejecutar supabase/migrations/008_feedback_bloqueado.sql.';
   return message;
@@ -267,6 +270,16 @@ export class SyncClient {
   adminFeedback = () => this.rpc<Feedback[]>('admin_feedback');
   updateFeedback = (id: string, patch: { status?: FeedbackStatus; taskId?: string }) =>
     this.rpc<Feedback>('admin_update_feedback', { p_id: id, p_status: patch.status ?? null, p_task_id: patch.taskId ?? null });
+
+  // ---------- Analítica de uso (migración 009): la apunta la app; la leen solo los administradores ----------
+
+  /** Sin aviso si falla (sin conexión, o sin la migración): la analítica nunca debe molestar al usar la app. */
+  logUsage = (kind: UsageKind, screen = '') => {
+    if (!this.state.user) return;
+    void this.supabase.rpc('log_usage', { p_kind: kind, p_screen: screen }).then(() => undefined, () => undefined);
+  };
+  adminUsage = (from: string, to: string) => this.rpc<UsageReport>('admin_usage', { p_from: from, p_to: to });
+
   /** Comprueba la contraseña actual (volviendo a entrar) antes de cambiarla. */
   changePassword = async (current: string, password: string) => {
     const email = this.state.user?.login;

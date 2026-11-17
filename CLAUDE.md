@@ -865,3 +865,14 @@ ya usa.
 ## Comprobaciones antes de cada commit
 
 `npm run typecheck && npm test && npm run build`
+
+## Fase 29: analítica de uso (rama `dev`, nov 2026)
+
+- **Supabase** (`supabase/migrations/009_analitica.sql`, después de 001 a 008): tabla `usage_events` (persona, `session` o
+  `screen`, pantalla y día de Madrid), sin lectura directa. `log_usage` la llama la app (solo pantallas `[a-z0-9-]`, nunca ids
+  ni textos; tope de 3.000 por persona y día; borra lo de hace más de 400 días) y `admin_usage(desde, hasta)` devuelve las
+  cuentas y los recuentos por persona, día, tipo y pantalla (solo administradores).
+- **App**: `UsageTracker` (en `Shell`) apunta una entrada por carga de la página y al volver tras 30 min oculta
+  (`SESSION_GAP_MS`), y una visita al cambiar de pantalla (`screenOf`: sin ids, Buscar y cada proyecto cuentan una vez).
+  `sync().logUsage` no avisa si falla. Más → Analítica (`#/analytics`, `UsageView`, solo administradores): cifras de 7/30/90
+  días, tabla por persona y tabla por día (del equipo o de la persona pulsada). Aviso en Ajustes → Mi cuenta.

@@ -14,6 +14,8 @@ import { LogView } from '../features/log/LogView';
 import { ReviewView } from '../features/review/ReviewView';
 import { FeedbackButton } from '../features/feedback/FeedbackButton';
 import { FeedbackView } from '../features/feedback/FeedbackView';
+import { UsageTracker } from '../features/usage/UsageTracker';
+import { UsageView } from '../features/usage/UsageView';
 import { ReminderCenter } from '../features/reminders/ReminderCenter';
 import { routeHref, useRoute, type Route } from './router';
 import { Sidebar } from './Sidebar';
@@ -40,6 +42,7 @@ function View({ route }: { route: Route }) {
     case 'log': return <LogView />;
     case 'review': return <ReviewView />;
     case 'feedback': return <FeedbackView />;
+    case 'analytics': return <UsageView />;
     case 'calendar': return <CalendarView />;
     case 'rally': return <RallyView />;
     case 'projects': return <TodayView />; // la pantalla "Proyectos" se quitó: se gestionan desde la barra lateral
@@ -88,6 +91,7 @@ function Shell({ route }: { route: Route }) {
       <div className="max-sm:hidden"><Sidebar route={route} /></div>
       <Main route={route} />
       <FeedbackButton />
+      <UsageTracker route={route} />
       {detailId && (
         <div className="fixed inset-y-0 right-0 z-30 w-[420px] max-w-full shadow-2xl xl:static xl:z-auto xl:h-full xl:min-h-0 xl:w-auto xl:min-w-0 xl:shadow-none">
           <TaskDetailPanel />
