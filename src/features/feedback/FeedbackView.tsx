@@ -13,6 +13,7 @@ import { stateOf } from '../../domain/workflows';
 import { tint } from '../../domain/colors';
 import { fold } from '../../domain/text';
 import { usePersistentState } from '../../hooks/usePersistentState';
+import { useWideLayout } from '../../app/Layout';
 import { ViewHeader } from '../views/ViewHeader';
 import { FeedbackDashboard } from './FeedbackDashboard';
 
@@ -59,6 +60,8 @@ export function FeedbackView() {
     try { setItems(await sync().adminFeedback()); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }, []);
   useEffect(() => { if (isAdmin) void load(); }, [isAdmin, load]);
+  // Como el Tablero de tareas: todo el ancho de la ventana, para que quepan las cinco columnas.
+  useWideLayout(view === 'board');
 
   if (!isAdmin) return <><ViewHeader title="Feedback" /><p className="text-sm text-zinc-500">Solo los administradores ven el feedback. Para enviar el tuyo, usa el botón «Feedback» de abajo a la derecha.</p></>;
 
@@ -196,7 +199,7 @@ function FeedbackBoard({ items, onUpdate }: { items: Feedback[]; onUpdate: (id: 
               e.preventDefault();
               if (items.find((f) => f.id === id)?.status !== col.id) void onUpdate(id, { status: col.id });
             }}
-            className={`flex min-h-0 min-w-56 flex-1 basis-0 flex-col rounded-xl p-2 transition-colors ${over === col.id ? 'ring-2 ring-indigo-400' : ''}`}
+            className={`flex min-h-0 min-w-48 flex-1 basis-0 flex-col rounded-xl p-2 transition-colors ${over === col.id ? 'ring-2 ring-indigo-400' : ''}`}
             style={{ background: tint(COLUMN_COLOR[col.id], over === col.id ? 0.22 : 0.1) }}>
             <header className="mb-2 flex items-center gap-2 px-1">
               <span className="size-2.5 rounded-full" style={{ background: COLUMN_COLOR[col.id] }} />
