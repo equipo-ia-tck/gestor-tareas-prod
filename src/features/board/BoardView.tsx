@@ -12,7 +12,7 @@ import { useProjectOptions } from '../../hooks/useProjectOptions';
 import { ViewHeader } from '../views/ViewHeader';
 import { useWideLayout } from '../../app/Layout';
 import { ViewSwitcher, type DisplayMode } from '../../components/ui/ViewSwitcher';
-import { RallyBoard } from './Board';
+import { BoardDisplayButtons, RallyBoard } from './Board';
 
 const CATEGORIES: { value: StateCategory; label: string; color: string }[] = [
   { value: 'todo', label: 'Por hacer', color: '#94a3b8' },
@@ -154,6 +154,7 @@ export function BoardControls({ tasks, filter, set, reset, mode, projectIds }: {
         )}
         <span className="flex-1" />
         {mode === 'list' && <Single label="Agrupar" value={filter.groupBy} options={GROUPS} onChange={(v) => set({ groupBy: v as GroupBy })} />}
+        {mode === 'board' && <BoardDisplayButtons />}
         {activeFilterCount(filter) > 0 && (
           <button type="button" onClick={reset} className="flex items-center gap-1 text-xs text-zinc-500 hover:text-red-600">
             <X className="size-3.5" />Limpiar

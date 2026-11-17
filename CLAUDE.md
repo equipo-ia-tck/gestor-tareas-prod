@@ -779,7 +779,7 @@ En Vercel no hay servidor que lea la carpeta de OneDrive del Mac, así que el Ma
   persona de la plantilla tiene que elegirse en Rally.
 - **Preparar mensaje** del panel: en tareas enlazadas a Rally abre `RallyMessage` sin `onConfirm` (Copiar y Publicar en
   Rally, sin tocar Ready); en el resto, el preparador de siempre (Copiar y Teams).
-- **Tablero** (`BoardColumns`, `board-display` en localStorage): alto máximo de la pantalla con scroll por columna (la barra
+- **Tablero** (`BoardColumns`, `board-display` en localStorage; «Compactas» y «Campos» van en la fila de filtros, `BoardDisplayButtons`, y `usePersistentState` mantiene igual los componentes con la misma clave): alto máximo de la pantalla con scroll por columna (la barra
   horizontal siempre a la vista), columnas plegables (botón siempre visible en la cabecera), tarjetas «Compactas» y «Campos» (etiquetas, proyecto, ID, fecha e
   iconos, personas, Owner). Los títulos largos se cortan dentro de la tarjeta.
 - **Completar una tarea enlazada a Rally** (circulito, tecla C, barra en bloque, panel) pide confirmación
@@ -791,6 +791,8 @@ En Vercel no hay servidor que lea la carpeta de OneDrive del Mac, así que el Ma
   páginas (`repo.updateProject`, con «Deshacer»).
 - **Buscador en la pantalla Rally** (`RallySearch`): filtra la lista cargada (ID, nombre, personas, proyecto, iteración,
   etiquetas) y busca en todo Rally por ID o palabra (`pick` admite ahora TS, TA y DS); un resultado abre su ficha (`lookup`).
+- **Grupos de personas**: la tarjeta es un `div` que abre la ficha (no un enlace: dentro va el botón del grupo) y la
+  información va en dos filas para no montarse.
 - **Tareas fijas del equipo** (`domain/routines.ts`, `TEAM_ROUTINES`): lunes «Rellenar los objetivos de la semana…» y viernes
   «Rellenar la gestión de la demanda», recurrentes semanales (serie `rutina:<id>`, etiqueta `rutina`, prioridad 2, `url`
   opcional). `AppContext` las crea una vez por cuenta tras la primera sincronización (`SyncState.pulled`) y las apunta en
