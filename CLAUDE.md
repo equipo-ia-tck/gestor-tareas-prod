@@ -787,6 +787,10 @@ En Vercel no hay servidor que lea la carpeta de OneDrive del Mac, así que el Ma
 - **Revisión semanal**: los pasos muestran cuántas tareas tienen (no un número de orden).
 - **Pantalla Rally**: ID, Owner y Estado se ensanchan arrastrando el borde de la cabecera (`rally-widths`).
 - Modo oscuro: los botones claros con `hover:bg-X-100` llevan su `dark:hover`.
+- **Notas**: las secciones (proyectos) se renombran con doble clic en la lista o con el lápiz junto al nombre, encima de las
+  páginas (`repo.updateProject`, con «Deshacer»).
+- **Buscador en la pantalla Rally** (`RallySearch`): filtra la lista cargada (ID, nombre, personas, proyecto, iteración,
+  etiquetas) y busca en todo Rally por ID o palabra (`pick` admite ahora TS, TA y DS); un resultado abre su ficha (`lookup`).
 - **Tareas fijas del equipo** (`domain/routines.ts`, `TEAM_ROUTINES`): lunes «Rellenar los objetivos de la semana…» y viernes
   «Rellenar la gestión de la demanda», recurrentes semanales (serie `rutina:<id>`, etiqueta `rutina`, prioridad 2, `url`
   opcional). `AppContext` las crea una vez por cuenta tras la primera sincronización (`SyncState.pulled`) y las apunta en

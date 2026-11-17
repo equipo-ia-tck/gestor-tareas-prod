@@ -4,7 +4,7 @@ import { lazy, Suspense, useEffect, useMemo, useState, type FormEvent, type Reac
 
 // El editor con formato pesa: se carga al abrir una nota, no al arrancar la app.
 const NoteEditor = lazy(() => import('./NoteEditor').then((m) => ({ default: m.NoteEditor })));
-import { AtSign, FileText, ListChecks, MessageSquare, Pin, Plus, Search, Trash2, Users } from 'lucide-react';
+import { AtSign, FileText, ListChecks, MessageSquare, Pencil, Pin, Plus, Search, Trash2, Users } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
 import { useWideLayout } from '../../app/Layout';
 import { navigate } from '../../app/router';
@@ -78,6 +78,12 @@ export function NotesView({ id }: { id?: string }) {
     navigate(first ? { view: 'notes', id: first.id } : { view: 'notes' });
   };
 
+  // Las secciones son proyectos: cambiarles el nombre cambia el del proyecto (en todas partes, con «Deshacer»).
+  const renameSection = (pid: string, name: string) => {
+    const p = projectMap.get(pid);
+    if (p && name.trim() && name.trim() !== p.name) void repo.updateProject(pid, { name: name.trim() });
+  };
+
   const addPage = (kind: NoteKind) => void newNote(kind, today, { project_id: sectionProject?.id ?? null });
 
   return (
@@ -89,7 +95,8 @@ export function NotesView({ id }: { id?: string }) {
         <div className="flex-1 overflow-y-auto pb-2">
           <SectionRow label="Todas las notas" color="#a1a1aa" active={section === ALL} count={notes.length} onClick={() => selectSection(ALL)} />
           {flattenTree(projectTree(projects)).map(({ project: p, depth }) => (
-            <SectionRow key={p.id} label={p.name} color={p.color} depth={depth} active={section === p.id} count={count(p.id)} onClick={() => selectSection(p.id)} />
+            <SectionRow key={p.id} label={p.name} color={p.color} depth={depth} active={section === p.id} count={count(p.id)} onClick={() => selectSection(p.id)}
+              onRename={(name) => renameSection(p.id, name)} />
           ))}
           {count(NONE) > 0 && <SectionRow label="Sin sección" color="#d4d4d8" active={section === NONE} count={count(NONE)} onClick={() => selectSection(NONE)} />}
         </div>
@@ -99,9 +106,12 @@ export function NotesView({ id }: { id?: string }) {
       <div className="flex min-h-0 flex-col border-r border-zinc-200 dark:border-zinc-800">
         <div className="space-y-2 px-3 pt-3 pb-2">
           <div className="flex items-center gap-1">
-            <h2 className="flex-1 truncate text-sm font-semibold" title={sectionProject ? projectPath(sectionProject.id, projectMap) : undefined}>
-              {section === ALL ? 'Todas las notas' : section === NONE ? 'Sin sección' : sectionProject?.name}
-            </h2>
+            {sectionProject ? (
+              <EditableName value={sectionProject.name} title={projectPath(sectionProject.id, projectMap)}
+                onSave={(name) => renameSection(sectionProject.id, name)} className="flex-1 text-sm font-semibold" />
+            ) : (
+              <h2 className="flex-1 truncate text-sm font-semibold">{section === ALL ? 'Todas las notas' : 'Sin sección'}</h2>
+            )}
             <IcsImport />
           </div>
           <div className="flex gap-1">
@@ -144,12 +154,55 @@ export function NotesView({ id }: { id?: string }) {
   );
 }
 
-/** Sección con su color (barra a la izquierda, como las pestañas de OneNote). */
-function SectionRow({ label, color, active, count, depth = 0, onClick }: {
-  label: string; color: string; active: boolean; count: number; depth?: number; onClick: () => void;
-}) {
+/** Nombre que se cambia con el lápiz o con doble clic (Enter guarda, Esc cancela). */
+function EditableName({ value, onSave, className = '', title }: { value: string; onSave: (v: string) => void; className?: string; title?: string }) {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(value);
+  if (editing) {
+    return (
+      <input autoFocus value={text} aria-label="Nombre de la sección" onChange={(e) => setText(e.target.value)}
+        onBlur={() => { onSave(text); setEditing(false); }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') { e.preventDefault(); onSave(text); setEditing(false); }
+          if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setEditing(false); }
+        }}
+        className={`min-w-0 rounded border border-indigo-400 bg-white px-1 py-0.5 outline-none dark:bg-zinc-900 ${className}`} />
+    );
+  }
   return (
-    <button type="button" onClick={onClick} style={{ paddingLeft: `${0.75 + depth * 0.9}rem` }}
+    <span className={`group flex min-w-0 items-center gap-1 ${className}`} title={title}>
+      <h2 className="truncate" onDoubleClick={() => { setText(value); setEditing(true); }}>{value}</h2>
+      <button type="button" onClick={() => { setText(value); setEditing(true); }} title="Cambiar el nombre de la sección" aria-label="Cambiar el nombre de la sección"
+        className="shrink-0 rounded p-0.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200">
+        <Pencil className="size-3.5" />
+      </button>
+    </span>
+  );
+}
+
+/** Sección con su color (barra a la izquierda, como las pestañas de OneNote). Doble clic: cambiar el nombre. */
+function SectionRow({ label, color, active, count, depth = 0, onClick, onRename }: {
+  label: string; color: string; active: boolean; count: number; depth?: number; onClick: () => void; onRename?: (name: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(label);
+  if (editing && onRename) {
+    return (
+      <div style={{ paddingLeft: `${0.75 + depth * 0.9}rem` }} className="flex items-center gap-2 py-1 pr-2">
+        <span className="h-5 w-1 shrink-0 rounded-full" style={{ background: color }} />
+        <input autoFocus value={text} aria-label="Nombre de la sección" onChange={(e) => setText(e.target.value)}
+          onBlur={() => { onRename(text); setEditing(false); }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); onRename(text); setEditing(false); }
+            if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setEditing(false); }
+          }}
+          className="min-w-0 flex-1 rounded border border-indigo-400 bg-white px-1 py-0.5 text-sm outline-none dark:bg-zinc-900" />
+      </div>
+    );
+  }
+  return (
+    <button type="button" onClick={onClick} onDoubleClick={onRename ? () => { setText(label); setEditing(true); } : undefined}
+      title={onRename ? 'Doble clic para cambiar el nombre' : undefined} style={{ paddingLeft: `${0.75 + depth * 0.9}rem` }}
       className={`flex w-full items-center gap-2 py-1.5 pr-3 text-left text-sm ${active ? 'bg-white font-medium shadow-sm dark:bg-zinc-800' : 'hover:bg-zinc-100 dark:hover:bg-zinc-800/60'}`}>
       <span className="h-5 w-1 shrink-0 rounded-full" style={{ background: color }} />
       <span className="flex-1 truncate">{label}</span>

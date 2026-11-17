@@ -9,7 +9,7 @@ import { inputClass } from '../../components/ui/styles';
 import { repo } from '../../data/services';
 import {
   boardColumnOf, groupRally, linkedTask, RALLY_COLUMNS, RALLY_KINDS, taskFromRally, tasksByRallyId,
-  type RallyGroupBy, type RallyItem, type RallyKind, type RallyProject, type RallyRef, type RallyStatus,
+  type RallyGroupBy, type RallyItem, type RallyKind, type RallyPick, type RallyProject, type RallyRef, type RallyStatus,
 } from '../../domain/rally';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import type { Task } from '../../domain/types';
@@ -262,6 +262,8 @@ function RallyItems() {
   const [projectId, setProjectId] = usePersistentState('rally-project', '');
   // Elemento abierto en el panel de la derecha.
   const [open, setOpen] = useState<RallyItem | null>(null);
+  // Buscador: filtra lo cargado y, aparte, busca en todo Rally por ID o palabra.
+  const [search, setSearch] = useState('');
   const [creating, setCreating] = useState(false);
   // «Crear con petición»: la frase y, ya interpretada, el formulario relleno.
   const [asking, setAsking] = useState(false);
@@ -319,7 +321,10 @@ function RallyItems() {
   const byId = useMemo(() => tasksByRallyId(tasks), [tasks]);
   const base = (items ?? []).filter((it) => (!hideDone || !it.done) && (!browsing || !onlyMine || it.mine)
     && (!person || (person === NO_ONE ? !it.assignee : it.assignee === person)));
-  const visible = base.filter((it) => kinds.includes(it.kind));
+  const searchWords = fold(search).split(/\s+/).filter(Boolean);
+  const matchesSearch = (it: RallyItem) => searchWords.every((w) =>
+    fold([it.id, it.name, it.owner, it.assignee, it.project, it.iteration, ...it.tags].filter(Boolean).join(' ')).replace(/-/g, '').includes(w.replace(/-/g, '')));
+  const visible = base.filter((it) => kinds.includes(it.kind) && matchesSearch(it));
   const people = [...new Set((items ?? []).map((it) => it.assignee).filter((a): a is string => !!a))].sort((a, b) => a.localeCompare(b, 'es'));
   const toAdd = visible.filter((it) => !it.done && !linkedTask(it, byId));
   const target = projects.some((p) => p.id === projectId) ? projectId : null;
@@ -375,6 +380,8 @@ function RallyItems() {
           </div>
         )}
       </section>
+
+      <RallySearch value={search} onChange={setSearch} shown={visible.length} onOpen={show} />
 
       <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
         {RALLY_KINDS.map(({ kind, label }) => {
@@ -544,6 +551,79 @@ function RallyItems() {
           onOpenTask={() => { const t = linkedTask(open, byId); if (t) openTask(t); }}
           onClose={closePanel}
         />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Buscador de la pantalla Rally: lo escrito filtra la lista de debajo (ID, nombre, personas, proyecto, etiquetas) y, desde
+ * dos letras, busca también en todo Rally por ID exacto o palabra del nombre (US, DE, TS, TA, DS y features), por si no está
+ * entre lo cargado. Pulsar un resultado abre su ficha.
+ */
+function RallySearch({ value, onChange, shown, onOpen }: { value: string; onChange: (v: string) => void; shown: number; onOpen: (it: RallyItem) => void }) {
+  const [found, setFound] = useState<{ items: RallyPick[]; total: number } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [opening, setOpening] = useState<string | null>(null);
+  const term = value.trim();
+  useEffect(() => {
+    if (term.length < 2) { setFound(null); setError(null); return; }
+    let live = true;
+    setFound(null);
+    setError(null);
+    const t = setTimeout(() => {
+      rallyApi.pick({ types: ['US', 'DE', 'TS', 'TA', 'DS', 'F'], q: term, project: '', release: '', page: 1 })
+        .then((r) => live && setFound(r), (e: Error) => live && setError(e.message));
+    }, 400);
+    return () => { live = false; clearTimeout(t); };
+  }, [term]);
+  const openPick = async (p: RallyPick) => {
+    setOpening(p.id);
+    setError(null);
+    try {
+      const [it] = await rallyApi.lookup([p.id]);
+      if (it) onOpen(it); else setError(`No se ha podido abrir ${p.id}.`);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setOpening(null);
+    }
+  };
+  return (
+    <div className="mb-3">
+      <div className="relative max-w-xl">
+        <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-zinc-400" />
+        <input value={value} onChange={(e) => onChange(e.target.value)} placeholder="Buscar por ID (US1234567) o palabras del nombre…" aria-label="Buscar en Rally"
+          onKeyDown={(e) => { if (e.key === 'Escape') onChange(''); }}
+          className={`${inputClass} py-1.5 pr-8 pl-8`} />
+        {value && (
+          <button type="button" onClick={() => onChange('')} title="Borrar la búsqueda" aria-label="Borrar la búsqueda"
+            className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-0.5 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"><X className="size-4" /></button>
+        )}
+      </div>
+      {term.length >= 2 && (
+        <div className="mt-2 max-w-xl rounded-lg border border-zinc-200 p-2 text-sm dark:border-zinc-700">
+          <p className="mb-1 text-xs text-zinc-500">
+            {shown} en la lista de abajo · En todo Rally{found ? `: ${found.total}${found.total > found.items.length ? ` (los ${found.items.length} más recientes)` : ''}` : ''}
+          </p>
+          {found === null && !error && <p className="text-xs text-zinc-400">Buscando en Rally…</p>}
+          {error && <p className="text-xs text-red-600">{error}</p>}
+          {found && !found.items.length && <p className="text-xs text-zinc-400">Nada en Rally con eso.</p>}
+          {found && found.items.length > 0 && (
+            <ul className="max-h-64 overflow-y-auto">
+              {found.items.map((p) => (
+                <li key={p.id}>
+                  <button type="button" onClick={() => void openPick(p)} disabled={!!opening}
+                    className="flex w-full items-start gap-2 rounded px-1.5 py-1 text-left hover:bg-zinc-100 disabled:opacity-60 dark:hover:bg-zinc-800">
+                    <span className="w-24 shrink-0 font-mono text-xs text-indigo-600">{p.id}</span>
+                    <span className="min-w-0 flex-1">{p.name}{p.project && <span className="block text-xs text-zinc-400">{p.project}</span>}</span>
+                    {opening === p.id && <span className="text-xs text-zinc-400">Abriendo…</span>}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
     </div>
   );

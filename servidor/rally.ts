@@ -57,7 +57,9 @@ const CATEGORIES = Object.keys(TARGET_FLOW) as RallyCategory[];
 /** Tipos que se pueden crear desde el gestor. */
 const CREATABLE = ['FE', 'US', 'DE', 'DS', 'TS', 'TA'];
 /** Tipos del buscador «Elegir padre» → tipo de la WSAPI. */
-const PICK_TYPES: Record<string, string> = { US: 'hierarchicalrequirement', DE: 'defect', F: 'portfolioitem/feature', PI: 'portfolioitem' };
+const PICK_TYPES: Record<string, string> = {
+  US: 'hierarchicalrequirement', DE: 'defect', F: 'portfolioitem/feature', PI: 'portfolioitem', TS: 'testset', TA: 'task', DS: 'defectsuite',
+};
 const PICK_PAGE = 50;
 /** Texto de búsqueda seguro dentro de una consulta de la WSAPI (sin comillas ni paréntesis). */
 export const searchText = (q: unknown) => String(q ?? '').replace(/["\\()]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
