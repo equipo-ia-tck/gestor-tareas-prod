@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { BarChart3, Bug, ExternalLink, HelpCircle, KanbanSquare, Lightbulb, List, MessageCircle, RefreshCw, Sparkles } from 'lucide-react';
+import { BarChart3, Bug, ChevronsLeftRight, ExternalLink, HelpCircle, KanbanSquare, Lightbulb, List, MessageCircle, RefreshCw, Sparkles } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
 import { StatePill } from '../../components/ui/Badges';
 import { useToast } from '../../components/Toast';
@@ -184,12 +184,16 @@ function FeedbackBoard({ items, columns, onUpdate }: {
   onUpdate: (id: string, patch: { status?: FeedbackStatus; taskId?: string }) => Promise<void>;
 }) {
   const [over, setOver] = useState<FeedbackStatus | null>(null);
+  // Columnas plegadas, como en el Tablero de tareas (se recuerdan en el navegador).
+  const [collapsed, setCollapsed] = usePersistentState<FeedbackStatus[]>('feedback-board-collapsed', []);
+  const toggle = (id: FeedbackStatus) => setCollapsed(collapsed.includes(id) ? collapsed.filter((c) => c !== id) : [...collapsed, id]);
   return (
     <div className="-mx-6 flex max-h-[calc(100dvh-13rem)] min-h-80 gap-3 overflow-x-auto px-6 pb-3">
       {columns.map((col) => {
         const list = items.filter((f) => f.status === col.id);
+        const folded = collapsed.includes(col.id);
         return (
-          <section key={col.id} aria-label={col.label}
+          <section key={col.id} aria-label={folded ? `${col.label} (plegada)` : col.label}
             onDragOver={(e) => { if (e.dataTransfer.types.includes(FEEDBACK_MIME)) { e.preventDefault(); setOver(col.id); } }}
             onDragLeave={() => setOver((o) => (o === col.id ? null : o))}
             onDrop={(e) => {
@@ -199,16 +203,30 @@ function FeedbackBoard({ items, columns, onUpdate }: {
               e.preventDefault();
               if (items.find((f) => f.id === id)?.status !== col.id) void onUpdate(id, { status: col.id });
             }}
-            className={`flex min-h-0 min-w-48 flex-1 basis-0 flex-col rounded-xl p-2 transition-colors ${over === col.id ? 'ring-2 ring-indigo-400' : ''}`}
+            className={`flex min-h-0 flex-col rounded-xl transition-colors ${folded ? 'w-10 shrink-0 items-center py-2' : 'min-w-48 flex-1 basis-0 p-2'} ${over === col.id ? 'ring-2 ring-indigo-400' : ''}`}
             style={{ background: tint(COLUMN_COLOR[col.id], over === col.id ? 0.22 : 0.1) }}>
+            {folded ? (
+              <button type="button" onClick={() => toggle(col.id)} title={`Desplegar ${col.label}`}
+                className="flex flex-1 flex-col items-center gap-2 rounded px-1 hover:bg-black/5 dark:hover:bg-white/5">
+                <ChevronsLeftRight className="size-3.5 text-zinc-500" />
+                <span className="size-2.5 rounded-full" style={{ background: COLUMN_COLOR[col.id] }} />
+                <span className="text-xs text-zinc-500">{list.length}</span>
+                <span className="text-sm font-semibold [writing-mode:vertical-rl]">{col.label}</span>
+              </button>
+            ) : <>
             <header className="mb-2 flex items-center gap-2 px-1">
               <span className="size-2.5 rounded-full" style={{ background: COLUMN_COLOR[col.id] }} />
               <h3 className="text-sm font-semibold">{col.label}</h3>
               <span className="text-xs text-zinc-500">{list.length}</span>
+              <button type="button" onClick={() => toggle(col.id)} title={`Plegar ${col.label}`} aria-label={`Plegar ${col.label}`}
+                className="ml-auto rounded p-0.5 text-zinc-400 hover:bg-black/5 hover:text-zinc-700 dark:hover:bg-white/5 dark:hover:text-zinc-200">
+                <ChevronsLeftRight className="size-3.5" />
+              </button>
             </header>
             <ul className="-mx-1 flex min-h-8 flex-1 flex-col gap-2 overflow-y-auto px-1 pb-1">
               {list.map((f) => <BoardCard key={f.id} f={f} onUpdate={(patch) => onUpdate(f.id, patch)} />)}
             </ul>
+            </>}
           </section>
         );
       })}

@@ -780,7 +780,7 @@ En Vercel no hay servidor que lea la carpeta de OneDrive del Mac, así que el Ma
 - **Preparar mensaje** del panel: en tareas enlazadas a Rally abre `RallyMessage` sin `onConfirm` (Copiar y Publicar en
   Rally, sin tocar Ready); en el resto, el preparador de siempre (Copiar y Teams).
 - **Tablero** (`BoardColumns`, `board-display` en localStorage): alto máximo de la pantalla con scroll por columna (la barra
-  horizontal siempre a la vista), columnas plegables, tarjetas «Compactas» y «Campos» (etiquetas, proyecto, ID, fecha e
+  horizontal siempre a la vista), columnas plegables (botón siempre visible en la cabecera), tarjetas «Compactas» y «Campos» (etiquetas, proyecto, ID, fecha e
   iconos, personas, Owner). Los títulos largos se cortan dentro de la tarjeta.
 - **Completar una tarea enlazada a Rally** (circulito, tecla C, barra en bloque, panel) pide confirmación
   (`confirmRallyToggle`), porque también la mueve en Rally.
@@ -796,7 +796,7 @@ En Vercel no hay servidor que lea la carpeta de OneDrive del Mac, así que el Ma
   envía. Pulsar una cifra lleva a la Lista con ese filtro.
 - **Más → Feedback con tres vistas** (`feedback-view`): **Lista** (como antes, con filtro por estado), **Tablero** (columnas
   Nuevo · En curso · Bloqueado · Hecho · Descartado; arrastrar cambia el estado, al momento en pantalla y vuelve atrás si
-  Supabase falla; clic en la tarjeta despliega el detalle, el estado y «→ Tarea») y **Panel**. Las tres vistas ocupan todo
+  Supabase falla; columnas plegables como en el Tablero, `feedback-board-collapsed`; clic en la tarjeta despliega el detalle, el estado y «→ Tarea») y **Panel**. Las tres vistas ocupan todo
   el ancho y comparten cabecera y filtros (estado, tipo, parte de la web, impacto, persona y texto); en el Tablero, el
   estado deja solo sus columnas y el Panel cuenta lo filtrado. El estado `blocked` necesita la migración
   `008_feedback_bloqueado.sql` (después de 007); sin ella, el error lo dice.

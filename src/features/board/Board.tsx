@@ -229,12 +229,12 @@ function Column({ column: c, showProject, display, collapsed, onToggle }: {
       className={`flex min-h-0 min-w-44 flex-1 basis-0 flex-col rounded-xl p-2 transition-colors ${over ? 'ring-2 ring-indigo-400' : ''}`}
       style={{ background: tint(c.color, over ? 0.22 : 0.1) }}
     >
-      <header className="group/col mb-2 flex items-center gap-2 px-1">
+      <header className="mb-2 flex items-center gap-2 px-1">
         <span className="size-2.5 shrink-0 rounded-full" style={{ background: c.color }} />
         <h3 className="min-w-0 truncate text-sm font-semibold">{c.label}</h3>
         <span className="text-xs text-zinc-500">{c.tasks.length}</span>
         <button type="button" onClick={onToggle} title={`Plegar ${c.label}`} aria-label={`Plegar ${c.label}`}
-          className="ml-auto rounded p-0.5 text-zinc-400 opacity-0 hover:bg-black/5 hover:text-zinc-700 group-hover/col:opacity-100 focus:opacity-100 dark:hover:bg-white/5 dark:hover:text-zinc-200">
+          className="ml-auto rounded p-0.5 text-zinc-400 hover:bg-black/5 hover:text-zinc-700 dark:hover:bg-white/5 dark:hover:text-zinc-200">
           <ChevronsLeftRight className="size-3.5" />
         </button>
       </header>
