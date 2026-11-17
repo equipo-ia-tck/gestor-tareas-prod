@@ -49,7 +49,7 @@ export function FeedbackView() {
   const [error, setError] = useState('');
   const [view, setView] = usePersistentState<FeedbackViewMode>('feedback-view', 'list');
   const [kind, setKind] = useState<FeedbackKind | 'all'>('all');
-  const [status, setStatus] = useState<FeedbackStatus | 'open' | 'all'>('open');
+  const [status, setStatus] = useState<FeedbackStatus | 'open' | 'all'>('all');
   const [area, setArea] = useState('all');
   const [impact, setImpact] = useState<FeedbackImpact | 'all'>('all');
   const [author, setAuthor] = useState('all');
@@ -60,8 +60,8 @@ export function FeedbackView() {
     try { setItems(await sync().adminFeedback()); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }, []);
   useEffect(() => { if (isAdmin) void load(); }, [isAdmin, load]);
-  // Como el Tablero de tareas: todo el ancho de la ventana, para que quepan las cinco columnas.
-  useWideLayout(view === 'board');
+  // Todo el ancho de la ventana en las tres vistas (así la cabecera y los filtros no se mueven al cambiar de vista).
+  useWideLayout(true);
 
   if (!isAdmin) return <><ViewHeader title="Feedback" /><p className="text-sm text-zinc-500">Solo los administradores ven el feedback. Para enviar el tuyo, usa el botón «Feedback» de abajo a la derecha.</p></>;
 
@@ -75,22 +75,20 @@ export function FeedbackView() {
 
   const all = items ?? [];
   const words = fold(query).split(/\s+/).filter(Boolean);
-  // Filtros comunes a la lista y al tablero (el estado solo en la lista: en el tablero son las columnas).
+  // Los mismos filtros en las tres vistas. En el tablero, el estado deja solo sus columnas.
   const filtered = all.filter((f) => (kind === 'all' || f.kind === kind) && (area === 'all' || f.area === area)
     && (impact === 'all' || f.impact === impact) && (author === 'all' || (f.authorName || f.authorLogin) === author)
     && words.every((w) => fold(`${f.title} ${f.body} ${f.authorName}`).includes(w)));
   const count = (s: FeedbackStatus | 'open') => filtered.filter((f) => (s === 'open' ? isOpenFeedback(f) : f.status === s)).length;
   const shown = filtered.filter((f) => status === 'all' || (status === 'open' ? isOpenFeedback(f) : f.status === status));
   const authors = [...new Set(all.map((f) => f.authorName || f.authorLogin).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
-  const filtering = kind !== 'all' || area !== 'all' || impact !== 'all' || author !== 'all' || !!query;
-  const clear = () => { setKind('all'); setArea('all'); setImpact('all'); setAuthor('all'); setQuery(''); };
+  const filtering = status !== 'all' || kind !== 'all' || area !== 'all' || impact !== 'all' || author !== 'all' || !!query;
+  const clear = () => { setStatus('all'); setKind('all'); setArea('all'); setImpact('all'); setAuthor('all'); setQuery(''); };
 
   const chip = (on: boolean) => `rounded-full border px-2.5 py-0.5 text-xs ${on
     ? 'border-indigo-500 bg-indigo-50 font-medium text-indigo-800 dark:bg-indigo-950 dark:text-indigo-200'
     : 'border-zinc-300 text-zinc-600 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800'}`;
   const select = 'rounded-full border border-zinc-300 bg-transparent px-2 py-0.5 text-xs text-zinc-600 dark:border-zinc-600 dark:text-zinc-300';
-  // Desde el panel: pulsar una cifra lleva a la lista con ese filtro.
-  const toList = (fn: () => void) => { clear(); setStatus('all'); fn(); setView('list'); };
 
   return (
     <>
@@ -113,26 +111,15 @@ export function FeedbackView() {
       {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
       {!items && !error && <p className="text-sm text-zinc-400">Cargando…</p>}
 
-      {items && view === 'dashboard' && (
-        items.length ? (
-          <FeedbackDashboard items={items}
-            onStatus={(st) => toList(() => setStatus(st))}
-            onKind={(k) => toList(() => setKind(k))}
-            onArea={(a) => toList(() => { setArea(a); setStatus('open'); })} />
-        ) : <p className="text-sm text-zinc-400">Aún no ha llegado feedback.</p>
-      )}
-
-      {items && view !== 'dashboard' && (
+      {items && (
         <>
-          {view === 'list' && (
-            <div className="mb-2 flex flex-wrap items-center gap-1.5">
-              {([['open', 'Abiertos'], ...FEEDBACK_STATUSES.map((s) => [s.id, s.label]), ['all', 'Todos']] as [FeedbackStatus | 'open' | 'all', string][]).map(([id, label]) => (
-                <button key={id} type="button" onClick={() => setStatus(id)} className={chip(status === id)}>
-                  {label}{id !== 'all' ? ` · ${count(id)}` : ''}
-                </button>
-              ))}
-            </div>
-          )}
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            {([['open', 'Abiertos'], ...FEEDBACK_STATUSES.map((s) => [s.id, s.label]), ['all', 'Todos']] as [FeedbackStatus | 'open' | 'all', string][]).map(([id, label]) => (
+              <button key={id} type="button" onClick={() => setStatus(id)} className={chip(status === id)}>
+                {label}{id !== 'all' ? ` · ${count(id)}` : ''}
+              </button>
+            ))}
+          </div>
           <div className="mb-4 flex flex-wrap items-center gap-1.5">
             <button type="button" onClick={() => setKind('all')} className={chip(kind === 'all')}>Todos los tipos</button>
             {FEEDBACK_KINDS.map((k) => (
@@ -164,7 +151,16 @@ export function FeedbackView() {
               </ul>
             </>
           )}
-          {view === 'board' && <FeedbackBoard items={filtered} onUpdate={update} />}
+          {view === 'board' && <FeedbackBoard items={shown} onUpdate={update}
+            columns={FEEDBACK_STATUSES.filter((c) => status === 'all' || (status === 'open' ? isOpenFeedback({ status: c.id } as Feedback) : c.id === status))} />}
+          {view === 'dashboard' && (
+            shown.length ? (
+              <FeedbackDashboard items={shown}
+                onStatus={(st) => { setStatus(st); setView('list'); }}
+                onKind={(k) => { setKind(k); setView('list'); }}
+                onArea={(a) => { setArea(a); setView('list'); }} />
+            ) : <p className="text-sm text-zinc-400">No hay feedback con este filtro.</p>
+          )}
         </>
       )}
     </>
@@ -182,11 +178,15 @@ const FEEDBACK_MIME = 'application/x-gestor-feedback';
 const COLUMN_COLOR: Record<FeedbackStatus, string> = { new: '#6366f1', doing: '#f59e0b', blocked: '#ef4444', done: '#22c55e', dismissed: '#a1a1aa' };
 
 /** Tablero del feedback: una columna por estado; arrastrar una tarjeta a otra columna le cambia el estado. */
-function FeedbackBoard({ items, onUpdate }: { items: Feedback[]; onUpdate: (id: string, patch: { status?: FeedbackStatus; taskId?: string }) => Promise<void> }) {
+function FeedbackBoard({ items, columns, onUpdate }: {
+  items: Feedback[];
+  columns: typeof FEEDBACK_STATUSES;
+  onUpdate: (id: string, patch: { status?: FeedbackStatus; taskId?: string }) => Promise<void>;
+}) {
   const [over, setOver] = useState<FeedbackStatus | null>(null);
   return (
     <div className="-mx-6 flex max-h-[calc(100dvh-13rem)] min-h-80 gap-3 overflow-x-auto px-6 pb-3">
-      {FEEDBACK_STATUSES.map((col) => {
+      {columns.map((col) => {
         const list = items.filter((f) => f.status === col.id);
         return (
           <section key={col.id} aria-label={col.label}

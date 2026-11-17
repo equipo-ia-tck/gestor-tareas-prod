@@ -796,8 +796,9 @@ En Vercel no hay servidor que lea la carpeta de OneDrive del Mac, así que el Ma
   envía. Pulsar una cifra lleva a la Lista con ese filtro.
 - **Más → Feedback con tres vistas** (`feedback-view`): **Lista** (como antes, con filtro por estado), **Tablero** (columnas
   Nuevo · En curso · Bloqueado · Hecho · Descartado; arrastrar cambia el estado, al momento en pantalla y vuelve atrás si
-  Supabase falla; clic en la tarjeta despliega el detalle, el estado y «→ Tarea») y **Panel**. Filtros comunes a Lista y
-  Tablero: tipo, parte de la web, impacto, persona y texto. El estado `blocked` necesita la migración
+  Supabase falla; clic en la tarjeta despliega el detalle, el estado y «→ Tarea») y **Panel**. Las tres vistas ocupan todo
+  el ancho y comparten cabecera y filtros (estado, tipo, parte de la web, impacto, persona y texto); en el Tablero, el
+  estado deja solo sus columnas y el Panel cuenta lo filtrado. El estado `blocked` necesita la migración
   `008_feedback_bloqueado.sql` (después de 007); sin ella, el error lo dice.
 
 ### Más adelante
