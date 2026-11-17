@@ -33,7 +33,7 @@ export function TodayView() {
         subtitle={`${weekdayName(today, true)} ${d.getDate()} de ${d.toLocaleDateString('es-ES', { month: 'long' })}`}
       />
       {reviewDue(settings.ui.last_review_on, today) && (
-        <a href={routeHref({ view: 'review' })} className="mb-4 flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-800 hover:bg-indigo-100 dark:border-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-200">
+        <a href={routeHref({ view: 'review' })} className="mb-4 flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-800 hover:bg-indigo-100 dark:border-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-200 dark:hover:bg-indigo-900/60">
           <ClipboardCheck className="size-4" /><span className="flex-1">Toca la <strong>revisión semanal</strong>: 10 minutos para dejarlo todo en orden.</span><span className="text-xs">Empezar →</span>
         </a>
       )}

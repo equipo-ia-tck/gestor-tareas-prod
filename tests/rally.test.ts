@@ -434,6 +434,11 @@ describe('Rally: mover', () => {
     const post = await rally.comment(marta, { kind: 'US', objectId: '111', text: 'Hola\nqué tal' });
     expect(posts).toEqual([{ path: '/conversationpost/create', body: { ConversationPost: { Artifact: '/hierarchicalrequirement/111', Text: 'Hola<br />qué tal' } } }]);
     expect(post).toMatchObject({ author: 'Marta', text: 'Hola\nqué tal' });
+    // Con una persona elegida con «@», va como mención de Rally (la que avisa por correo).
+    posts.length = 0;
+    await rally.comment(marta, { kind: 'US', objectId: '111', text: 'Mira esto @Luis QA', mentions: [{ ref: '/user/77', name: 'Luis QA' }] });
+    expect(posts[0].body).toEqual({ ConversationPost: { Artifact: '/hierarchicalrequirement/111',
+      Text: '<p>Mira esto <span class="mention" data-mention="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb">@Luis QA</span></p>' } });
     await expect(rally.comment(marta, { kind: 'US', objectId: '111', text: '  ' })).rejects.toThrow(/Escribe/);
     await expect(rally.comment(marta, { kind: 'XX', objectId: '111', text: 'x' })).rejects.toThrow(/no válido/);
   });
@@ -791,5 +796,22 @@ describe('Rally: gestor', () => {
   it('apunta el Assignee en la tarea solo si no es de la persona conectada', () => {
     expect(taskFromRally(item({ mine: false, assignee: 'Ana' }), DEFAULT_ITEM_TYPES, null).notes).toBe('Assignee en Rally: Ana');
     expect(taskFromRally(item({ assignee: 'Marc' }), DEFAULT_ITEM_TYPES, null).notes).toBe('');
+  });
+});
+
+describe('menciones de un comentario', () => {
+  it('detecta las @ que no están enlazadas a una persona de Rally', async () => {
+    const { unlinkedMentions } = await import('../src/domain/rally');
+    expect(unlinkedMentions('Hola @Ana María y @Luis, escribe a ana@wpp.com', [{ name: 'Ana María' }])).toEqual(['@Luis']);
+    expect(unlinkedMentions('Hola @Ana María', [{ name: 'Ana María' }])).toEqual([]);
+    expect(unlinkedMentions('Sin menciones', [])).toEqual([]);
+  });
+  it('lee lo escrito tras la @ antes del cursor', async () => {
+    const { mentionQuery } = await import('../src/domain/rally');
+    expect(mentionQuery('Hola @An', 8)).toEqual({ start: 5, query: 'An' });
+    expect(mentionQuery('Hola @', 6)).toEqual({ start: 5, query: '' });
+    expect(mentionQuery('Hola @Ana María', 15)).toEqual({ start: 5, query: 'Ana María' });
+    expect(mentionQuery('ana@wpp', 7)).toBe(null);
+    expect(mentionQuery('Hola Ana', 8)).toBe(null);
   });
 });

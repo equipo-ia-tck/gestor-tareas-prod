@@ -9,7 +9,7 @@ import { inputClass } from '../../components/ui/styles';
 import { repo } from '../../data/services';
 import {
   boardColumnOf, groupRally, linkedTask, RALLY_COLUMNS, RALLY_KINDS, taskFromRally, tasksByRallyId,
-  type RallyGroupBy, type RallyItem, type RallyKind, type RallyProject, type RallyRef, type RallyStatus,
+  type RallyGroupBy, type RallyItem, type RallyKind, type RallyPick, type RallyProject, type RallyRef, type RallyStatus,
 } from '../../domain/rally';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import type { Task } from '../../domain/types';
@@ -206,6 +206,38 @@ const COLUMN_LABELS: [keyof RallyColumns, string][] = [
   ['assignee', 'Asignado a (debajo del nombre)'], ['tags', 'Etiquetas (debajo)'], ['project', 'Proyecto (debajo)'], ['iteration', 'Iteración (debajo)'],
 ];
 
+/** Ancho en píxeles de las columnas fijas (se arrastra el borde de la cabecera; doble clic vuelve al de serie). */
+interface RallyWidths { id: number; owner: number; state: number }
+const DEFAULT_WIDTHS: RallyWidths = { id: 96, owner: 160, state: 144 };
+
+/**
+ * Asa para ensanchar o estrechar una columna de la cabecera. `side`: en qué borde está (las de la derecha del nombre crecen
+ * hacia la izquierda, quitándole sitio al nombre).
+ */
+function ResizeHandle({ width, onChange, onReset, side }: { width: number; onChange: (w: number) => void; onReset: () => void; side: 'left' | 'right' }) {
+  return (
+    <span
+      role="separator"
+      aria-orientation="vertical"
+      title="Arrastra para cambiar el ancho · doble clic: el de serie"
+      onDoubleClick={onReset}
+      onMouseDown={(e) => {
+        e.preventDefault();
+        const x0 = e.clientX;
+        const move = (ev: MouseEvent) => {
+          const dx = ev.clientX - x0;
+          onChange(Math.round(Math.min(480, Math.max(56, side === 'right' ? width + dx : width - dx))));
+        };
+        const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); document.body.style.cursor = ''; };
+        document.body.style.cursor = 'col-resize';
+        window.addEventListener('mousemove', move);
+        window.addEventListener('mouseup', up);
+      }}
+      className={`absolute top-0 bottom-0 z-10 w-2 cursor-col-resize after:absolute after:inset-y-0 after:left-1/2 after:w-px after:bg-zinc-300 hover:after:bg-indigo-500 dark:after:bg-zinc-600 ${side === 'right' ? '-right-1' : '-left-1'}`}
+    />
+  );
+}
+
 const NO_GROUP: Partial<Record<RallyGroupBy, string>> = { iteration: 'Sin iteración', assignee: 'Sin asignar', tag: 'Sin etiqueta' };
 
 function RallyItems() {
@@ -230,6 +262,8 @@ function RallyItems() {
   const [projectId, setProjectId] = usePersistentState('rally-project', '');
   // Elemento abierto en el panel de la derecha.
   const [open, setOpen] = useState<RallyItem | null>(null);
+  // Buscador: filtra lo cargado y, aparte, busca en todo Rally por ID o palabra.
+  const [search, setSearch] = useState('');
   const [creating, setCreating] = useState(false);
   // «Crear con petición»: la frase y, ya interpretada, el formulario relleno.
   const [asking, setAsking] = useState(false);
@@ -240,6 +274,11 @@ function RallyItems() {
   useWideLayout(true);
   const [storedColumns, setColumns] = usePersistentState<RallyColumns>('rally-columns', DEFAULT_COLUMNS);
   const cols = { ...DEFAULT_COLUMNS, ...storedColumns };
+  const [storedWidths, setWidths] = usePersistentState<RallyWidths>('rally-widths', DEFAULT_WIDTHS);
+  const widths = { ...DEFAULT_WIDTHS, ...storedWidths };
+  const resize = (key: keyof RallyWidths, side: 'left' | 'right') => (
+    <ResizeHandle side={side} width={widths[key]} onChange={(w) => setWidths({ ...widths, [key]: w })} onReset={() => setWidths({ ...widths, [key]: DEFAULT_WIDTHS[key] })} />
+  );
 
   useEffect(() => {
     rallyApi.projects().then(setRallyProjects, (e: Error) => setError(e.message));
@@ -282,7 +321,10 @@ function RallyItems() {
   const byId = useMemo(() => tasksByRallyId(tasks), [tasks]);
   const base = (items ?? []).filter((it) => (!hideDone || !it.done) && (!browsing || !onlyMine || it.mine)
     && (!person || (person === NO_ONE ? !it.assignee : it.assignee === person)));
-  const visible = base.filter((it) => kinds.includes(it.kind));
+  const searchWords = fold(search).split(/\s+/).filter(Boolean);
+  const matchesSearch = (it: RallyItem) => searchWords.every((w) =>
+    fold([it.id, it.name, it.owner, it.assignee, it.project, it.iteration, ...it.tags].filter(Boolean).join(' ')).replace(/-/g, '').includes(w.replace(/-/g, '')));
+  const visible = base.filter((it) => kinds.includes(it.kind) && matchesSearch(it));
   const people = [...new Set((items ?? []).map((it) => it.assignee).filter((a): a is string => !!a))].sort((a, b) => a.localeCompare(b, 'es'));
   const toAdd = visible.filter((it) => !it.done && !linkedTask(it, byId));
   const target = projects.some((p) => p.id === projectId) ? projectId : null;
@@ -339,6 +381,8 @@ function RallyItems() {
         )}
       </section>
 
+      <RallySearch value={search} onChange={setSearch} shown={visible.length} onOpen={show} />
+
       <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
         {RALLY_KINDS.map(({ kind, label }) => {
           const on = kinds.includes(kind);
@@ -374,7 +418,7 @@ function RallyItems() {
                 <input type="checkbox" checked={cols[key]} onChange={(e) => setColumns({ ...cols, [key]: e.target.checked })} />{label}
               </label>
             ))}
-            <button type="button" onClick={() => setColumns(DEFAULT_COLUMNS)} className="mt-1 px-1 text-xs text-indigo-600 hover:underline dark:text-indigo-400">Volver a lo de serie</button>
+            <button type="button" onClick={() => { setColumns(DEFAULT_COLUMNS); setWidths(DEFAULT_WIDTHS); }} className="mt-1 px-1 text-xs text-indigo-600 hover:underline dark:text-indigo-400">Volver a lo de serie</button>
           </div>)}
         </Popover>
         <span className="ml-auto inline-flex items-center gap-2">
@@ -419,9 +463,9 @@ function RallyItems() {
 
       {visible.length > 0 && (
         <div className="-mx-2 mb-1 hidden gap-2 border-b border-zinc-200 px-2 pb-1 text-[11px] font-semibold tracking-wide text-zinc-400 uppercase md:flex dark:border-zinc-700">
-          <span className="w-7" /><span className="w-24">ID</span><span className="flex-1">Name</span>
-          {cols.owner && <span className="w-40">Owner</span>}
-          {cols.state && <span className="w-36 text-right">Estado</span>}<span className="w-24" />
+          <span className="w-7" /><span className="relative shrink-0" style={{ width: widths.id }}>ID{resize('id', 'right')}</span><span className="flex-1">Name</span>
+          {cols.owner && <span className="relative shrink-0 pl-1" style={{ width: widths.owner }}>{resize('owner', 'left')}Owner</span>}
+          {cols.state && <span className="relative shrink-0 text-right" style={{ width: widths.state }}>{resize('state', 'left')}Estado</span>}<span className="w-24" />
         </div>
       )}
       {groupRally(visible, groupBy).map((g) => (
@@ -434,7 +478,7 @@ function RallyItems() {
                 <li key={it.objectId} data-rally-row onClick={(e) => { if (!(e.target as HTMLElement).closest('a, button')) show(it); }}
                   className={`-mx-2 flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/60 ${it.done ? 'opacity-60' : ''} ${open?.objectId === it.objectId ? 'bg-indigo-50 ring-1 ring-indigo-300 dark:bg-indigo-950/50 dark:ring-indigo-800' : ''}`}>
                   <span className="w-7 shrink-0 rounded px-1 text-center text-[10px] font-bold text-white" style={{ background: colorOf(it.kind) }}>{it.kind}</span>
-                  <a href={it.url} target="_blank" rel="noreferrer" className="inline-flex w-24 shrink-0 items-center gap-0.5 font-mono text-xs text-indigo-600 hover:underline" title="Abrir en Rally">
+                  <a href={it.url} target="_blank" rel="noreferrer" className="inline-flex shrink-0 items-center gap-0.5 truncate font-mono text-xs text-indigo-600 hover:underline" style={{ width: widths.id }} title="Abrir en Rally">
                     {it.id}<ExternalLink className="size-3" />
                   </a>
                   {/* Columnas fijas (ID, Owner, Estado) para que cuadren con la cabecera; lo secundario va debajo del nombre. */}
@@ -461,11 +505,11 @@ function RallyItems() {
                     })()}
                   </span>
                   {cols.owner && (
-                    <span className="hidden w-40 shrink-0 items-center gap-1.5 text-xs text-zinc-600 md:inline-flex dark:text-zinc-300" title="Owner en Rally">
+                    <span className="hidden shrink-0 items-center gap-1.5 pl-1 text-xs text-zinc-600 md:inline-flex dark:text-zinc-300" style={{ width: widths.owner }} title="Owner en Rally">
                       {it.owner ? <><Avatar name={it.owner} size={18} /><span className="truncate">{it.owner}</span></> : <span className="text-zinc-400">Sin owner</span>}
                     </span>
                   )}
-                  {cols.state && <span className="flex w-36 shrink-0 justify-end">
+                  {cols.state && <span className="flex shrink-0 justify-end" style={{ width: widths.state }}>
                     {(() => {
                       // El estado con el nombre de la columna del Tablero (así se busca igual en los dos sitios).
                       const col = boardColumnOf(it);
@@ -507,6 +551,79 @@ function RallyItems() {
           onOpenTask={() => { const t = linkedTask(open, byId); if (t) openTask(t); }}
           onClose={closePanel}
         />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Buscador de la pantalla Rally: lo escrito filtra la lista de debajo (ID, nombre, personas, proyecto, etiquetas) y, desde
+ * dos letras, busca también en todo Rally por ID exacto o palabra del nombre (US, DE, TS, TA, DS y features), por si no está
+ * entre lo cargado. Pulsar un resultado abre su ficha.
+ */
+function RallySearch({ value, onChange, shown, onOpen }: { value: string; onChange: (v: string) => void; shown: number; onOpen: (it: RallyItem) => void }) {
+  const [found, setFound] = useState<{ items: RallyPick[]; total: number } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [opening, setOpening] = useState<string | null>(null);
+  const term = value.trim();
+  useEffect(() => {
+    if (term.length < 2) { setFound(null); setError(null); return; }
+    let live = true;
+    setFound(null);
+    setError(null);
+    const t = setTimeout(() => {
+      rallyApi.pick({ types: ['US', 'DE', 'TS', 'TA', 'DS', 'F'], q: term, project: '', release: '', page: 1 })
+        .then((r) => live && setFound(r), (e: Error) => live && setError(e.message));
+    }, 400);
+    return () => { live = false; clearTimeout(t); };
+  }, [term]);
+  const openPick = async (p: RallyPick) => {
+    setOpening(p.id);
+    setError(null);
+    try {
+      const [it] = await rallyApi.lookup([p.id]);
+      if (it) onOpen(it); else setError(`No se ha podido abrir ${p.id}.`);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setOpening(null);
+    }
+  };
+  return (
+    <div className="mb-3">
+      <div className="relative max-w-xl">
+        <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-zinc-400" />
+        <input value={value} onChange={(e) => onChange(e.target.value)} placeholder="Buscar por ID (US1234567) o palabras del nombre…" aria-label="Buscar en Rally"
+          onKeyDown={(e) => { if (e.key === 'Escape') onChange(''); }}
+          className={`${inputClass} py-1.5 pr-8 pl-8`} />
+        {value && (
+          <button type="button" onClick={() => onChange('')} title="Borrar la búsqueda" aria-label="Borrar la búsqueda"
+            className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-0.5 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"><X className="size-4" /></button>
+        )}
+      </div>
+      {term.length >= 2 && (
+        <div className="mt-2 max-w-xl rounded-lg border border-zinc-200 p-2 text-sm dark:border-zinc-700">
+          <p className="mb-1 text-xs text-zinc-500">
+            {shown} en la lista de abajo · En todo Rally{found ? `: ${found.total}${found.total > found.items.length ? ` (los ${found.items.length} más recientes)` : ''}` : ''}
+          </p>
+          {found === null && !error && <p className="text-xs text-zinc-400">Buscando en Rally…</p>}
+          {error && <p className="text-xs text-red-600">{error}</p>}
+          {found && !found.items.length && <p className="text-xs text-zinc-400">Nada en Rally con eso.</p>}
+          {found && found.items.length > 0 && (
+            <ul className="max-h-64 overflow-y-auto">
+              {found.items.map((p) => (
+                <li key={p.id}>
+                  <button type="button" onClick={() => void openPick(p)} disabled={!!opening}
+                    className="flex w-full items-start gap-2 rounded px-1.5 py-1 text-left hover:bg-zinc-100 disabled:opacity-60 dark:hover:bg-zinc-800">
+                    <span className="w-24 shrink-0 font-mono text-xs text-indigo-600">{p.id}</span>
+                    <span className="min-w-0 flex-1">{p.name}{p.project && <span className="block text-xs text-zinc-400">{p.project}</span>}</span>
+                    {opening === p.id && <span className="text-xs text-zinc-400">Abriendo…</span>}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
     </div>
   );

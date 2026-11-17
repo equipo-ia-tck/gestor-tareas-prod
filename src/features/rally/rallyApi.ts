@@ -40,8 +40,8 @@ export const rallyApi = {
   /** `owner`: otra persona a mencionar en lugar del Owner (null = el Owner). */
   moveComment: (id: string, text: string, analyst: RallyRef | null, owner: RallyRef | null = null) =>
     call<{ text: string; owner: string | null; analyst: string | null; people?: { name: string; email: string | null }[] }>('POST', '/api/rally/move-comment', { id, text, analyst, owner }),
-  comment: (item: RallyItem, text: string) =>
-    call<{ post: RallyDetail['discussion'][number] }>('POST', '/api/rally/comment', { kind: item.kind, objectId: item.objectId, text }).then((r) => r.post),
+  comment: (item: RallyItem, text: string, mentions: RallyRef[] = []) =>
+    call<{ post: RallyDetail['discussion'][number] }>('POST', '/api/rally/comment', { kind: item.kind, objectId: item.objectId, text, mentions }).then((r) => r.post),
   /** Cambia el texto de un comentario propio (las menciones que tenía se conservan). */
   editComment: (objectId: string, text: string) =>
     call<{ post: RallyDetail['discussion'][number] }>('POST', '/api/rally/comment-edit', { objectId, text }).then((r) => r.post),

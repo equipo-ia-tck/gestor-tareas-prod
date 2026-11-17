@@ -27,3 +27,22 @@ describe('feedback', () => {
     expect([feedbackPriority({ impact: 'blocking' }), feedbackPriority({ impact: 'minor' }), feedbackPriority({ impact: null })]).toEqual([1, 3, 4]);
   });
 });
+
+describe('panel del feedback', () => {
+  it('cuenta por estado, tipo, parte de la web, impacto y semana', async () => {
+    const { feedbackStats } = await import('../src/domain/feedback');
+    const base = { authorName: 'Ana', authorLogin: 'ana', title: 't', body: '', page: '', screen: '', userAgent: '', taskId: null };
+    const items = [
+      { ...base, id: '1', kind: 'bug', area: 'board', impact: 'blocking', status: 'new', createdAt: '2026-11-16T10:00:00Z', updatedAt: '2026-11-16T10:00:00Z' },
+      { ...base, id: '2', kind: 'bug', area: 'board', impact: 'minor', status: 'done', createdAt: '2026-11-10T10:00:00Z', updatedAt: '2026-11-12T10:00:00Z' },
+      { ...base, id: '3', kind: 'improvement', area: 'rally', impact: null, status: 'doing', createdAt: '2026-11-17T09:00:00Z', updatedAt: '2026-11-17T09:00:00Z', authorName: 'Luis' },
+    ] as Parameters<typeof feedbackStats>[0];
+    const s = feedbackStats(items, new Date('2026-11-17T12:00:00Z'), 2);
+    expect(s).toMatchObject({ total: 3, open: 2, avgDaysToDone: 2, byStatus: { new: 1, doing: 1, blocked: 0, done: 1, dismissed: 0 } });
+    expect(s.byArea.map((a) => [a.id, a.total, a.open])).toEqual([['board', 2, 1], ['rally', 1, 1]]);
+    expect(s.byKind.map((k) => [k.id, k.total])).toEqual([['bug', 2], ['improvement', 1]]);
+    expect(s.openBugs.find((b) => b.id === 'blocking')?.count).toBe(1);
+    expect(s.weeks).toEqual([{ start: '2026-11-09', received: 1, closed: 1 }, { start: '2026-11-16', received: 2, closed: 0 }]);
+    expect(s.authors[0]).toEqual({ name: 'Ana', total: 2 });
+  });
+});

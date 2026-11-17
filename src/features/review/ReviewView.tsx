@@ -7,7 +7,7 @@ import { Avatar } from '../../components/ui/Badges';
 import { repo } from '../../data/services';
 import { dailyLog } from '../../domain/activity';
 import { addDays, formatDay, formatMinutes, mondayOf, weekdayName } from '../../domain/dates';
-import { nextMonday } from '../../domain/maintenance';
+import { nextMonday, staleTasks } from '../../domain/maintenance';
 import { inboxTasks, isActive, overdueTasks, sortTasks, weekPlan } from '../../domain/selectors';
 import { nameKey } from '../../domain/text';
 import { TOPIC_TYPE_ID, type Task } from '../../domain/types';
@@ -21,8 +21,17 @@ const STEPS = ['Bandeja', 'Atrasadas', 'Cómo fue la semana', 'Para hablar', 'La
 
 /** Revisión semanal guiada (unos 10 minutos): dejar todo en orden y la semana siguiente planificada. */
 export function ReviewView() {
-  const { settings, today } = useApp();
+  const { settings, today, tasks } = useApp();
   const [step, setStep] = useState(0);
+  // Cuántas tareas hay que mirar en cada paso (los de resumen no llevan número).
+  const counts: (number | null)[] = [
+    inboxTasks(tasks).length,
+    overdueTasks(tasks, today).length,
+    null,
+    tasks.filter((t) => t.type_id === TOPIC_TYPE_ID && isActive(t)).length,
+    null,
+    staleTasks(tasks, today).length,
+  ];
   const last = step === STEPS.length - 1;
 
   async function finish() {
@@ -41,7 +50,13 @@ export function ReviewView() {
           <li key={s}>
             <button type="button" onClick={() => setStep(i)}
               className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs ${i === step ? 'bg-indigo-600 font-medium text-white' : i < step ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300' : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800'}`}>
-              {i < step ? <Check className="size-3" /> : <span>{i + 1}</span>}{s}
+              {i < step && <Check className="size-3" />}{s}
+              {counts[i] !== null && (
+                <span title={`${counts[i]} ${counts[i] === 1 ? 'tarea' : 'tareas'}`}
+                  className={`min-w-4 rounded-full px-1 text-center text-[10px] font-semibold ${i === step ? 'bg-white/25' : counts[i] ? 'bg-zinc-200 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200' : 'opacity-60'}`}>
+                  {counts[i]}
+                </span>
+              )}
             </button>
           </li>
         ))}

@@ -31,6 +31,8 @@ export interface SyncState {
   isAdmin: boolean;
   /** Código de administración (solo para quien administra). */
   adminCode: string | null;
+  /** Ya ha llegado la primera sincronización de esta sesión (antes, el navegador puede no tener todo). */
+  pulled?: boolean;
   /** Dueño de cada registro compartido ("tasks:<id>" → id de cuenta). */
   owners: Record<string, string>;
 }
@@ -77,6 +79,8 @@ function friendly(message: string): string {
     return 'Falta preparar el feedback en Supabase: un administrador tiene que ejecutar supabase/migrations/006_feedback.sql.';
   if (/could not find the function public\.send_feedback_form/i.test(message))
     return 'Falta actualizar el feedback en Supabase: un administrador tiene que ejecutar supabase/migrations/007_feedback_formulario.sql.';
+  if (/feedback_status_check/i.test(message))
+    return 'Falta el estado «Bloqueado» del feedback en Supabase: un administrador tiene que ejecutar supabase/migrations/008_feedback_bloqueado.sql.';
   return message;
 }
 
@@ -518,7 +522,7 @@ export class SyncClient {
         await this.db.meta.put({ key: 'sync-owners', value: owners });
       });
       if (full) this.lastFull = Date.now();
-      this.set({ owners, status: this.dirty.size ? this.state.status : 'ok' });
+      this.set({ owners, pulled: true, status: this.dirty.size ? this.state.status : 'ok' });
     } catch (e) {
       console.warn(e);
       this.set({ status: 'offline' });

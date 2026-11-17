@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
  * Prueba la base de datos de Supabase (supabase/migrations) en un Postgres de verdad (PGlite), imitando
  * lo mínimo de Supabase: roles anon/authenticated y auth.uid()/auth.email() de la sesión.
  */
-const MIGRATION = ['001_equipo.sql', '002_baja_y_contrasenas.sql', '003_alta_sin_invitacion.sql', '004_claves_conectores.sql', '005_calendario_subido.sql', '006_feedback.sql', '007_feedback_formulario.sql'].map((f) => readFileSync(`supabase/migrations/${f}`, 'utf8')).join('\n');
+const MIGRATION = ['001_equipo.sql', '002_baja_y_contrasenas.sql', '003_alta_sin_invitacion.sql', '004_claves_conectores.sql', '005_calendario_subido.sql', '006_feedback.sql', '007_feedback_formulario.sql', '008_feedback_bloqueado.sql'].map((f) => readFileSync(`supabase/migrations/${f}`, 'utf8')).join('\n');
 let db: PGlite;
 
 const SUPABASE_STUB = `
@@ -272,6 +272,8 @@ describe('base de datos del equipo en Supabase', () => {
     await expect(rpc(ana, 'admin_update_feedback', { p_id: list[0].id, p_status: 'done', p_task_id: null })).rejects.toThrow(/administra/);
     expect(await rpc(marta, 'admin_update_feedback', { p_id: list[0].id, p_status: null, p_task_id: 't1' })).toMatchObject({ status: 'new', taskId: 't1' });
     expect(await rpc(marta, 'admin_update_feedback', { p_id: list[0].id, p_status: 'doing', p_task_id: null })).toMatchObject({ status: 'doing', taskId: 't1' });
+    // Bloqueado (migración 008), para la columna del tablero.
+    expect(await rpc(marta, 'admin_update_feedback', { p_id: list[0].id, p_status: 'blocked', p_task_id: null })).toMatchObject({ status: 'blocked' });
     await expect(rpc(marta, 'admin_update_feedback', { p_id: list[0].id, p_status: 'raro', p_task_id: null })).rejects.toThrow();
   });
 

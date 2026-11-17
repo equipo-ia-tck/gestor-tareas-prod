@@ -3,7 +3,7 @@ import { AtSign, Copy, Send, UserRound } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
 import { useToast } from '../../components/Toast';
 import { projectPath } from '../../domain/projects';
-import type { RallyItem, RallyRef } from '../../domain/rally';
+import { unlinkedMentions, type RallyItem, type RallyRef } from '../../domain/rally';
 import { externalUrl } from '../../domain/releases';
 import { fillTemplate, promptsOf, templatesFor, type MessageTemplate } from '../../domain/templates';
 import type { Task } from '../../domain/types';
@@ -12,6 +12,7 @@ import { findType } from '../../domain/workflows';
 import { MESSAGE_TEMPLATES } from '../templates/MessageComposer';
 import { Dialog } from './RallyPickers';
 import { rallyApi } from './rallyApi';
+import { MentionTextarea, UnlinkedWarning } from './MentionTextarea';
 
 /** Huecos de plantilla que no son personas: enlaces y números. */
 const notPerson = (label: string) => /link|enlace|documento|n[uú]mero/i.test(label);
@@ -34,8 +35,11 @@ export function RallyMessage({ item, task, onClose, onPosted, onConfirm }: {
   /** La cruz, Esc o clic fuera: no se marca Ready. */
   onClose: () => void;
   onPosted: (message: string) => void;
-  /** Marca Ready en Rally: antes de publicar el mensaje o con «Sin mensaje». */
-  onConfirm: () => Promise<void>;
+  /**
+   * Marca Ready en Rally: antes de publicar el mensaje o con «Sin mensaje». Sin él, la ventana solo prepara y publica el
+   * mensaje («Preparar mensaje» del panel de una tarea enlazada).
+   */
+  onConfirm?: () => Promise<void>;
 }) {
   const { itemTypes, projectMap } = useApp();
   const toast = useToast();
@@ -86,14 +90,18 @@ export function RallyMessage({ item, task, onClose, onPosted, onConfirm }: {
   // «Etiquetar a», abajo, es opcional.
   const missing = prompts.filter((p) => fill(template, answers).includes(`<${p.label}>`)).map((p) => p.label);
   const leftovers = missing.length === 0 && prompts.some((p) => text.includes(`<${p.label}>`));
-  const canPublish = !!text.trim() && !busy && missing.length === 0 && !leftovers;
+  // Cada persona de la plantilla tiene que estar elegida en Rally, para que la mención avise.
+  const unpicked = prompts.filter((p) => !notPerson(p.label) && !missing.includes(p.label)
+    && !mentions.some((m) => (answers[p.label] ?? '') === `@${m.name}`)).map((p) => p.label);
+  const unlinked = unlinkedMentions(text, mentions).length > 0;
+  const canPublish = !!text.trim() && !busy && missing.length === 0 && !leftovers && !unpicked.length && !unlinked;
 
   const publish = async () => {
     if (!canPublish) return;
     setBusy(true);
     setError(null);
     try {
-      await onConfirm();
+      await onConfirm?.();
       const r = await rallyApi.message(item.id, text, tagged);
       onPosted(`Mensaje publicado en ${item.id}${r.mentioned.length ? ` · etiquetados: ${r.mentioned.join(', ')}` : ''}`);
       onClose();
@@ -113,9 +121,13 @@ export function RallyMessage({ item, task, onClose, onPosted, onConfirm }: {
   };
 
   return (
-    <Dialog title="Mensaje · Ready" width="max-w-xl" onClose={onClose}>
+    <Dialog title={onConfirm ? 'Mensaje · Ready' : `Mensaje · ${item.id}`} width="max-w-xl" onClose={onClose}>
       <div className="min-h-0 space-y-2 overflow-y-auto">
-        <p className="text-xs text-zinc-500">{item.id} · {item.name} · Ready se marca al publicar (o con «Sin mensaje»); si cierras con la cruz, no se marca</p>
+        <p className="text-xs text-zinc-500">
+          {item.id} · {item.name} · {onConfirm
+            ? 'Ready se marca al publicar (o con «Sin mensaje»); si cierras con la cruz, no se marca'
+            : 'Se publica en la discusión de Rally y las personas elegidas reciben el aviso por correo'}
+        </p>
         {options.length > 1 && (
           <select value={templateId} aria-label="Plantilla" onChange={(e) => pick(e.target.value)}
             className="w-full rounded-md border border-zinc-200 bg-white px-2 py-1 dark:border-zinc-700 dark:bg-zinc-900">
@@ -147,8 +159,9 @@ export function RallyMessage({ item, task, onClose, onPosted, onConfirm }: {
             ))}
           </div>
         )}
-        <textarea ref={area} value={text} onChange={(e) => setText(e.target.value)} rows={11} aria-label="Mensaje"
+        <MentionTextarea ref={area} value={text} onChange={setText} mentions={mentions} onMentions={setMentions} rows={11} aria-label="Mensaje"
           className="w-full resize-y rounded-md border border-zinc-200 bg-white p-2 font-sans text-sm leading-relaxed dark:border-zinc-700 dark:bg-zinc-900" />
+        <UnlinkedWarning text={text} mentions={mentions} />
         <div className="flex flex-wrap items-center gap-2">
           <span className="inline-flex items-center gap-1 text-xs text-zinc-500"><AtSign className="size-3.5" />Etiquetar a</span>
           <div className="min-w-48 flex-1"><RallyPersonInput value="" clearOnPick onText={() => {}} onPick={insertMention} placeholder="Buscar en Rally…" /></div>
@@ -162,23 +175,26 @@ export function RallyMessage({ item, task, onClose, onPosted, onConfirm }: {
         {missing.length > 0 && (
           <p className="text-xs text-red-600 dark:text-red-400">Para publicar, rellena: {missing.join(', ')}.</p>
         )}
+        {unpicked.length > 0 && (
+          <p className="text-xs text-red-600 dark:text-red-400">Elige en la lista de Rally a: {unpicked.join(', ')} (si no, la mención no avisa).</p>
+        )}
         {leftovers && <p className="text-xs text-red-600 dark:text-red-400">Quedan huecos «&lt;…&gt;» en el mensaje: complétalos o quítalos.</p>}
         {error && <p className="text-xs text-red-600">{error}</p>}
       </div>
       <div className="mt-3 flex items-center justify-end gap-2">
-        <button type="button" disabled={busy} onClick={() => {
+        {onConfirm && <button type="button" disabled={busy} onClick={() => {
           setBusy(true);
           setError(null);
           onConfirm().then(onClose, (e: Error) => { setError(e.message); setBusy(false); });
         }}
           title="Marca Ready sin publicar ningún mensaje"
-          className="mr-auto rounded-md px-3 py-1.5 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800">Sin mensaje</button>
+          className="mr-auto rounded-md px-3 py-1.5 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800">Sin mensaje</button>}
         <button type="button" onClick={() => void copy()}
           className="flex items-center gap-1.5 rounded-md border border-zinc-200 px-3 py-1.5 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800">
           <Copy className="size-3.5" />Copiar
         </button>
         <button type="button" disabled={!canPublish} onClick={() => void publish()}
-          title={missing.length ? `Falta: ${missing.join(', ')}` : undefined}
+          title={missing.length ? `Falta: ${missing.join(', ')}` : unpicked.length ? `Elige en Rally a: ${unpicked.join(', ')}` : undefined}
           className="flex items-center gap-1.5 rounded-md bg-indigo-600 px-3 py-1.5 font-medium text-white hover:bg-indigo-500 disabled:opacity-50">
           <Send className="size-3.5" />{busy ? 'Publicando…' : 'Publicar en Rally'}
         </button>

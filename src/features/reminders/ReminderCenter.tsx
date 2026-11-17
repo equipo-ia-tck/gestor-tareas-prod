@@ -58,9 +58,9 @@ export function ReminderCenter() {
               <button type="button" onClick={() => editTask(t)} className="min-w-0 flex-1 truncate text-left font-medium hover:underline">{t.title}</button>
               <span className="text-xs text-orange-700 dark:text-orange-300">{late ? 'se pasó ' : ''}{formatReminder(t.remind_at!, now, formatDay).toLowerCase()}</span>
               <button type="button" title="Completar" onClick={() => void repo.batch('Tarea completada', async () => { await repo.setCompleted(t.id, true); await repo.updateTask(t.id, { remind_at: null }); })}
-                className="flex items-center gap-1 rounded-md bg-white px-2 py-0.5 text-xs hover:bg-emerald-50 dark:bg-zinc-900"><Check className="size-3" />Hecha</button>
+                className="flex items-center gap-1 rounded-md bg-white px-2 py-0.5 text-xs hover:bg-emerald-50 dark:bg-zinc-900 dark:hover:bg-emerald-900/60"><Check className="size-3" />Hecha</button>
               <Popover align="right" width="w-48" trigger={(toggle) => (
-                <button type="button" onClick={toggle} className="rounded-md bg-white px-2 py-0.5 text-xs hover:bg-orange-100 dark:bg-zinc-900">Posponer ▾</button>
+                <button type="button" onClick={toggle} className="rounded-md bg-white px-2 py-0.5 text-xs hover:bg-orange-100 dark:bg-zinc-900 dark:hover:bg-orange-900/60">Posponer ▾</button>
               )}>
                 {(close) => [{ label: 'En 10 minutos', at: new Date(Date.now() + 10 * 60_000).toISOString() }, ...quickReminders(new Date())].map((o) => (
                   <MenuItem key={o.label} onClick={() => { close(); snooze(t.id, o.at); }}>{o.label}</MenuItem>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { Copy, MessageSquare } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
 import { routeHref } from '../../app/router';
@@ -13,6 +13,11 @@ import { peopleDirectory } from '../../domain/people';
 import type { Task } from '../../domain/types';
 import { findType } from '../../domain/workflows';
 import { teamsLinkProps, useTeamsApp } from '../../hooks/useTeamsApp';
+import { isRallyId, type RallyItem } from '../../domain/rally';
+import { useRallyItem } from '../rally/rallyStore';
+
+// RallyMessage importa este archivo (las plantillas): se carga aparte para no crear un ciclo al arrancar.
+const RallyMessage = lazy(() => import('../rally/RallyMessage').then((m) => ({ default: m.RallyMessage })));
 
 // Las plantillas son archivos del repositorio (plantillas/*.md) y entran en la app al compilar.
 const files = import.meta.glob('/plantillas/*.md', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
@@ -24,7 +29,26 @@ export const MESSAGE_TEMPLATES = Object.entries(files)
 /** Prepara un mensaje a partir de una plantilla y lo copia o lo abre en un chat de Teams. */
 export function MessageButton({ task, className }: { task: Task; className: string }) {
   const { itemTypes } = useApp();
+  const toast = useToast();
+  const known = useRallyItem(task.external_id);
+  const [rallyOpen, setRallyOpen] = useState(false);
   const options = templatesFor(MESSAGE_TEMPLATES, findType(itemTypes, task.type_id));
+  // Tarea enlazada a Rally: la ventana de mensajes de Rally (personas buscadas en Rally, «Copiar» y «Publicar en Rally»).
+  if (isRallyId(task.external_id)) {
+    const item = known ?? ({ id: task.external_id, name: task.title, url: task.url ?? '', kind: '' } as unknown as RallyItem);
+    return (
+      <>
+        <button type="button" onClick={() => setRallyOpen(true)} className={`${className} flex items-center gap-1.5 text-left text-indigo-600 dark:text-indigo-400`}>
+          Preparar mensaje<span className="text-xs text-zinc-400">(copiar o publicar en Rally)</span>
+        </button>
+        {rallyOpen && (
+          <Suspense fallback={null}>
+            <RallyMessage item={item} task={task} onClose={() => setRallyOpen(false)} onPosted={toast} />
+          </Suspense>
+        )}
+      </>
+    );
+  }
   if (!options.length) return <span className="px-2 text-xs text-zinc-400">No hay plantillas para este tipo (carpeta plantillas/)</span>;
   return (
     <Popover width="w-[26rem]" trigger={(toggle) => (

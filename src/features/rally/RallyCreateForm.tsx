@@ -578,7 +578,7 @@ export function RallyCreateForm({ projects, defaultProjectId, defaultTags = [], 
               <button type="button" onClick={onCancel} disabled={!!busy}
                 className="whitespace-nowrap rounded-md border border-zinc-300 bg-white px-4 py-1.5 text-[#1e64c8] hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-blue-300 dark:hover:bg-zinc-800">Discard</button>
               <button type="submit" onClick={() => { again.current = true; }} disabled={!ready_ || !!busy || !!tooBig}
-                className="whitespace-nowrap rounded-md border border-[#1e64c8] bg-white px-4 py-1.5 font-medium text-[#1e64c8] hover:bg-blue-50 disabled:border-zinc-300 disabled:bg-zinc-200 disabled:text-zinc-500 dark:bg-zinc-900 dark:text-blue-300 dark:disabled:border-zinc-600 dark:disabled:bg-zinc-800">
+                className="whitespace-nowrap rounded-md border border-[#1e64c8] bg-white px-4 py-1.5 font-medium text-[#1e64c8] hover:bg-blue-50 disabled:border-zinc-300 disabled:bg-zinc-200 disabled:text-zinc-500 dark:bg-zinc-900 dark:text-blue-300 dark:disabled:border-zinc-600 dark:disabled:bg-zinc-800 dark:hover:bg-blue-900/60">
                 Create + New
               </button>
               <button type="submit" onClick={() => { again.current = false; }} disabled={!ready_ || !!busy || !!tooBig}
