@@ -3,7 +3,7 @@ import type { Priority } from './types';
 
 /** `other` solo existe en lo enviado con el primer formulario. */
 export type FeedbackKind = 'bug' | 'improvement' | 'idea' | 'question' | 'other';
-export type FeedbackStatus = 'new' | 'doing' | 'done' | 'dismissed';
+export type FeedbackStatus = 'new' | 'doing' | 'blocked' | 'done' | 'dismissed';
 export type FeedbackImpact = 'blocking' | 'annoying' | 'minor';
 
 export interface Feedback {
@@ -45,6 +45,7 @@ export const FEEDBACK_KINDS: { id: Exclude<FeedbackKind, 'other'>; label: string
 export const FEEDBACK_STATUSES: { id: FeedbackStatus; label: string }[] = [
   { id: 'new', label: 'Nuevo' },
   { id: 'doing', label: 'En curso' },
+  { id: 'blocked', label: 'Bloqueado' },
   { id: 'done', label: 'Hecho' },
   { id: 'dismissed', label: 'Descartado' },
 ];
@@ -113,7 +114,9 @@ export function feedbackTaskTitle(f: Pick<Feedback, 'kind' | 'title' | 'body'>):
 export const feedbackPriority = (f: Pick<Feedback, 'impact'>): Priority =>
   FEEDBACK_IMPACTS.find((x) => x.id === f.impact)?.priority ?? 4;
 
-const isOpen = (f: Feedback) => f.status === 'new' || f.status === 'doing';
+/** Abierto = sin cerrar: nuevo, en curso o bloqueado. */
+export const isOpenFeedback = (f: Feedback) => f.status === 'new' || f.status === 'doing' || f.status === 'blocked';
+const isOpen = isOpenFeedback;
 const isClosed = (f: Feedback) => f.status === 'done' || f.status === 'dismissed';
 const DAY = 86_400_000;
 
@@ -140,7 +143,7 @@ function weekStart(d: Date): string {
 
 /** Cifras del panel de Más → Feedback. El cierre se fecha con `updatedAt` (el último cambio de estado). */
 export function feedbackStats(items: Feedback[], now = new Date(), weeksBack = 8): FeedbackStats {
-  const byStatus = { new: 0, doing: 0, done: 0, dismissed: 0 } as Record<FeedbackStatus, number>;
+  const byStatus = { new: 0, doing: 0, blocked: 0, done: 0, dismissed: 0 } as Record<FeedbackStatus, number>;
   for (const f of items) byStatus[f.status]++;
   const done = items.filter((f) => f.status === 'done');
   const avg = done.length ? done.reduce((s, f) => s + Math.max(0, Date.parse(f.updatedAt) - Date.parse(f.createdAt)), 0) / done.length / DAY : null;
@@ -168,7 +171,7 @@ export function feedbackStats(items: Feedback[], now = new Date(), weeksBack = 8
   return {
     total: items.length,
     byStatus,
-    open: byStatus.new + byStatus.doing,
+    open: byStatus.new + byStatus.doing + byStatus.blocked,
     avgDaysToDone: avg,
     byKind,
     byArea,

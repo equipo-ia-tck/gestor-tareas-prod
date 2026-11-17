@@ -38,7 +38,7 @@ describe('panel del feedback', () => {
       { ...base, id: '3', kind: 'improvement', area: 'rally', impact: null, status: 'doing', createdAt: '2026-11-17T09:00:00Z', updatedAt: '2026-11-17T09:00:00Z', authorName: 'Luis' },
     ] as Parameters<typeof feedbackStats>[0];
     const s = feedbackStats(items, new Date('2026-11-17T12:00:00Z'), 2);
-    expect(s).toMatchObject({ total: 3, open: 2, avgDaysToDone: 2, byStatus: { new: 1, doing: 1, done: 1, dismissed: 0 } });
+    expect(s).toMatchObject({ total: 3, open: 2, avgDaysToDone: 2, byStatus: { new: 1, doing: 1, blocked: 0, done: 1, dismissed: 0 } });
     expect(s.byArea.map((a) => [a.id, a.total, a.open])).toEqual([['board', 2, 1], ['rally', 1, 1]]);
     expect(s.byKind.map((k) => [k.id, k.total])).toEqual([['bug', 2], ['improvement', 1]]);
     expect(s.openBugs.find((b) => b.id === 'blocking')?.count).toBe(1);

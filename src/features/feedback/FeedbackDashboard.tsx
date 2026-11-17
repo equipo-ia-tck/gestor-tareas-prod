@@ -1,20 +1,19 @@
-import { ChevronDown, ChevronRight } from 'lucide-react';
 import { feedbackStats, type Feedback, type FeedbackKind, type FeedbackStatus } from '../../domain/feedback';
-import { usePersistentState } from '../../hooks/usePersistentState';
 
 const STATUS_BAR: Record<FeedbackStatus, string> = {
   new: 'bg-indigo-500',
   doing: 'bg-amber-500',
+  blocked: 'bg-red-500',
   done: 'bg-emerald-500',
   dismissed: 'bg-zinc-400',
 };
-const STATUS_LABEL: Record<FeedbackStatus, string> = { new: 'Nuevos', doing: 'En curso', done: 'Hechos', dismissed: 'Descartados' };
+const STATUS_LABEL: Record<FeedbackStatus, string> = { new: 'Nuevos', doing: 'En curso', blocked: 'Bloqueados', done: 'Hechos', dismissed: 'Descartados' };
 
 const shortDay = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
 
 /**
- * Panel de Más → Feedback: cómo va todo lo recibido. Las cifras y las barras se pulsan y filtran la lista de debajo.
- * Se puede plegar (se recuerda en el navegador).
+ * Vista «Panel» de Más → Feedback: cómo va todo lo recibido. Las cifras y las barras se pulsan y llevan a la lista con ese
+ * filtro.
  */
 export function FeedbackDashboard({ items, onStatus, onKind, onArea }: {
   items: Feedback[];
@@ -22,7 +21,6 @@ export function FeedbackDashboard({ items, onStatus, onKind, onArea }: {
   onKind: (k: FeedbackKind) => void;
   onArea: (a: string) => void;
 }) {
-  const [open, setOpen] = usePersistentState('feedback-dashboard-open', true);
   const s = feedbackStats(items);
   const resolved = s.total ? Math.round(((s.byStatus.done + s.byStatus.dismissed) / s.total) * 100) : 0;
   const maxWeek = Math.max(1, ...s.weeks.flatMap((w) => [w.received, w.closed]));
@@ -32,15 +30,10 @@ export function FeedbackDashboard({ items, onStatus, onKind, onArea }: {
 
   return (
     <section className="mb-5">
-      <button type="button" onClick={() => setOpen(!open)} className="mb-2 flex items-center gap-1 text-sm font-semibold text-zinc-700 dark:text-zinc-200">
-        {open ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}Cómo va el feedback
-        {!open && <span className="ml-1 font-normal text-zinc-500">· {s.open} abiertos de {s.total}</span>}
-      </button>
-      {open && (
-        <div className="space-y-3">
+      <div className="space-y-3">
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
             <Tile label="Recibidos" value={s.total} hint="Todo lo enviado" />
-            <Tile label="Abiertos" value={s.open} hint="Nuevos y en curso" tone="text-indigo-700 dark:text-indigo-300" onClick={() => onStatus('open')} />
+            <Tile label="Abiertos" value={s.open} hint="Nuevos, en curso y bloqueados" tone="text-indigo-700 dark:text-indigo-300" onClick={() => onStatus('open')} />
             <Tile label="Sin mirar" value={s.byStatus.new} hint="En estado Nuevo" tone="text-amber-700 dark:text-amber-300" onClick={() => onStatus('new')} />
             <Tile label="Resueltos" value={`${resolved}%`} hint={`${s.byStatus.done} hechos · ${s.byStatus.dismissed} descartados`} tone="text-emerald-700 dark:text-emerald-300" onClick={() => onStatus('done')} />
             <Tile label="Tiempo hasta Hecho" value={s.avgDaysToDone === null ? '—' : `${s.avgDaysToDone < 1 ? '<1' : Math.round(s.avgDaysToDone)} d`} hint="Media en días" />
@@ -131,7 +124,6 @@ export function FeedbackDashboard({ items, onStatus, onKind, onArea }: {
             </div>
           </div>
         </div>
-      )}
     </section>
   );
 }

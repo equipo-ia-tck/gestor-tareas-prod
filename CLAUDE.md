@@ -791,9 +791,14 @@ En Vercel no hay servidor que lea la carpeta de OneDrive del Mac, así que el Ma
   «Rellenar la gestión de la demanda», recurrentes semanales (serie `rutina:<id>`, etiqueta `rutina`, prioridad 2, `url`
   opcional). `AppContext` las crea una vez por cuenta tras la primera sincronización (`SyncState.pulled`) y las apunta en
   `settings.routines_added` (sin migración): si alguien las borra, no vuelven. Para añadir otra, se añade a la lista.
-- **Panel del feedback** (`FeedbackDashboard`, `feedbackStats`): recibidos, abiertos, sin mirar, % resuelto, días hasta Hecho,
+- **Panel del feedback** (`FeedbackDashboard`, `feedbackStats`), hoy vista «Panel»: recibidos, abiertos, sin mirar, % resuelto, días hasta Hecho,
   barra de estados, recibidos y cerrados por semana, por parte de la web, por tipo (con fallos abiertos por impacto) y quién
-  envía. Pulsar una cifra filtra la lista. Plegable (`feedback-dashboard-open`).
+  envía. Pulsar una cifra lleva a la Lista con ese filtro.
+- **Más → Feedback con tres vistas** (`feedback-view`): **Lista** (como antes, con filtro por estado), **Tablero** (columnas
+  Nuevo · En curso · Bloqueado · Hecho · Descartado; arrastrar cambia el estado, al momento en pantalla y vuelve atrás si
+  Supabase falla; clic en la tarjeta despliega el detalle, el estado y «→ Tarea») y **Panel**. Filtros comunes a Lista y
+  Tablero: tipo, parte de la web, impacto, persona y texto. El estado `blocked` necesita la migración
+  `008_feedback_bloqueado.sql` (después de 007); sin ella, el error lo dice.
 
 ### Más adelante
 
