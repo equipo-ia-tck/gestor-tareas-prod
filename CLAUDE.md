@@ -821,7 +821,7 @@ ya usa.
   (`projectScope`, máx. 300, lista de proyectos en caché 10 min).
 - **Sin periodo**: siempre todo lo de los proyectos elegidos (`days = 0`).
 - **Un solo recuadro de filtros**: en una línea Proyecto · Asignado a mí · Vista · Etiquetas; debajo los tipos (en el orden
-  US TS DE FE TC TA DS), «Ocultar terminadas» y agrupar. Sin «Solo lo mío» ni Persona. «Columnas» va en la cabecera de la
+  US TS DE FE TC TA DS), «Ocultar terminadas». Sin «Solo lo mío», Persona ni «Agrupar por» (siempre por columnas del tablero). «Columnas» va en la cabecera de la
   lista. «Pasar a mis tareas del gestor, en [proyecto] · Crear N tareas» (antes «Añadir al gestor en») en una sola fila.
 - **Orden por Rank** (`DragAndDropRank`, `RallyItem.rank`, `byRank`: como texto; sin Rank, al final).
 - **Vistas guardadas** (`domain/rallyViews.ts`, `RALLY_VIEWS`, `rally-view`): las 15 de Rally con sus nombres. Condiciones

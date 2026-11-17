@@ -99,6 +99,9 @@ function ConnectForm({ initialUrl, onConnected }: { initialUrl: string; onConnec
   );
 }
 
+/** Como `inputClass`, pero sin ocupar todo el ancho (para ponerlo en una fila con más cosas). */
+const fieldClass = 'rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-zinc-600 dark:bg-zinc-800';
+
 const chipClass = (on: boolean) => `rounded-full border px-2.5 py-0.5 text-xs font-medium ${on
   ? 'border-indigo-500 bg-indigo-600 text-white' : 'border-zinc-300 bg-white text-zinc-600 hover:border-zinc-400 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300'}`;
 
@@ -177,7 +180,6 @@ function ProjectPicker({ projects, selected, onChange, scope, onScope, recent }:
   );
 }
 
-const GROUP_LABEL: Record<RallyGroupBy, string> = { column: 'estado del tablero', category: 'categoría', state: 'estado exacto de Rally', iteration: 'iteración', assignee: 'persona', tag: 'etiqueta' };
 /** Qué se enseña en cada fila (se recuerda en localStorage). Lo secundario va debajo del nombre, así el nombre cabe entero. */
 interface RallyColumns {
   owner: boolean; state: boolean; assignee: boolean; tags: boolean; project: boolean; iteration: boolean;
@@ -249,7 +251,8 @@ function RallyItems({ user, onDisconnect }: { user: string | null; onDisconnect:
   const [tags, setTags] = usePersistentState<RallyRef[]>('rally-tag-filter', []);
   const [kinds, setKinds] = usePersistentState<RallyKind[]>('rally-kinds', RALLY_KINDS.map((k) => k.kind));
   const [hideDone, setHideDone] = usePersistentState('rally-hide-done', false);
-  const [groupBy, setGroupBy] = usePersistentState<RallyGroupBy>('rally-group-by-v2', 'column');
+  // Siempre por las columnas del tablero de Rally (New, Defined…), como la lista de Rally.
+  const groupBy = 'column' as RallyGroupBy;
   const [projectId, setProjectId] = usePersistentState('rally-project', '');
   // Elemento abierto en el panel de la derecha.
   const [open, setOpen] = useState<RallyItem | null>(null);
@@ -361,18 +364,18 @@ function RallyItems({ user, onDisconnect }: { user: string | null; onDisconnect:
       <div className="min-w-0">
       <section className="mb-3 space-y-2 rounded-lg border border-indigo-200 bg-indigo-50/60 p-3 dark:border-indigo-900 dark:bg-indigo-950/40">
         {/* Qué traer de Rally: proyecto, vista guardada y etiquetas, en una línea. */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 xl:flex-nowrap">
           <span className="text-xs font-semibold text-indigo-700 dark:text-indigo-300">Proyecto</span>
           {rallyProjects
             ? <ProjectPicker projects={rallyProjects} selected={selected} onChange={setSelected} scope={scope} onScope={setScope} recent={recent} />
             : <span className="text-xs text-zinc-400">Cargando proyectos…</span>}
           <button type="button" className={chipClass(!browsing)} onClick={() => { setSelected([]); setTags([]); }} title="Lo que tiene Assignee u Owner = tú">Asignado a mí</button>
           <span className="ml-2 text-xs font-semibold text-indigo-700 dark:text-indigo-300">Vista</span>
-          <select value={view.id} onChange={(e) => setViewId(e.target.value)} aria-label="Vista guardada" className={`${inputClass} w-60 py-1`}>
+          <select value={view.id} onChange={(e) => setViewId(e.target.value)} aria-label="Vista guardada" className={`${fieldClass} w-64 shrink-0`}>
             {RALLY_VIEWS.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
           </select>
           <span className="ml-2 text-xs font-semibold text-indigo-700 dark:text-indigo-300">Etiquetas</span>
-          <div className="min-w-56 flex-1">
+          <div className="min-w-64 flex-1">
             <ValuesField title="Filtrar por etiquetas" value={tags} onChange={setTags} load={rallyApi.tags} recentKey="rally-recent-tags" />
           </div>
         </div>
@@ -390,9 +393,6 @@ function RallyItems({ user, onDisconnect }: { user: string | null; onDisconnect:
           <label className="ml-2 inline-flex items-center gap-1 text-xs text-zinc-600 dark:text-zinc-300">
             <input type="checkbox" checked={hideDone} onChange={(e) => setHideDone(e.target.checked)} /> Ocultar terminadas
           </label>
-          <select className={`${inputClass} w-auto py-0.5 text-xs`} value={groupBy} onChange={(e) => setGroupBy(e.target.value as RallyGroupBy)} aria-label="Agrupar por">
-            {(Object.keys(GROUP_LABEL) as RallyGroupBy[]).map((g) => <option key={g} value={g}>Agrupar por {GROUP_LABEL[g]}</option>)}
-          </select>
         </div>
       </section>
 
@@ -401,7 +401,7 @@ function RallyItems({ user, onDisconnect }: { user: string | null; onDisconnect:
         <span className="text-zinc-500" title="Crea en el gestor una tarea por cada elemento de Rally de la lista que aún no tengas. Las tareas quedan enlazadas: cambian de estado solas cuando cambian en Rally.">
           Pasar a mis tareas del gestor, en
         </span>
-        <select className={`${inputClass} w-48 py-1`} value={target ?? ''} onChange={(e) => setProjectId(e.target.value)} aria-label="Proyecto del gestor donde se crean las tareas">
+        <select className={`${fieldClass} w-56`} value={target ?? ''} onChange={(e) => setProjectId(e.target.value)} aria-label="Proyecto del gestor donde se crean las tareas">
           <option value="">Bandeja (sin proyecto)</option>
           <ProjectOptions />
         </select>
