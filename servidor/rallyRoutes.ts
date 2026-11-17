@@ -125,7 +125,7 @@ export async function rallyRoute(rally: Rally, user: TeamUser, method: string, p
     case 'GET /api/rally/items': {
       const projects = (params.get('projects') ?? '').split(',').filter(Boolean);
       const tags = params.getAll('tag').filter(Boolean);
-      return rally.itemsReport(user, Number(params.get('days') ?? 90) || 0, projects, tags);
+      return rally.itemsReport(user, Number(params.get('days') ?? 90) || 0, projects, tags, { down: params.get('down') === '1', up: params.get('up') === '1' });
     }
   }
   throw new ApiError(404, 'No existe.');

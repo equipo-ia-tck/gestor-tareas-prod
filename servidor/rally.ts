@@ -77,7 +77,7 @@ const DONE = new Set(['accepted', 'completed', 'released', 'closed', 'pass', 'do
 /** Orden de las columnas cuando no hay FlowState (tablero sin columnas propias). */
 const SCHEDULE = ['idea', 'new', 'submitted', 'defined', 'open', 'in-progress', 'fixed', 'completed', 'accepted', 'released', 'closed'];
 const FETCH = 'FormattedID,Name,FlowState,OrderIndex,ScheduleState,State,LastVerdict,Blocked,Ready,Project,Iteration,Release,'
-  + 'LastUpdateDate,ObjectID,Owner,c_Assignee,Tags';
+  + 'LastUpdateDate,ObjectID,Owner,c_Assignee,Tags,DragAndDropRank';
 
 /** Solo servidores de Rally (`https://*.rallydev.com`), sin ruta. */
 export function normalizeBaseUrl(input: unknown): string {
@@ -297,6 +297,7 @@ export function toRallyItem(o: RallyObject, baseUrl: string, meId: string | null
     owner: refName(o.Owner),
     mine: meId !== null && (refId(o.c_Assignee) === meId || refId(o.Owner) === meId),
     tags: tagNames(o.Tags),
+    ...(typeof o.DragAndDropRank === 'string' && o.DragAndDropRank ? { rank: o.DragAndDropRank } : {}),
     updatedAt: String(o.LastUpdateDate ?? ''),
     url: `${baseUrl}/#/detail/${info.path}/${o.ObjectID}`,
   };
@@ -411,13 +412,16 @@ export class Rally {
     const a = await this.connected(user);
     const rows: RallyObject[] = [];
     for (let page = 0; page < MAX_PROJECT_PAGES; page++) {
-      const params = new URLSearchParams({ query: '(State = "Open")', fetch: 'Name,ObjectID', order: 'Name', pagesize: String(PAGE), start: String(page * PAGE + 1) });
+      const params = new URLSearchParams({ query: '(State = "Open")', fetch: 'Name,ObjectID,Parent', order: 'Name', pagesize: String(PAGE), start: String(page * PAGE + 1) });
       const result = (await this.get(a.base_url, a.api_key, `/project?${params}`)).QueryResult as RallyObject;
       const batch = (result?.Results ?? []) as RallyObject[];
       rows.push(...batch);
       if (batch.length < PAGE || rows.length >= Number(result?.TotalResultCount ?? 0)) break;
     }
-    return rows.map((p) => ({ id: String(p.ObjectID), name: String(p.Name ?? '') }));
+    return rows.map((p) => {
+      const parent = refId(p.Parent as RallyObject | null);
+      return { id: String(p.ObjectID), name: String(p.Name ?? ''), ...(parent ? { parentId: parent } : {}) };
+    });
   }
 
   /**
@@ -431,10 +435,12 @@ export class Rally {
   }
 
   /** Como `items`, y además los tipos que no han cabido (más de 5.000), para avisar en la pantalla. */
-  async itemsReport(user: TeamUser, days = 90, projects: string[] = [], tags: string[] = []):
+  async itemsReport(user: TeamUser, days = 90, projects: string[] = [], tags: string[] = [], scope: { down?: boolean; up?: boolean } = {}):
     Promise<{ items: RallyItem[]; truncated: { kind: RallyKind; total: number; shown: number }[] }> {
     const a = await this.connected(user);
-    const ids = projects.filter((p) => /^\d+$/.test(p));
+    let ids = projects.filter((p) => /^\d+$/.test(p));
+    // Como «Show items from: ↑ Parent Projects / ↓ Child Projects» de Rally: se suman los padres y los hijos (todos los niveles).
+    if (ids.length && (scope.down || scope.up)) ids = projectScope(await this.cached(`projects:${user.id}`, () => this.projects(user)), ids, scope);
     const owner = `(Owner.ObjectID = ${a.rally_user_id})`;
     const since = days > 0 ? new Date(Date.now() - Math.min(days, 3650) * 86_400_000).toISOString().slice(0, 10) : null;
     const recent = (who: string) => (since ? `(${who} AND (LastUpdateDate >= "${since}"))` : who);
@@ -459,7 +465,8 @@ export class Rally {
         if (item) items.push(item);
       }
     }
-    return { items: items.sort((x, y) => y.updatedAt.localeCompare(x.updatedAt)), truncated };
+    // En el orden de Rally (Rank: la prioridad que se arrastra en el backlog); sin Rank, al final y por fecha.
+    return { items: items.sort(byRank), truncated };
   }
 
   /**
@@ -1298,4 +1305,27 @@ export class Rally {
     }
     return { rows, total };
   }
+}
+
+/** Orden de Rally: por Rank (DragAndDropRank se compara como texto, sin reglas de idioma); sin Rank, al final y lo último primero. */
+export function byRank(x: RallyItem, y: RallyItem): number {
+  if (x.rank && y.rank) return x.rank < y.rank ? -1 : x.rank > y.rank ? 1 : 0;
+  if (x.rank || y.rank) return x.rank ? -1 : 1;
+  return y.updatedAt.localeCompare(x.updatedAt);
+}
+
+/** Proyectos elegidos más sus hijos (todos los niveles, `down`) y sus padres hasta arriba (`up`). Como mucho 300. */
+export function projectScope(all: RallyProject[], ids: string[], scope: { down?: boolean; up?: boolean }): string[] {
+  const out = new Set(ids);
+  if (scope.down) {
+    const children = new Map<string, string[]>();
+    for (const p of all) if (p.parentId) children.set(p.parentId, [...(children.get(p.parentId) ?? []), p.id]);
+    const queue = [...ids];
+    while (queue.length) for (const c of children.get(queue.shift()!) ?? []) if (!out.has(c)) { out.add(c); queue.push(c); }
+  }
+  if (scope.up) {
+    const parent = new Map(all.map((p) => [p.id, p.parentId]));
+    for (const id of ids) for (let p = parent.get(id); p && !out.has(p); p = parent.get(p)) out.add(p);
+  }
+  return [...out].slice(0, 300);
 }

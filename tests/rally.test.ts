@@ -815,3 +815,20 @@ describe('menciones de un comentario', () => {
     expect(mentionQuery('Hola Ana', 8)).toBe(null);
   });
 });
+
+describe('proyectos y orden como en Rally', () => {
+  it('suma los hijos (todos los niveles) y los padres de los proyectos elegidos', async () => {
+    const { projectScope } = await import('../servidor/rally.ts');
+    const all = [{ id: '1', name: 'Raíz' }, { id: '2', name: 'Team', parentId: '1' }, { id: '3', name: 'Hijo', parentId: '2' },
+      { id: '4', name: 'Nieto', parentId: '3' }, { id: '5', name: 'Otro', parentId: '1' }];
+    expect(projectScope(all, ['2'], { down: true }).sort()).toEqual(['2', '3', '4']);
+    expect(projectScope(all, ['2'], { up: true }).sort()).toEqual(['1', '2']);
+    expect(projectScope(all, ['2'], { down: true, up: true }).sort()).toEqual(['1', '2', '3', '4']);
+    expect(projectScope(all, ['2'], {})).toEqual(['2']);
+  });
+  it('ordena por Rank y deja al final lo que no lo tiene', async () => {
+    const { byRank } = await import('../servidor/rally.ts');
+    const it = (id: string, rank?: string) => ({ id, rank, updatedAt: '2026-01-01' }) as RallyItem;
+    expect([it('c'), it('b', 'P!b'), it('a', 'O~z')].sort(byRank).map((x) => x.id)).toEqual(['a', 'b', 'c']);
+  });
+});
