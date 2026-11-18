@@ -1,6 +1,17 @@
 import type { RallyCategory, RallyCreatableKind, RallyCreateInput, RallyDetail, RallyFormOptions, RallyItem, RallyKind, RallyPick, RallyProject, RallyRef, RallyStatus } from '../../domain/rally';
 import { LOCAL_SERVER, serverCall as call } from '../../data/serverApi';
+import { sync } from '../../data/sync';
+import { artifactHash, type RallyActivity, type ToolEventKind } from '../../domain/rallyActivity';
 import { track } from '../usage/track';
+
+/**
+ * Apunta que la herramienta ha escrito en Rally (tipo y huella del elemento), para saber en la analítica qué cambios de
+ * Rally salen de aquí. Solo si ha ido bien; nunca molesta si falla.
+ */
+const mark = (id: string, ...kinds: ToolEventKind[]) => {
+  if (!id) return;
+  void artifactHash(id).then((h) => { for (const k of kinds) sync().logRallyTool(k, h); }).catch(() => undefined);
+};
 
 /** Apunta en la analítica lo que se ha hecho en Rally (solo si ha ido bien). */
 const done = (name: string, detail = '') => <T,>(r: T) => { track(name, detail); return r; };
@@ -19,11 +30,11 @@ export const rallyApi = {
     call<{ item: RallyItem }>('POST', '/api/rally/move', {
       id, category, ...(opts.dryRun ? { dryRun: true } : {}), ...(opts.blockedReason ? { blockedReason: opts.blockedReason } : {}),
       ...(opts.flow ? { flow: opts.flow } : {}),
-    }).then((r) => { if (!opts.dryRun) track('rally-move', category); return r.item; }),
+    }).then((r) => { if (!opts.dryRun) { track('rally-move', category); mark(id, 'change'); } return r.item; }),
   lookup: (ids: string[]) => call<{ items: RallyItem[] }>('POST', '/api/rally/lookup', { ids }).then((r) => r.items),
   detail: (item: RallyItem) => call<RallyDetail>('GET', `/api/rally/detail?kind=${item.kind}&id=${item.objectId}`),
   create: (input: RallyCreateInput | { kind: 'TA'; name: string; parentId: string; assignToMe: boolean }) =>
-    call<{ item: RallyItem }>('POST', '/api/rally/create', input).then((r) => r.item),
+    call<{ item: RallyItem }>('POST', '/api/rally/create', input).then((r) => { mark(r.item.id, 'create'); return r.item; }),
   searchUsers: (q: string) => call<{ users: RallyRef[] }>('GET', `/api/rally/users?q=${encodeURIComponent(q)}`).then((r) => r.users),
   pick: (filter: { types: string[]; q: string; project: string; release: string; page: number }) =>
     call<{ items: RallyPick[]; total: number }>('GET', `/api/rally/pick?${new URLSearchParams({ ...filter, types: filter.types.join(','), page: String(filter.page) })}`),
@@ -33,26 +44,27 @@ export const rallyApi = {
     call<RallyFormOptions>('GET', `/api/rally/form?${new URLSearchParams([['kind', kind], ['project', projectId], ...ruleFields.map((f) => ['rule', f])])}`),
   /** Botones Ready y Blocked (sin cambiar de columna). `reason`: motivo al bloquear (el texto del comentario). */
   flag: (id: string, change: { ready?: boolean; blocked?: boolean; reason?: string }) =>
-    call<{ item: RallyItem }>('POST', '/api/rally/flag', { id, ...change }).then((r) => r.item),
+    call<{ item: RallyItem }>('POST', '/api/rally/flag', { id, ...change }).then((r) => { mark(id, 'change'); return r.item; }),
   /** Mensaje en la discusión; las personas de `mentions` que salgan como «@Nombre» se mencionan (avisa por correo). */
   message: (id: string, text: string, mentions: RallyRef[]) =>
-    call<{ mentioned: string[] }>('POST', '/api/rally/message', { id, text, mentions }).then(done('rally-comment', 'message')),
+    call<{ mentioned: string[] }>('POST', '/api/rally/message', { id, text, mentions }).then(done('rally-comment', 'message')).then((r) => { mark(id, 'comment'); return r; }),
   /** TS a Need Review a la vez: columna, Blocked con motivo y comentario con PO, defecto y analista. */
   needReview: (input: { id: string; defectId: string; text: string; analyst: RallyRef; reason: string; owner?: RallyRef | null }) =>
-    call<{ item: RallyItem; owner: string | null; analyst: string; commentError?: string }>('POST', '/api/rally/need-review', input).then(done('rally-comment', 'need-review')),
+    call<{ item: RallyItem; owner: string | null; analyst: string; commentError?: string }>('POST', '/api/rally/need-review', input).then(done('rally-comment', 'need-review'))
+      .then((r) => { if (r.commentError) mark(input.id, 'change'); else mark(input.id, 'change', 'comment'); return r; }),
   /** Comentario de un movimiento con el Owner (PO) y, si se elige, el analista. */
   /** `owner`: otra persona a mencionar en lugar del Owner (null = el Owner). */
   moveComment: (id: string, text: string, analyst: RallyRef | null, owner: RallyRef | null = null) =>
-    call<{ text: string; owner: string | null; analyst: string | null; people?: { name: string; email: string | null }[] }>('POST', '/api/rally/move-comment', { id, text, analyst, owner }).then(done('rally-comment', 'move')),
+    call<{ text: string; owner: string | null; analyst: string | null; people?: { name: string; email: string | null }[] }>('POST', '/api/rally/move-comment', { id, text, analyst, owner }).then(done('rally-comment', 'move')).then((r) => { mark(id, 'comment'); return r; }),
   comment: (item: RallyItem, text: string, mentions: RallyRef[] = []) =>
-    call<{ post: RallyDetail['discussion'][number] }>('POST', '/api/rally/comment', { kind: item.kind, objectId: item.objectId, text, mentions }).then(done('rally-comment', 'free')).then((r) => r.post),
+    call<{ post: RallyDetail['discussion'][number] }>('POST', '/api/rally/comment', { kind: item.kind, objectId: item.objectId, text, mentions }).then(done('rally-comment', 'free')).then((r) => { mark(item.id, 'comment'); return r.post; }),
   /** Cambia el texto de un comentario propio (las menciones que tenía se conservan). */
   editComment: (objectId: string, text: string) =>
     call<{ post: RallyDetail['discussion'][number] }>('POST', '/api/rally/comment-edit', { objectId, text }).then(done('rally-comment-edit')).then((r) => r.post),
   /** Elimina un comentario propio de la discusión (no se puede deshacer). */
   deleteComment: (objectId: string) => call<{ ok: boolean }>('POST', '/api/rally/comment-delete', { objectId }).then(done('rally-comment-delete')),
   attach: (item: RallyItem, file: { name: string; contentType: string; content: string }) =>
-    call<{ file: RallyDetail['attachments'][number] }>('POST', '/api/rally/attach', { kind: item.kind, objectId: item.objectId, ...file }).then(done('rally-attach')).then((r) => r.file),
+    call<{ file: RallyDetail['attachments'][number] }>('POST', '/api/rally/attach', { kind: item.kind, objectId: item.objectId, ...file }).then(done('rally-attach')).then((r) => { mark(item.id, 'attachment'); return r.file; }),
   /** Elimina un adjunto en Rally (no se puede deshacer). */
   deleteAttachment: (objectId: string) => call<{ ok: boolean }>('POST', '/api/rally/attachment-delete', { objectId }).then(done('rally-attach-delete')),
   projects: () => call<{ projects: RallyProject[] }>('GET', '/api/rally/projects').then((r) => r.projects),
@@ -60,8 +72,10 @@ export const rallyApi = {
   items: (days: number, projects: string[], tags: string[] = [], scope: { down: boolean; up: boolean } = { down: false, up: false }) =>
     call<{ items: RallyItem[]; truncated: { kind: RallyKind; total: number; shown: number }[] }>('GET', `/api/rally/items?${new URLSearchParams([
       ['days', String(days)], ['projects', projects.join(',')], ...tags.map((t) => ['tag', t]), ['down', scope.down ? '1' : '0'], ['up', scope.up ? '1' : '0'],
-    ])}`)
-
+    ])}`),
+  /** Cambios hechos en Rally en un periodo (instantes ISO) y unos proyectos, para la analítica (herramienta frente a Rally). */
+  activity: (from: string, to: string, projects: string[], scope: { down: boolean; up: boolean }) =>
+    call<RallyActivity>('GET', `/api/rally/activity?${new URLSearchParams({ from, to, projects: projects.join(','), down: scope.down ? '1' : '0', up: scope.up ? '1' : '0' })}`),
 };
 
 /** Contenido de un archivo en base64 (sin la cabecera `data:…;base64,`). */

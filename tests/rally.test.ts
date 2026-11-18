@@ -832,3 +832,71 @@ describe('proyectos y orden como en Rally', () => {
     expect([it('c'), it('b', 'P!b'), it('a', 'O~z')].sort(byRank).map((x) => x.id)).toEqual(['a', 'b', 'c']);
   });
 });
+
+describe('Rally: cambios para la analítica (herramienta o Rally)', () => {
+  it('lee discusiones, adjuntos e historial (Flow State, Ready, Blocked y altas) con nombres', async () => {
+    const db = new DatabaseSync(':memory:');
+    const api = new Api(db);
+    const marta = api.register({ login: 'marta@vml.com', name: 'Marta', password: 'contraseña-larga', code: api.teamCode }).user;
+    const ws = `${BASE}/slm/webservice/v2.0`;
+    const bodies: unknown[] = [];
+    const queries: string[] = [];
+    const fetcher = (async (url: string, init?: RequestInit) => {
+      const u = new URL(url);
+      if (u.pathname.includes('/analytics/')) {
+        const body = JSON.parse(String(init?.body));
+        bodies.push(body);
+        const results = body.find._SnapshotNumber === 0
+          ? [{ FormattedID: 'US2', _User: 7, _ValidFrom: '2026-11-17T08:00:00.000Z' }]
+          : [{ FormattedID: 'US1', FlowState: 900, _User: 7, _ValidFrom: '2026-11-17T10:00:00.000Z', _PreviousValues: { FlowState: 800, Blocked: false } }];
+        return new Response(JSON.stringify({ Results: results, TotalResultCount: results.length }));
+      }
+      const path = u.pathname.replace('/slm/webservice/v2.0', '');
+      if (path === '/user' && !u.searchParams.get('query')) return new Response(JSON.stringify({ User: { ObjectID: 42, DisplayName: 'Marta' } }));
+      queries.push(`${path} ${u.searchParams.get('query') ?? ''}`);
+      const rows: Record<string, unknown[]> = {
+        '/project/10': [],
+        '/conversationpost': [{ CreationDate: '2026-11-17T10:01:00.000Z', User: { _refObjectName: 'Ana' }, Artifact: { FormattedID: 'US1' } }],
+        '/attachment': [{ CreationDate: '2026-11-17T11:00:00.000Z', User: { _refObjectName: 'Luis' }, Artifact: { FormattedID: 'US1' } }],
+        '/user': [{ ObjectID: 7, DisplayName: 'Ana' }],
+        '/flowstate': [{ ObjectID: 900, Name: 'In-Progress' }],
+      };
+      if (path === '/project/10') return new Response(JSON.stringify({ Project: { Workspace: { _ref: `${ws}/workspace/555` } } }));
+      return new Response(JSON.stringify({ QueryResult: { Errors: [], Results: rows[path] ?? [], TotalResultCount: (rows[path] ?? []).length } }));
+    }) as unknown as typeof fetch;
+    const rally = new Rally(db, fetcher);
+    await rally.connect(marta, { apiKey: '_clave' });
+
+    await expect(rally.activity(marta, { from: 'x', to: 'y', projects: '10' })).rejects.toThrow(/Periodo/);
+    await expect(rally.activity(marta, { from: '2026-11-10T00:00:00Z', to: '2026-11-18T00:00:00Z', projects: '' })).rejects.toThrow(/proyecto/);
+    const r = await rally.activity(marta, { from: '2026-11-10T00:00:00Z', to: '2026-11-18T00:00:00Z', projects: '10' });
+    expect(r.errors).toEqual([]);
+    expect(r.changes).toEqual([
+      { kind: 'create', artifact: 'US2', user: 'Ana', at: '2026-11-17T08:00:00.000Z' },
+      { kind: 'flow', artifact: 'US1', user: 'Ana', at: '2026-11-17T10:00:00.000Z', to: 'In-Progress' },
+      { kind: 'blocked', artifact: 'US1', user: 'Ana', at: '2026-11-17T10:00:00.000Z' },
+      { kind: 'comment', artifact: 'US1', user: 'Ana', at: '2026-11-17T10:01:00.000Z' },
+      { kind: 'attachment', artifact: 'US1', user: 'Luis', at: '2026-11-17T11:00:00.000Z' },
+    ]);
+    expect(queries.find((q) => q.startsWith('/conversationpost'))).toContain('(Artifact.Project.ObjectID = 10)');
+    expect(bodies[0]).toMatchObject({ find: { Project: { $in: [10] }, _ValidFrom: { $gte: '2026-11-10T00:00:00.000Z', $lt: '2026-11-18T00:00:00.000Z' } } });
+  });
+
+  it('si el historial no se puede leer, devuelve el resto y lo dice', async () => {
+    const db = new DatabaseSync(':memory:');
+    const api = new Api(db);
+    const marta = api.register({ login: 'marta@vml.com', name: 'Marta', password: 'contraseña-larga', code: api.teamCode }).user;
+    const fetcher = (async (url: string) => {
+      const u = new URL(url);
+      if (u.pathname.includes('/analytics/')) return new Response('no', { status: 404 });
+      if (u.pathname.endsWith('/user')) return new Response(JSON.stringify({ User: { ObjectID: 42, DisplayName: 'Marta' } }));
+      if (u.pathname.endsWith('/project/10')) return new Response(JSON.stringify({ Project: { Workspace: { _ref: 'x/workspace/1' } } }));
+      return new Response(JSON.stringify({ QueryResult: { Errors: [], Results: [], TotalResultCount: 0 } }));
+    }) as unknown as typeof fetch;
+    const rally = new Rally(db, fetcher);
+    await rally.connect(marta, { apiKey: '_clave' });
+    const r = await rally.activity(marta, { from: '2026-11-10T00:00:00Z', to: '2026-11-18T00:00:00Z', projects: '10' });
+    expect(r.changes).toEqual([]);
+    expect(r.errors).toEqual([expect.objectContaining({ kinds: ['flow', 'ready', 'blocked', 'create'] })]);
+  });
+});

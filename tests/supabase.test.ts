@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
  * Prueba la base de datos de Supabase (supabase/migrations) en un Postgres de verdad (PGlite), imitando
  * lo mínimo de Supabase: roles anon/authenticated y auth.uid()/auth.email() de la sesión.
  */
-const MIGRATION = ['001_equipo.sql', '002_baja_y_contrasenas.sql', '003_alta_sin_invitacion.sql', '004_claves_conectores.sql', '005_calendario_subido.sql', '006_feedback.sql', '007_feedback_formulario.sql', '008_feedback_bloqueado.sql', '009_analitica.sql', '010_analitica_kpis.sql'].map((f) => readFileSync(`supabase/migrations/${f}`, 'utf8')).join('\n');
+const MIGRATION = ['001_equipo.sql', '002_baja_y_contrasenas.sql', '003_alta_sin_invitacion.sql', '004_claves_conectores.sql', '005_calendario_subido.sql', '006_feedback.sql', '007_feedback_formulario.sql', '008_feedback_bloqueado.sql', '009_analitica.sql', '010_analitica_kpis.sql', '011_rally_herramienta.sql'].map((f) => readFileSync(`supabase/migrations/${f}`, 'utf8')).join('\n');
 let db: PGlite;
 
 const SUPABASE_STUB = `
@@ -322,6 +322,26 @@ describe('base de datos del equipo en Supabase', () => {
     expect(counts).toEqual({ 'session:': 1, 'screen:board': 2, 'screen:rally': 1 });
     expect(r.rows.every((x) => x.user === ana.id)).toBe(true);
     expect((await rpc(marta, 'admin_usage', { p_from: '2000-01-01', p_to: '2000-01-02' }) as { rows: unknown[] }).rows).toEqual([]);
+  });
+
+  it('Rally desde la herramienta: se apunta con huella, solo lo leen los administradores', async () => {
+    const marta = await newUser('marta@vml.com');
+    await rpc(marta, 'register_profile', { p_name: 'Marta García', p_code: '' });
+    const ana = await newUser('ana@vml.com');
+    await rpc(ana, 'register_profile', { p_name: 'Ana', p_code: '' });
+
+    await rpc(ana, 'log_rally_tool', { p_kind: 'change', p_hash: '0123456789abcdef' });
+    await rpc(ana, 'log_rally_tool', { p_kind: 'comment', p_hash: '0123456789abcdef' });
+    await expect(rpc(ana, 'log_rally_tool', { p_kind: 'change', p_hash: 'US123' })).rejects.toThrow(/no válido/);
+    await expect(rpc(ana, 'log_rally_tool', { p_kind: 'borrar', p_hash: '0123456789abcdef' })).rejects.toThrow(/no válido/);
+    await expect(as(ana, 'select * from rally_tool_events')).rejects.toThrow();
+    await expect(rpc(ana, 'admin_rally_tool', { p_from: '2000-01-01T00:00:00Z', p_to: '2100-01-01T00:00:00Z' })).rejects.toThrow(/administra/);
+
+    const r = await rpc(marta, 'admin_rally_tool', { p_from: '2000-01-01T00:00:00Z', p_to: '2100-01-01T00:00:00Z' }) as { since: string | null; rows: { kind: string; hash: string }[] };
+    expect(r.since).not.toBeNull();
+    expect(r.rows.map((x) => x.kind).sort()).toEqual(['change', 'comment']);
+    expect(r.rows.every((x) => x.hash === '0123456789abcdef')).toBe(true);
+    expect((await rpc(marta, 'admin_rally_tool', { p_from: '2000-01-01T00:00:00Z', p_to: '2000-01-02T00:00:00Z' }) as { rows: unknown[] }).rows).toEqual([]);
   });
 
   it('analítica con KPIs: acciones y preferencias sin textos, y foto de los datos con recuentos', async () => {

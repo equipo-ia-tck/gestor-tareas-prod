@@ -5,6 +5,7 @@ import { DEFAULT_ITEM_TYPES } from '../domain/workflows';
 import type { Space } from '../domain/spaces';
 import type { TasksDB } from './db';
 import type { UsageKind, UsageReport } from '../domain/usage';
+import type { ToolEventKind, ToolReport } from '../domain/rallyActivity';
 import type { Feedback, FeedbackImpact, FeedbackKind, FeedbackStatus } from '../domain/feedback';
 
 /**
@@ -291,6 +292,17 @@ export class SyncClient {
     }).catch(() => undefined);
   };
   adminUsage = (from: string, to: string) => this.rpc<UsageReport>('admin_usage', { p_from: from, p_to: to });
+  /** Apunta algo escrito en Rally desde la herramienta (migración 011): tipo y huella del elemento. Sin aviso si falla. */
+  logRallyTool = (kind: ToolEventKind, hash: string) => {
+    if (!this.state.user || !this.token) return;
+    void fetch(`${this.url}/rest/v1/rpc/log_rally_tool`, {
+      method: 'POST',
+      keepalive: true,
+      headers: { apikey: this.key, Authorization: `Bearer ${this.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_kind: kind, p_hash: hash }),
+    }).catch(() => undefined);
+  };
+  adminRallyTool = (from: string, to: string) => this.rpc<ToolReport>('admin_rally_tool', { p_from: from, p_to: to });
 
   /** Comprueba la contraseña actual (volviendo a entrar) antes de cambiarla. */
   changePassword = async (current: string, password: string) => {

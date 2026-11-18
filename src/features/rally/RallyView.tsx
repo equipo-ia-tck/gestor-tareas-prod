@@ -107,14 +107,14 @@ const chipClass = (on: boolean) => `rounded-full border px-2.5 py-0.5 text-xs fo
   ? 'border-indigo-500 bg-indigo-600 text-white' : 'border-zinc-300 bg-white text-zinc-600 hover:border-zinc-400 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-300'}`;
 
 /** Proyecto que se elige solo la primera vez (el del equipo). */
-const DEFAULT_PROJECT = 'Team.Digital Data';
+export const DEFAULT_PROJECT = 'Team.Digital Data';
 const MAX_RECENT = 5;
 
 /**
  * Proyectos de Rally en un desplegable, como el selector de proyecto de Rally: recientes, buscador y todos los proyectos
  * (se pueden marcar varios), y «Show items from» con los padres y los hijos de los elegidos.
  */
-function ProjectPicker({ projects, selected, onChange, scope, onScope, recent }: {
+export function ProjectPicker({ projects, selected, onChange, scope, onScope, recent }: {
   projects: RallyProject[];
   selected: string[];
   onChange: (ids: string[]) => void;

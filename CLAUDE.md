@@ -860,6 +860,15 @@ ya usa.
   periodo con su duración (meses enteros, mes a mes). Se pide también el periodo anterior de la misma duración y las cifras
   del Resumen muestran la variación. La evolución se agrupa por día, semana o mes (`bucketSeries`, `analytics-granularity`;
   por defecto según la duración).
+- **Rally: herramienta o Rally** (pestaña de Analítica, solo Equipo; migración `011_rally_herramienta.sql`): de los cambios
+  hechos en Rally en el periodo y los proyectos elegidos (`analytics-rally-projects`, con hijos por defecto), cuántos salen de
+  la herramienta. Rally no guarda el origen, así que `rallyApi` apunta cada escritura (`log_rally_tool`: tipo
+  `comment | attachment | change | create`, huella SHA-256 de 16 caracteres del ID y hora; nunca el ID ni el texto) y
+  `GET /api/rally/activity` (`Rally.activity`) lee discusiones y adjuntos (WSAPI, `Artifact.Project.ObjectID`) y el
+  historial (Lookback API: instantáneas con `_PreviousValues` de FlowState, Ready o Blocked, y `_SnapshotNumber` 0 = altas)
+  con la clave de quien mira. `matchTool` (`domain/rallyActivity.ts`) cruza mismo tipo, misma huella y menos de 5 minutos;
+  lo anterior al primer apunte no cuenta en los porcentajes. Por tipo, por semana y por persona de Rally («Tiene cuenta»
+  compara el nombre con las cuentas).
 
 ### Más adelante
 

@@ -1,4 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
+import type { RallyActivity, RallyChange, RallyChangeKind } from '../src/domain/rallyActivity.ts';
 import type { RallyCategory, RallyDetail, RallyFormOptions, RallyItem, RallyKind, RallyPick, RallyProject, RallyRef, RallyStatus } from '../src/domain/rally.ts';
 import { ApiError } from './api.ts';
 import type { TeamUser } from './auth.ts';
@@ -1280,6 +1281,167 @@ export class Rally {
       discussion: posts.map((p) => this.toPost(a, p)),
       attachments: files.map((f) => ({ name: String(f.Name ?? ''), size: Number(f.Size ?? 0), ...(f.ObjectID ? { objectId: String(f.ObjectID) } : {}) })),
     };
+  }
+
+  /**
+   * Cambios hechos en Rally entre dos instantes (ISO) en unos proyectos (con sus hijos y padres si se pide): discusiones,
+   * adjuntos (WSAPI) y cambios de Flow State, Ready, Blocked y altas (Lookback API, el historial de Rally). Lo que no se
+   * puede leer va en `errors` y lo demás se devuelve igual. Para Más → Analítica (herramienta frente a Rally).
+   */
+  async activity(user: TeamUser, input: { from?: unknown; to?: unknown; projects?: unknown; down?: unknown; up?: unknown }): Promise<RallyActivity> {
+    const a = await this.connected(user);
+    const from = new Date(String(input.from ?? ''));
+    const to = new Date(String(input.to ?? ''));
+    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || from >= to) throw new ApiError(400, 'Periodo no válido.');
+    let ids = String(input.projects ?? '').split(',').filter((p) => /^\d+$/.test(p));
+    if (!ids.length) throw new ApiError(400, 'Elige al menos un proyecto de Rally.');
+    const scope = { down: input.down === true || input.down === '1', up: input.up === true || input.up === '1' };
+    if (scope.down || scope.up) ids = projectScope(await this.cached(`projects:${user.id}`, () => this.projects(user)), ids, scope);
+    const fromIso = from.toISOString();
+    const toIso = to.toISOString();
+    const changes: RallyChange[] = [];
+    const errors: RallyActivity['errors'] = [];
+    const truncated: RallyChangeKind[] = [];
+    const why = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+    // Discusiones y adjuntos: por proyecto del elemento, de 40 en 40 proyectos (la consulta va en la URL).
+    const wsapi = async (type: 'conversationpost' | 'attachment', kind: RallyChangeKind) => {
+      const chunks: string[][] = [];
+      for (let i = 0; i < ids.length; i += 40) chunks.push(ids.slice(i, i + 40));
+      for (const chunk of chunks) {
+        const query = `((CreationDate >= "${fromIso}") AND ((CreationDate < "${toIso}") AND ${joinQuery(chunk.map((id) => `(Artifact.Project.ObjectID = ${id})`), 'OR')}))`;
+        const { rows, total } = await this.pages(a, type, query, 'CreationDate,User,Artifact,FormattedID', 'CreationDate');
+        if (total > rows.length && !truncated.includes(kind)) truncated.push(kind);
+        for (const r of rows) {
+          const art = r.Artifact as RallyObject | null;
+          const artifact = String(art?.FormattedID ?? '');
+          if (!artifact) continue;
+          changes.push({ kind, artifact, user: refName(r.User) ?? '—', at: new Date(String(r.CreationDate)).toISOString() });
+        }
+      }
+    };
+    await Promise.all([
+      wsapi('conversationpost', 'comment').catch((e) => { errors.push({ kinds: ['comment'], message: why(e) }); }),
+      wsapi('attachment', 'attachment').catch((e) => { errors.push({ kinds: ['attachment'], message: why(e) }); }),
+    ]);
+
+    // Historial (Lookback API): cada instantánea con valores anteriores de FlowState, Ready o Blocked es un cambio; la
+    // instantánea 0 es el alta.
+    try {
+      const ws = await this.workspaceOf(a, ids[0]);
+      const base = { Project: { $in: ids.map(Number) }, _ValidFrom: { $gte: fromIso, $lt: toIso } };
+      const users = new Set<string>();
+      const snaps: { kind: RallyChangeKind; artifact: string; user: string; at: string; to?: string | null }[] = [];
+      const states = await this.lookback(a, ws, {
+        ...base,
+        $or: [{ '_PreviousValues.FlowState': { $exists: true } }, { '_PreviousValues.Ready': { $exists: true } }, { '_PreviousValues.Blocked': { $exists: true } }],
+      }, ['FormattedID', 'FlowState', '_User', '_ValidFrom', '_PreviousValues.FlowState', '_PreviousValues.Ready', '_PreviousValues.Blocked']);
+      if (states.truncated) truncated.push('flow', 'ready', 'blocked');
+      for (const r of states.rows) {
+        const prev = (r._PreviousValues ?? {}) as RallyObject;
+        const info = { artifact: String(r.FormattedID ?? ''), user: String(r._User ?? ''), at: String(r._ValidFrom ?? '') };
+        if (!info.artifact) continue;
+        users.add(info.user);
+        if ('FlowState' in prev) snaps.push({ kind: 'flow', ...info, to: r.FlowState === null || r.FlowState === undefined ? null : String(r.FlowState) });
+        if ('Ready' in prev) snaps.push({ kind: 'ready', ...info });
+        if ('Blocked' in prev) snaps.push({ kind: 'blocked', ...info });
+      }
+      const created = await this.lookback(a, ws, { ...base, _SnapshotNumber: 0 }, ['FormattedID', '_User', '_ValidFrom']);
+      if (created.truncated) truncated.push('create');
+      for (const r of created.rows) {
+        const artifact = String(r.FormattedID ?? '');
+        if (!artifact) continue;
+        users.add(String(r._User ?? ''));
+        snaps.push({ kind: 'create', artifact, user: String(r._User ?? ''), at: String(r._ValidFrom ?? '') });
+      }
+      const names = await this.userNames(a, [...users]);
+      const flowNames = await this.flowStateNames(a, snaps.filter((x) => x.kind === 'flow' && x.to).map((x) => x.to!));
+      for (const x of snaps) changes.push({ ...x, user: names.get(x.user) ?? '—', at: new Date(x.at).toISOString(), ...(x.kind === 'flow' ? { to: x.to ? flowNames.get(x.to) ?? null : null } : {}) });
+    } catch (e) {
+      errors.push({ kinds: ['flow', 'ready', 'blocked', 'create'], message: `Historial de Rally (Lookback API): ${why(e)}` });
+    }
+    return { changes: changes.sort((x, y) => x.at.localeCompare(y.at)), errors, truncated };
+  }
+
+  /** ObjectID del workspace de un proyecto (para el Lookback API). */
+  private workspaceOf(a: { base_url: string; api_key: string }, projectId: string): Promise<string> {
+    return this.cached(`ws ${a.base_url} ${projectId}`, async () => {
+      const p = (await this.get(a.base_url, a.api_key, `/project/${projectId}?fetch=Workspace`)).Project as RallyObject | undefined;
+      const ws = refId(p?.Workspace);
+      if (!ws) throw new ApiError(502, 'No se sabe el workspace del proyecto.');
+      return ws;
+    });
+  }
+
+  /** Consulta al Lookback API (historial de Rally), de 2.000 en 2.000 hasta 20.000. */
+  private async lookback(a: { base_url: string; api_key: string }, ws: string, find: unknown, fields: string[]): Promise<{ rows: RallyObject[]; truncated: boolean }> {
+    const rows: RallyObject[] = [];
+    const size = 2000;
+    for (let page = 0; page < 10; page++) {
+      let res: Response;
+      try {
+        res = await this.fetch(`${a.base_url}/analytics/v2.0/service/rally/workspace/${ws}/artifact/snapshot/query.js`, {
+          method: 'POST',
+          headers: { ZSESSIONID: a.api_key, Accept: 'application/json', 'Content-Type': 'application/json' },
+          body: JSON.stringify({ find, fields, start: page * size, pagesize: size, removeUnauthorizedSnapshots: true }),
+        });
+      } catch {
+        throw new ApiError(502, 'No se puede conectar con Rally.');
+      }
+      const json = await res.json().catch(() => null) as RallyObject | null;
+      if (!res.ok || !json) throw new ApiError(502, `Rally ha respondido con un error (${res.status}).`);
+      const errors = json.Errors as string[] | undefined;
+      if (errors?.length) throw new ApiError(502, errors.join(' '));
+      const batch = (json.Results ?? []) as RallyObject[];
+      rows.push(...batch);
+      const total = Number(json.TotalResultCount ?? rows.length);
+      if (batch.length < size || rows.length >= total) return { rows, truncated: false };
+    }
+    return { rows, truncated: true };
+  }
+
+  /** Nombres de usuarios de Rally por ObjectID (de 40 en 40). */
+  private async userNames(a: { base_url: string; api_key: string }, ids: string[]): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    const valid = ids.filter((id) => /^\d+$/.test(id));
+    for (let i = 0; i < valid.length; i += 40) {
+      const chunk = valid.slice(i, i + 40);
+      const rows = await this.list(a, '/user', { query: joinQuery(chunk.map((id) => `(ObjectID = ${id})`), 'OR'), fetch: 'ObjectID,DisplayName,FirstName,LastName,UserName' });
+      for (const u of rows) {
+        const full = [u.FirstName, u.LastName].filter(Boolean).join(' ');
+        out.set(String(u.ObjectID), String(u.DisplayName || full || u._refObjectName || u.UserName || u.ObjectID));
+      }
+    }
+    return out;
+  }
+
+  /** Nombres de los Flow State por ObjectID (el historial los da como número). */
+  private async flowStateNames(a: { base_url: string; api_key: string }, ids: string[]): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    const valid = [...new Set(ids.filter((id) => /^\d+$/.test(id)))];
+    for (let i = 0; i < valid.length; i += 40) {
+      const chunk = valid.slice(i, i + 40);
+      const rows = await this.list(a, '/flowstate', { query: joinQuery(chunk.map((id) => `(ObjectID = ${id})`), 'OR'), fetch: 'ObjectID,Name' }).catch(() => []);
+      for (const f of rows) out.set(String(f.ObjectID), String(f.Name ?? ''));
+    }
+    return out;
+  }
+
+  /** Todas las páginas de una consulta con los campos y el orden que se pidan (hasta `MAX_PAGES` × 200). */
+  private async pages(a: { base_url: string; api_key: string }, type: string, query: string, fetch: string, order: string): Promise<{ rows: RallyObject[]; total: number }> {
+    const page = async (n: number) => {
+      const params = new URLSearchParams({ query, fetch, order, pagesize: String(PAGE), start: String(n * PAGE + 1) });
+      return (await this.get(a.base_url, a.api_key, `/${type}?${params}`)).QueryResult as RallyObject;
+    };
+    const first = await page(0);
+    const rows = [...((first?.Results ?? []) as RallyObject[])];
+    const total = Number(first?.TotalResultCount ?? rows.length);
+    const pages = Math.min(MAX_PAGES, Math.ceil(total / PAGE));
+    for (let n = 1; n < pages && rows.length === n * PAGE; n += 5) {
+      const batch = await Promise.all(Array.from({ length: Math.min(5, pages - n) }, (_, i) => page(n + i)));
+      for (const r of batch) rows.push(...((r?.Results ?? []) as RallyObject[]));
+    }
+    return { rows, total };
   }
 
   private async query(a: { base_url: string; api_key: string }, type: string, query: string): Promise<RallyObject[]> {

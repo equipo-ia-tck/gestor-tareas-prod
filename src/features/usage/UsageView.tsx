@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   Activity, ArrowDownRight, ArrowUpRight, BarChart3, CalendarDays, CalendarCheck, CalendarRange, CheckSquare, ChevronDown, ChevronLeft,
-  ChevronRight, Clock, Grid3x3, LayoutGrid, LogIn, MessageSquare, MousePointerClick, NotebookPen, Plug, RefreshCw, User, UserRound, Users,
+  ChevronRight, Clock, GitCompareArrows, Grid3x3, LayoutGrid, LogIn, MessageSquare, MousePointerClick, NotebookPen, Plug, RefreshCw, User, UserRound, Users,
   type LucideIcon,
 } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
@@ -18,13 +18,15 @@ import { Popover } from '../../components/ui/Popover';
 import { formatSeconds, screenKpis, type Kpi, type KpiPart, type ScreenKpis } from '../../domain/usageKpis';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { ViewHeader } from '../views/ViewHeader';
+import { RallyToolTab } from './RallyToolTab';
 
-type Tab = 'summary' | 'screens' | 'people' | 'daily';
+type Tab = 'summary' | 'screens' | 'people' | 'daily' | 'rally';
 const TABS: { id: Tab; label: string; icon: LucideIcon; team?: boolean }[] = [
   { id: 'summary', label: 'Resumen', icon: BarChart3 },
   { id: 'screens', label: 'Por pantalla', icon: LayoutGrid },
   { id: 'people', label: 'Personas', icon: Users, team: true },
   { id: 'daily', label: 'Día a día', icon: Grid3x3 },
+  { id: 'rally', label: 'Rally: herramienta o Rally', icon: GitCompareArrows, team: true },
 ];
 
 const when = (iso: string | null) => (iso
@@ -188,6 +190,7 @@ export function UsageView() {
           {current === 'screens' && <ScreensTab kpis={kpis} team={team} />}
           {current === 'people' && team && <PeopleTab people={people} report={report} from={from} today={to} days={days} onPerson={setUserId} />}
           {current === 'daily' && <DailyTab daily={daily} today={today} />}
+          {current === 'rally' && team && <RallyToolTab from={from} to={to} users={report.users} />}
         </div>
       )}
     </>
