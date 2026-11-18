@@ -36,12 +36,22 @@ describe('Rally: herramienta o Rally', () => {
       ch('comment', 'US2', '2026-11-18T09:00:00Z', 'Luis'),
       ch('comment', 'US3', '2026-11-18T09:30:00Z', 'Luis'),
     ];
-    const s = summarizeActivity(changes, [false, true, false, true], '2026-11-12T00:00:00Z');
+    const s = summarizeActivity(changes, [false, true, false, true], '2026-11-12T00:00:00Z', true);
     expect(s.before).toBe(1);
     expect(s.total).toEqual({ tool: 2, rally: 1 });
     expect(s.byKind.find((k) => k.kind === 'comment')).toMatchObject({ tool: 1, rally: 1 });
     expect(s.byPerson).toEqual([{ user: 'Luis', tool: 1, rally: 1 }, { user: 'Ana', tool: 1, rally: 0 }]);
     expect(s.byWeek).toEqual([{ week: '2026-11-16', tool: 2, rally: 1 }]);
+    // Sin `onlySince` cuenta todo (y dice cuántos son de antes).
+    const all = summarizeActivity(changes, [false, true, false, true], '2026-11-12T00:00:00Z');
+    expect(all.total).toEqual({ tool: 2, rally: 2 });
+    expect(all.before).toBe(1);
     expect(summarizeActivity(changes, [true, true, true, true], null).before).toBe(4);
+  });
+
+  it('el primer apunte no deja fuera su propio cambio (Rally guarda la hora un poco antes)', () => {
+    const changes = [ch('ready', 'US1', '2026-11-18T15:41:38Z')];
+    const s = summarizeActivity(changes, [true], '2026-11-18T15:41:39Z', true);
+    expect(s).toMatchObject({ before: 0, total: { tool: 1, rally: 0 } });
   });
 });

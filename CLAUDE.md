@@ -867,7 +867,7 @@ ya usa.
   `GET /api/rally/activity` (`Rally.activity`) lee discusiones y adjuntos (WSAPI, `Artifact.Project.ObjectID`) y el
   historial (Lookback API: instantáneas con `_PreviousValues` de FlowState, Ready o Blocked, y `_SnapshotNumber` 0 = altas)
   con la clave de quien mira. `matchTool` (`domain/rallyActivity.ts`) cruza mismo tipo, misma huella y menos de 5 minutos;
-  lo anterior al primer apunte no cuenta en los porcentajes. Por tipo, por semana y por persona de Rally («Tiene cuenta»
+  lo anterior al primer apunte (con 5 min de margen) cuenta, salvo con «Contar solo desde que se mide»; lista de cambios leídos para comprobar. Por tipo, por semana y por persona de Rally («Tiene cuenta»
   compara el nombre con las cuentas).
 
 ### Más adelante

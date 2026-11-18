@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Info, RefreshCw, Wrench } from 'lucide-react';
+import { AlertTriangle, ChevronDown, Info, RefreshCw, Wrench } from 'lucide-react';
 import { sync } from '../../data/sync';
 import { addDays } from '../../domain/dates';
 import type { RallyProject } from '../../domain/rally';
-import { artifactHash, matchTool, summarizeActivity, type ActivitySummary, type RallyActivity, type Split } from '../../domain/rallyActivity';
+import { artifactHash, beforeTracking, CHANGE_KINDS, matchTool, summarizeActivity, type ActivitySummary, type RallyActivity, type Split } from '../../domain/rallyActivity';
 import { fold } from '../../domain/text';
 import type { UsageUser } from '../../domain/usage';
 import { usePersistentState } from '../../hooks/usePersistentState';
@@ -28,7 +28,8 @@ export function RallyToolTab({ from, to, users }: { from: string; to: string; us
   const [projects, setProjects] = useState<RallyProject[] | null>(null);
   const [stored, setStored] = usePersistentState<string[] | null>('analytics-rally-projects', null);
   const [scope, setScope] = usePersistentState('analytics-rally-scope', { down: true, up: false });
-  const [result, setResult] = useState<{ activity: RallyActivity; summary: ActivitySummary; since: string | null } | null>(null);
+  const [result, setResult] = useState<Loaded | null>(null);
+  const [onlySince, setOnlySince] = usePersistentState('analytics-rally-only-since', false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [connected, setConnected] = useState<boolean | null>(null);
@@ -66,7 +67,7 @@ export function RallyToolTab({ from, to, users }: { from: string; to: string; us
       const unique = [...new Set(activity.changes.map((c) => c.artifact))];
       const hashOf = new Map(await Promise.all(unique.map(async (id) => [id, await artifactHash(id)] as const)));
       const fromTool = matchTool(activity.changes, activity.changes.map((c) => hashOf.get(c.artifact)!), tool.rows);
-      if (live) setResult({ activity, summary: summarizeActivity(activity.changes, fromTool, tool.since), since: tool.since });
+      if (live) setResult({ activity, fromTool, since: tool.since, toolCount: tool.rows.filter((r) => Date.parse(r.at) >= Date.parse(fromIso) && Date.parse(r.at) < Date.parse(toIso)).length });
     })().catch((e: Error) => {
       if (!live) return;
       setError(/admin_rally_tool|rally_tool/.test(e.message)
@@ -81,7 +82,8 @@ export function RallyToolTab({ from, to, users }: { from: string; to: string; us
     return <div className={card}><p className="text-sm text-zinc-500">Para ver esto, conecta Rally en la pantalla <b>Rally</b>: los cambios se leen con tu clave.</p></div>;
   }
 
-  const s = result?.summary;
+  const summary = useMemo(() => (result ? summarizeActivity(result.activity.changes, result.fromTool, result.since, onlySince) : null), [result, onlySince]);
+  const s = summary;
   const total = s ? s.total.tool + s.total.rally : 0;
 
   return (
@@ -101,7 +103,7 @@ export function RallyToolTab({ from, to, users }: { from: string; to: string; us
 
       {result && s && (
         <>
-          <Notices result={result} from={from} />
+          <Notices result={result} summary={s} onlySince={onlySince} onOnlySince={setOnlySince} />
 
           <div className="grid grid-cols-3 gap-3 max-lg:grid-cols-1">
             <div className={`${card} border-t-4 border-t-[#2a78d6] dark:border-t-[#3987e5]`}>
@@ -117,9 +119,9 @@ export function RallyToolTab({ from, to, users }: { from: string; to: string; us
                     <Figure cls={TOOL} label="Desde la herramienta" n={s.total.tool} total={total} />
                     <Figure cls={RALLY} label="Directamente en Rally" n={s.total.rally} total={total} />
                   </div>
-                  <p className="mt-3 text-xs text-zinc-400">{total} cambios en el periodo en los proyectos elegidos.</p>
+                  <p className="mt-3 text-xs text-zinc-400">{total} cambios en el periodo en los proyectos elegidos. La herramienta ha apuntado {result.toolCount} escrituras en Rally en el periodo (de cualquier proyecto).</p>
                 </>
-              ) : <p className="py-6 text-center text-sm text-zinc-400">Ningún cambio en este periodo.</p>}
+              ) : <p className="py-6 text-center text-sm text-zinc-400">Ningún cambio en este periodo. La herramienta ha apuntado {result.toolCount} escrituras en Rally.</p>}
             </div>
 
             <div className={`${card} col-span-2 max-lg:col-span-1`}>
@@ -194,6 +196,8 @@ export function RallyToolTab({ from, to, users }: { from: string; to: string; us
             )}
           </div>
 
+          <ChangeList result={result} onlySince={onlySince} />
+
           <p className="flex gap-2 text-xs text-zinc-400">
             <Info className="mt-0.5 size-3.5 shrink-0" />
             <span>
@@ -201,7 +205,8 @@ export function RallyToolTab({ from, to, users }: { from: string; to: string; us
               texto: solo el tipo, una huella del elemento y la hora) y aquí se cruza con el historial de Rally: un cambio es «de la
               herramienta» si se apuntó uno del mismo tipo en el mismo elemento a menos de 5 minutos. Se leen discusiones, archivos,
               Flow State, Ready, Blocked y altas de los proyectos elegidos{scope.down ? ' y sus hijos' : ''}{scope.up ? ' y sus padres' : ''}.
-              «Tiene cuenta» compara el nombre de Rally con las cuentas de la herramienta.
+              «Tiene cuenta» compara el nombre de Rally con las cuentas de la herramienta. El historial de Rally (Flow State, Ready,
+              Blocked y altas) puede tardar unos minutos en reflejar un cambio recién hecho.
             </span>
           </p>
         </>
@@ -210,17 +215,25 @@ export function RallyToolTab({ from, to, users }: { from: string; to: string; us
   );
 }
 
-function Notices({ result, from }: { result: { activity: RallyActivity; summary: ActivitySummary; since: string | null }; from: string }) {
-  const { since, summary, activity } = result;
+type Loaded = { activity: RallyActivity; fromTool: boolean[]; since: string | null; toolCount: number };
+
+function Notices({ result, summary, onlySince, onOnlySince }: { result: Loaded; summary: ActivitySummary; onlySince: boolean; onOnlySince: (v: boolean) => void }) {
+  const { since, activity } = result;
   return (
     <div className="space-y-2">
       {!since && (
-        <Note icon={Wrench}>La herramienta todavía no ha apuntado ningún cambio en Rally: empieza a contar a partir de ahora. Hasta entonces, no hay porcentaje.</Note>
+        <Note icon={Wrench}>La herramienta todavía no ha apuntado ningún cambio en Rally: hasta que lo haga, todo cuenta como hecho en Rally.</Note>
       )}
-      {since && summary.before > 0 && since.slice(0, 10) > from && (
+      {since && summary.before > 0 && (
         <Note icon={Info}>
-          Se mide desde el {when(since)}. Los {summary.before} cambios de antes de esa fecha no se cuentan en los porcentajes, porque
-          entonces la herramienta aún no apuntaba lo suyo.
+          <span className="block">
+            La herramienta apunta lo que escribe en Rally desde el {when(since)}. {summary.before} {summary.before === 1 ? 'cambio es' : 'cambios son'} de
+            antes{onlySince ? ' y no se cuentan.' : ': si alguno se hizo desde la herramienta, aquí cuenta como Rally.'}
+          </span>
+          <label className="mt-1 inline-flex cursor-pointer items-center gap-1.5 font-medium">
+            <input type="checkbox" checked={onlySince} onChange={(e) => onOnlySince(e.target.checked)} />
+            Contar solo desde que se mide
+          </label>
         </Note>
       )}
       {activity.errors.map((e) => (
@@ -228,6 +241,52 @@ function Notices({ result, from }: { result: { activity: RallyActivity; summary:
       ))}
       {activity.truncated.length > 0 && (
         <Note icon={AlertTriangle} warn>Hay más cambios de los que se pueden leer de una vez ({activity.truncated.join(', ')}): acorta el periodo o elige menos proyectos.</Note>
+      )}
+    </div>
+  );
+}
+
+const KIND_LABEL = Object.fromEntries(CHANGE_KINDS.map((k) => [k.id, k.label]));
+
+/** Cada cambio leído de Rally, del más reciente al más antiguo, con su origen: para comprobar las cifras. */
+function ChangeList({ result, onlySince }: { result: Loaded; onlySince: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [limit, setLimit] = useState(100);
+  const rows = result.activity.changes.map((c, i) => ({ c, tool: result.fromTool[i], before: beforeTracking(c.at, result.since) })).reverse();
+  return (
+    <div className={`${card} p-0`}>
+      <button type="button" onClick={() => setOpen(!open)} aria-expanded={open}
+        className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left">
+        <span className={cardTitle}>Cambios leídos de Rally ({rows.length})</span>
+        <ChevronDown className={`size-4 text-zinc-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="overflow-x-auto border-t border-zinc-100 dark:border-zinc-800">
+          <table className="w-full text-sm">
+            <thead className="bg-zinc-50 dark:bg-zinc-800/60"><tr>
+              {['Cuándo', 'Tipo', 'Elemento', 'Persona', 'Origen'].map((h) => <th key={h} className="px-4 py-2 text-left text-xs font-medium text-zinc-500">{h}</th>)}
+            </tr></thead>
+            <tbody>
+              {rows.slice(0, limit).map(({ c, tool, before }, i) => (
+                <tr key={i} className={`border-t border-zinc-100 dark:border-zinc-800 ${before && onlySince ? 'opacity-40' : ''}`}>
+                  <td className="px-4 py-1.5 whitespace-nowrap text-zinc-500">{when(c.at)}</td>
+                  <td className="px-4 py-1.5 whitespace-nowrap">{KIND_LABEL[c.kind]}{c.kind === 'flow' && c.to ? <span className="text-zinc-400"> → {c.to}</span> : null}</td>
+                  <td className="px-4 py-1.5 font-mono text-xs whitespace-nowrap">{c.artifact}</td>
+                  <td className="px-4 py-1.5 whitespace-nowrap">{c.user}</td>
+                  <td className="px-4 py-1.5 whitespace-nowrap">
+                    <span className="inline-flex items-center gap-1.5"><span className={`size-2.5 rounded-sm ${tool ? TOOL : RALLY}`} />{tool ? 'Herramienta' : 'Rally'}</span>
+                    {before && <span className="ml-1.5 text-xs text-zinc-400">(antes de medir)</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {rows.length > limit && (
+            <button type="button" onClick={() => setLimit(limit + 200)} className="w-full border-t border-zinc-100 px-4 py-2 text-sm text-indigo-600 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800">
+              Ver más ({rows.length - limit})
+            </button>
+          )}
+        </div>
       )}
     </div>
   );

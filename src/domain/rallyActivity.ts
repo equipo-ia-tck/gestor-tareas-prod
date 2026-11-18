@@ -84,7 +84,7 @@ export interface ActivitySummary {
   byKind: (Split & { kind: RallyChangeKind; label: string })[];
   byPerson: (Split & { user: string })[];
   byWeek: (Split & { week: string })[];
-  /** Cambios anteriores a que la herramienta empezara a apuntar: no cuentan en los porcentajes. */
+  /** Cambios anteriores a que la herramienta empezara a apuntar (con margen): con `onlySince` no cuentan. */
   before: number;
 }
 
@@ -95,15 +95,22 @@ const mondayOfIso = (iso: string) => {
   return `${local.getFullYear()}-${String(local.getMonth() + 1).padStart(2, '0')}-${String(local.getDate()).padStart(2, '0')}`;
 };
 
-/** Totales: herramienta frente a Rally, por tipo, por persona (de Rally) y por semana. */
-export function summarizeActivity(changes: RallyChange[], fromTool: boolean[], since: string | null): ActivitySummary {
+/** ¿Es anterior a que la herramienta empezara a apuntar? Con el margen de la ventana: Rally guarda la hora un poco antes. */
+export const beforeTracking = (at: string, since: string | null, windowMs = MATCH_WINDOW_MS) =>
+  !since || Date.parse(at) < Date.parse(since) - windowMs;
+
+/**
+ * Totales: herramienta frente a Rally, por tipo, por persona (de Rally) y por semana. `onlySince`: dejar fuera lo anterior a
+ * que la herramienta empezara a apuntar (entonces todo parecería de Rally).
+ */
+export function summarizeActivity(changes: RallyChange[], fromTool: boolean[], since: string | null, onlySince = false): ActivitySummary {
   const total: Split = { tool: 0, rally: 0 };
   const kinds = new Map<RallyChangeKind, Split>(CHANGE_KINDS.map((k) => [k.id, { tool: 0, rally: 0 }]));
   const people = new Map<string, Split>();
   const weeks = new Map<string, Split>();
   let before = 0;
   changes.forEach((c, i) => {
-    if (!since || c.at < since) { before += 1; return; }
+    if (beforeTracking(c.at, since)) { before += 1; if (onlySince) return; }
     const side = fromTool[i] ? 'tool' : 'rally';
     total[side] += 1;
     kinds.get(c.kind)![side] += 1;
