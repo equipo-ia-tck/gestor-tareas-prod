@@ -51,3 +51,25 @@
   .note-editor .note-project { color: var(--color-violet-300); }
   .note-editor .note-key { color: var(--color-cyan-300); }
 }
+
+/* Analítica: un color por pantalla (paleta categórica validada, orden fijo; el resto en gris). */
+.scr { --scr: #8b8a84; }
+.scr-today { --scr: #2a78d6; }
+.scr-inbox { --scr: #eb6834; }
+.scr-board { --scr: #1baf7a; }
+.scr-calendar { --scr: #eda100; }
+.scr-notes { --scr: #e87ba4; }
+.scr-rally { --scr: #008300; }
+.scr-project { --scr: #6250d6; }
+.scr-people, .scr-person { --scr: #e34948; }
+@media (prefers-color-scheme: dark) {
+  .scr { --scr: #6f6e69; }
+  .scr-today { --scr: #3987e5; }
+  .scr-inbox { --scr: #d95926; }
+  .scr-board { --scr: #199e70; }
+  .scr-calendar { --scr: #c98500; }
+  .scr-notes { --scr: #d55181; }
+  .scr-rally { --scr: #0ca30c; }
+  .scr-project { --scr: #9085e9; }
+  .scr-people, .scr-person { --scr: #e66767; }
+}

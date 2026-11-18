@@ -34,7 +34,27 @@ const card = 'rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-70
 const cardTitle = 'text-xs font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400';
 const th = 'px-3 py-2 text-left text-xs font-medium text-zinc-500 whitespace-nowrap';
 const td = 'px-3 py-2 whitespace-nowrap';
-/** Un solo tono (índigo) para todo: más oscuro = más uso. */
+/** Color de cada pantalla (variable `--scr`, en index.css): las ocho principales tienen el suyo y el resto, gris. */
+const scr = (id: string) => `scr scr-${id}`;
+/** Intensidad del color de una pantalla en el mapa de calor (0 = nada). */
+const SCR_HEAT = ['', 'bg-(--scr)/15', 'bg-(--scr)/35', 'bg-(--scr)/65 text-white', 'bg-(--scr) text-white'];
+/** Franja de color arriba de cada bloque del Resumen. */
+const ACCENT = {
+  indigo: 'border-t-4 border-t-indigo-500 dark:border-t-indigo-400',
+  emerald: 'border-t-4 border-t-emerald-500 dark:border-t-emerald-400',
+  sky: 'border-t-4 border-t-sky-500 dark:border-t-sky-400',
+  amber: 'border-t-4 border-t-amber-500 dark:border-t-amber-400',
+  violet: 'border-t-4 border-t-violet-500 dark:border-t-violet-400',
+};
+type Tone = keyof typeof ACCENT;
+const TONE: Record<Tone, { chip: string; bar: string }> = {
+  indigo: { chip: 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-300', bar: 'bg-indigo-500 dark:bg-indigo-400' },
+  emerald: { chip: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-300', bar: 'bg-emerald-500 dark:bg-emerald-400' },
+  sky: { chip: 'bg-sky-50 text-sky-600 dark:bg-sky-950 dark:text-sky-300', bar: 'bg-sky-500 dark:bg-sky-400' },
+  amber: { chip: 'bg-amber-50 text-amber-600 dark:bg-amber-950 dark:text-amber-300', bar: 'bg-amber-500 dark:bg-amber-400' },
+  violet: { chip: 'bg-violet-50 text-violet-600 dark:bg-violet-950 dark:text-violet-300', bar: 'bg-violet-500 dark:bg-violet-400' },
+};
+/** Entradas (índigo): más oscuro = más uso. */
 const HEAT = [
   '',
   'bg-indigo-50 text-indigo-900 dark:bg-indigo-950 dark:text-indigo-200',
@@ -166,21 +186,21 @@ function Summary({ people, selected, days, series, ranking, kpis, onPerson, onSc
     <div className="space-y-4">
       <div className="grid grid-cols-4 gap-3 max-lg:grid-cols-2">
         {selected ? (
-          <Tile icon={Clock} label="Última vez" value={when(selected.last)} small />
+          <Tile tone="emerald" icon={Clock} label="Última vez" value={when(selected.last)} small />
         ) : (
-          <Tile icon={Users} label="Personas activas" value={String(ad.active)} extra={` de ${ad.total}`}
+          <Tile tone="emerald" icon={Users} label="Personas activas" value={String(ad.active)} extra={` de ${ad.total}`}
             bar={pct(ad.active, ad.total)} hint={`${pct(ad.active, ad.total)} % de las cuentas han entrado`} />
         )}
-        <Tile icon={LogIn} label="Entradas en la app" value={String(sessions)}
+        <Tile tone="indigo" icon={LogIn} label="Entradas en la app" value={String(sessions)}
           hint={selected ? `${activeDays ? (sessions / activeDays).toFixed(1) : '0'} por día con uso` : `${ad.active ? (sessions / ad.active).toFixed(1) : '0'} por persona activa`} />
-        <Tile icon={MousePointerClick} label="Pantallas abiertas" value={String(screens)}
+        <Tile tone="sky" icon={MousePointerClick} label="Pantallas abiertas" value={String(screens)}
           hint={sessions ? `${(screens / sessions).toFixed(1)} por entrada` : undefined} />
-        <Tile icon={CalendarDays} label="Días con uso" value={String(activeDays)} extra={` de ${days}`} bar={pct(activeDays, days)}
+        <Tile tone="violet" icon={CalendarDays} label="Días con uso" value={String(activeDays)} extra={` de ${days}`} bar={pct(activeDays, days)}
           hint={selected ? 'días que ha entrado' : 'días que alguien ha entrado'} />
       </div>
 
       <div className="grid grid-cols-3 gap-3 max-lg:grid-cols-1">
-        <div className={`${card} col-span-2 max-lg:col-span-1`}>
+        <div className={`${card} ${ACCENT.indigo} col-span-2 max-lg:col-span-1`}>
           <div className="mb-3 flex items-baseline justify-between gap-2">
             <h3 className={cardTitle}>Actividad diaria · entradas</h3>
             <span className="text-xs text-zinc-400">Pasa el ratón por una barra para ver el día</span>
@@ -193,11 +213,11 @@ function Summary({ people, selected, days, series, ranking, kpis, onPerson, onSc
       </div>
 
       <div className="grid grid-cols-3 gap-3 max-lg:grid-cols-1">
-        <div className={`${card} col-span-2 max-lg:col-span-1`}>
+        <div className={`${card} ${ACCENT.sky} col-span-2 max-lg:col-span-1`}>
           <h3 className={`${cardTitle} mb-3`}>Pantallas más usadas</h3>
           <ScreenBars ranking={ranking} team={!selected} onScreen={onScreen} />
         </div>
-        <div className={card}>
+        <div className={`${card} ${ACCENT.amber}`}>
           <h3 className={`${cardTitle} mb-3`}>Lo más destacado</h3>
           <Highlights kpis={kpis} onScreen={onScreen} />
         </div>
@@ -239,12 +259,12 @@ function ActivityChart({ series, team }: { series: DayPoint[]; team: boolean }) 
 function AdoptionCard({ ad, onPerson }: { ad: ReturnType<typeof adoption>; onPerson: (id: string) => void }) {
   const idle = ad.idle.length;
   const parts = [
-    { label: 'Han entrado', n: ad.active, cls: 'bg-indigo-600 dark:bg-indigo-400' },
-    { label: 'Sin entrar', n: idle, cls: 'bg-indigo-200 dark:bg-indigo-900' },
+    { label: 'Han entrado', n: ad.active, cls: 'bg-emerald-500 dark:bg-emerald-400' },
+    { label: 'Sin entrar', n: idle, cls: 'bg-amber-400 dark:bg-amber-500' },
     { label: 'Desactivadas', n: ad.disabled, cls: 'bg-zinc-300 dark:bg-zinc-700' },
   ].filter((p) => p.n > 0);
   return (
-    <div className={card}>
+    <div className={`${card} ${ACCENT.emerald}`}>
       <h3 className={`${cardTitle} mb-3`}>Adopción del equipo</h3>
       <div className="flex items-baseline gap-2">
         <span className="text-3xl font-semibold tabular-nums">{pct(ad.active, ad.total)} %</span>
@@ -276,7 +296,7 @@ function AdoptionCard({ ad, onPerson }: { ad: ReturnType<typeof adoption>; onPer
 
 function PersonCard({ p, ranking }: { p: UserSummary; ranking: ScreenRank[] }) {
   return (
-    <div className={card}>
+    <div className={`${card} ${ACCENT.emerald}`}>
       <div className="mb-3 flex items-center gap-3">
         <Avatar name={nameOf(p)} large />
         <div className="min-w-0">
@@ -307,13 +327,13 @@ function ScreenBars({ ranking, team, onScreen }: { ranking: ScreenRank[]; team: 
         {ranking.map((r) => (
           <li key={r.screen}>
             <button type="button" onClick={() => onScreen(r.screen)} title={`${screenLabel(r.screen)}: ${r.visits} visitas, ${r.quality} de calidad (${pct(r.quality, r.visits)} %)`}
-              className="group grid w-full grid-cols-[8rem_1fr_4.5rem_4.5rem] items-center gap-x-3 rounded text-left text-sm max-sm:grid-cols-[6rem_1fr_3.5rem]">
-              <span className="truncate group-hover:underline">{screenLabel(r.screen)}</span>
+              className={`${scr(r.screen)} group grid w-full grid-cols-[8rem_1fr_4.5rem_4.5rem] items-center gap-x-3 rounded text-left text-sm max-sm:grid-cols-[6rem_1fr_3.5rem]`}>
+              <span className="flex min-w-0 items-center gap-1.5"><span className="size-2.5 shrink-0 rounded-sm bg-(--scr)" /><span className="truncate group-hover:underline">{screenLabel(r.screen)}</span></span>
               <span className="flex items-center gap-2">
                 <span className="flex h-4 min-w-0 flex-1 overflow-hidden">
                   <span className="flex gap-[2px] rounded-r-[4px]" style={{ width: `${(r.visits / max) * 100}%` }}>
-                    {r.quality > 0 && <span className="h-full rounded-l-[2px] bg-indigo-600 dark:bg-indigo-400" style={{ width: `${(r.quality / r.visits) * 100}%` }} />}
-                    {r.visits > r.quality && <span className="h-full flex-1 rounded-r-[4px] bg-indigo-200 dark:bg-indigo-900" />}
+                    {r.quality > 0 && <span className="h-full rounded-l-[2px] bg-(--scr)" style={{ width: `${(r.quality / r.visits) * 100}%` }} />}
+                    {r.visits > r.quality && <span className="h-full flex-1 rounded-r-[4px] bg-(--scr)/35" />}
                   </span>
                 </span>
                 <span className="w-8 shrink-0 text-right font-medium tabular-nums">{r.visits}</span>
@@ -325,8 +345,8 @@ function ScreenBars({ ranking, team, onScreen }: { ranking: ScreenRank[]; team: 
         ))}
       </ul>
       <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500">
-        <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-sm bg-indigo-600 dark:bg-indigo-400" />Visitas de calidad (15 s o alguna acción)</span>
-        <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-sm bg-indigo-200 dark:bg-indigo-900" />Resto de visitas</span>
+        <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-sm bg-zinc-600 dark:bg-zinc-300" />Tramo intenso: visitas de calidad (15 s o alguna acción)</span>
+        <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-sm bg-zinc-600/35 dark:bg-zinc-300/35" />Tramo claro: resto de visitas</span>
       </div>
     </div>
   );
@@ -350,7 +370,7 @@ function Highlights({ kpis, onScreen }: { kpis: ScreenKpis[]; onScreen: (id: str
         return (
           <li key={h.label}>
             <button type="button" onClick={() => onScreen(h.screen)} className="group flex w-full items-center gap-3 py-2 text-left">
-              <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-300"><h.icon className="size-4" /></span>
+              <span className={`${scr(h.screen)} grid size-8 shrink-0 place-items-center rounded-lg bg-(--scr)/15 text-(--scr)`}><h.icon className="size-4" /></span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm group-hover:underline">{h.title}</span>
                 {k.people && <span className="block text-xs text-zinc-400">{k.people.n} de {k.people.of} personas</span>}
@@ -372,8 +392,8 @@ function ScreensTab({ kpis, team }: { kpis: ScreenKpis[]; team: boolean }) {
       <div className="sticky top-0 z-10 -mx-1 mb-3 flex flex-wrap gap-1.5 bg-zinc-50/95 px-1 py-2 backdrop-blur dark:bg-zinc-950/90">
         {kpis.map((k) => (
           <a key={k.id} href={`#kpi-${k.id}`} onClick={(e) => { e.preventDefault(); document.getElementById(`kpi-${k.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
-            className="rounded-full border border-zinc-200 bg-white px-2.5 py-0.5 text-xs text-zinc-600 hover:border-indigo-300 hover:text-indigo-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:border-indigo-700 dark:hover:text-indigo-300">
-            {k.title}{k.visits ? <span className="ml-1 text-zinc-400 tabular-nums">{k.visits.visits}</span> : null}
+            className={`${scr(k.id)} inline-flex items-center gap-1.5 rounded-full border border-zinc-200 bg-white px-2.5 py-0.5 text-xs text-zinc-600 hover:border-(--scr) dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300`}>
+            <span className="size-2 rounded-full bg-(--scr)" />{k.title}{k.visits ? <span className="ml-1 text-zinc-400 tabular-nums">{k.visits.visits}</span> : null}
           </a>
         ))}
       </div>
@@ -393,29 +413,29 @@ export function ScreenCard({ block, team }: { block: ScreenKpis; team: boolean }
   const v = block.visits;
   const q = v ? pct(v.quality, v.visits) : 0;
   return (
-    <section id={`kpi-${block.id}`} className={`${card} scroll-mt-14`}>
-      <h3 className="mb-3 flex items-baseline justify-between gap-2 font-semibold">
-        {block.title}
-        {v && <span className="text-xs font-normal text-zinc-400">{v.visits} {v.visits === 1 ? 'visita' : 'visitas'}</span>}
+    <section id={`kpi-${block.id}`} className={`${card} ${scr(block.id)} scroll-mt-14 border-t-4 border-t-(--scr)`}>
+      <h3 className="mb-3 flex items-center justify-between gap-2 font-semibold">
+        <span className="flex items-center gap-2"><span className="size-3 rounded-full bg-(--scr)" />{block.title}</span>
+        {v && <span className="rounded-full bg-(--scr)/15 px-2 py-0.5 text-xs font-medium tabular-nums">{v.visits} {v.visits === 1 ? 'visita' : 'visitas'}</span>}
       </h3>
       {v && (
         <div className="mb-3 grid grid-cols-3 gap-2 max-sm:grid-cols-1">
-          <div className="rounded-lg bg-zinc-50 p-2 dark:bg-zinc-800/60">
-            <div className="text-[11px] text-zinc-500">De calidad</div>
+          <div className="rounded-lg bg-(--scr)/10 p-2">
+            <div className="text-[11px] text-zinc-500 dark:text-zinc-400">De calidad</div>
             <div className="text-lg font-semibold tabular-nums">{q} %</div>
-            <Bar value={q} />
+            <Bar value={q} fill="bg-(--scr)" />
           </div>
-          <div className="rounded-lg bg-zinc-50 p-2 dark:bg-zinc-800/60">
-            <div className="text-[11px] text-zinc-500">Tiempo medio</div>
+          <div className="rounded-lg bg-(--scr)/10 p-2">
+            <div className="text-[11px] text-zinc-500 dark:text-zinc-400">Tiempo medio</div>
             <div className="text-lg font-semibold tabular-nums">{formatSeconds(v.avgSeconds)}</div>
           </div>
-          <div className="rounded-lg bg-zinc-50 p-2 dark:bg-zinc-800/60">
+          <div className="rounded-lg bg-(--scr)/10 p-2">
             {team ? <>
-              <div className="text-[11px] text-zinc-500">Personas de calidad</div>
+              <div className="text-[11px] text-zinc-500 dark:text-zinc-400">Personas de calidad</div>
               <div className="text-lg font-semibold tabular-nums">{v.qualityPeople}<span className="text-sm font-normal text-zinc-400"> de {v.people}</span></div>
-              <Bar value={pct(v.qualityPeople, v.people)} />
+              <Bar value={pct(v.qualityPeople, v.people)} fill="bg-(--scr)" />
             </> : <>
-              <div className="text-[11px] text-zinc-500">Ha entrado</div>
+              <div className="text-[11px] text-zinc-500 dark:text-zinc-400">Ha entrado</div>
               <div className="text-lg font-semibold">{v.visits ? 'Sí' : 'No'}</div>
             </>}
           </div>
@@ -435,12 +455,12 @@ function KpiRow({ kpi }: { kpi: Kpi }) {
         <span className="min-w-0 flex-1 text-zinc-700 dark:text-zinc-300">{kpi.label}</span>
         <span className="shrink-0 text-base font-semibold tabular-nums">{kpi.value}</span>
       </div>
-      {p !== null && <div className="mt-1"><Bar value={p} /></div>}
+      {p !== null && <div className="mt-1"><Bar value={p} fill="bg-(--scr)" /></div>}
       {kpi.hint && <div className="mt-0.5 text-xs text-zinc-400">{kpi.hint}</div>}
       {kpi.people && (
         <div className="mt-1 flex items-center gap-2 text-xs text-zinc-500" title="Personas que lo hacen">
           <UserRound className="size-3 shrink-0" />
-          <span className="flex-1"><Bar value={pct(kpi.people.n, kpi.people.of)} thin /></span>
+          <span className="flex-1"><Bar value={pct(kpi.people.n, kpi.people.of)} thin fill="bg-(--scr)/60" /></span>
           <span className="shrink-0 tabular-nums">{kpi.people.n} de {kpi.people.of} personas</span>
         </div>
       )}
@@ -453,11 +473,11 @@ function KpiRow({ kpi }: { kpi: Kpi }) {
 function Parts({ parts }: { parts: KpiPart[] }) {
   const max = Math.max(1, ...parts.map((p) => p.value));
   return (
-    <ul className="mt-1.5 space-y-1 rounded-lg bg-zinc-50 p-2 dark:bg-zinc-800/50">
+    <ul className="mt-1.5 space-y-1 rounded-lg bg-(--scr)/8 p-2">
       {[...parts].sort((a, b) => b.value - a.value).map((p) => (
         <li key={p.label} className="grid grid-cols-[minmax(0,10rem)_1fr_2.5rem] items-center gap-2 text-xs">
           <span className="truncate text-zinc-600 dark:text-zinc-300" title={p.label}>{p.label}</span>
-          <span className="h-2"><span className="block h-full rounded-r-[4px] bg-indigo-400 dark:bg-indigo-500" style={{ width: `${(p.value / max) * 100}%` }} /></span>
+          <span className="h-2"><span className="block h-full rounded-r-[4px] bg-(--scr)/75" style={{ width: `${(p.value / max) * 100}%` }} /></span>
           <span className="text-right font-medium tabular-nums">{p.value}</span>
         </li>
       ))}
@@ -558,16 +578,21 @@ function DailyTab({ daily, today }: { daily: ReturnType<typeof dailyUsage>; toda
         <table className="w-full border-separate border-spacing-[2px] text-sm">
           <thead><tr>
             <th className={th}>Día</th><th className={`${th} text-center`}>Entradas</th>
-            {screens.map((sc) => <th key={sc} className={`${th} text-center`}>{screenLabel(sc)}</th>)}
+            {screens.map((sc) => (
+              <th key={sc} className={`${th} ${scr(sc)} text-center`}>
+                <span className="inline-flex items-center gap-1"><span className="size-2 rounded-full bg-(--scr)" />{screenLabel(sc)}</span>
+              </th>
+            ))}
           </tr></thead>
           <tbody>
             {daily.map((d) => (
               <tr key={d.day}>
                 <td className={`${td} first-letter:uppercase`}>{formatDay(d.day, today)}</td>
-                <Cell value={d.sessions} level={heatLevel(d.sessions, maxSessions)} title={`${d.sessions} entradas`} strong />
+                <Cell value={d.sessions} cls={HEAT[heatLevel(d.sessions, maxSessions)]} title={`${d.sessions} entradas`} strong />
                 {screens.map((sc) => {
                   const n = d.screens[sc] ?? 0;
-                  return <Cell key={sc} value={n} level={heatLevel(n, maxCell)} title={`${screenLabel(sc)}: ${n} visitas`} />;
+                  const lv = heatLevel(n, maxCell);
+                  return <Cell key={sc} value={n} cls={lv ? `${scr(sc)} ${SCR_HEAT[lv]}` : ''} title={`${screenLabel(sc)}: ${n} visitas`} />;
                 })}
               </tr>
             ))}
@@ -578,9 +603,9 @@ function DailyTab({ daily, today }: { daily: ReturnType<typeof dailyUsage>; toda
   );
 }
 
-function Cell({ value, level, title, strong }: { value: number; level: number; title: string; strong?: boolean }) {
+function Cell({ value, cls, title, strong }: { value: number; cls: string; title: string; strong?: boolean }) {
   return (
-    <td title={title} className={`min-w-12 rounded-[4px] px-2 py-1.5 text-center tabular-nums ${strong ? 'font-semibold' : ''} ${level ? HEAT[level] : 'bg-zinc-50 text-zinc-300 dark:bg-zinc-800/40 dark:text-zinc-600'}`}>
+    <td title={title} className={`min-w-12 rounded-[4px] px-2 py-1.5 text-center tabular-nums ${strong ? 'font-semibold' : ''} ${cls || 'bg-zinc-50 text-zinc-300 dark:bg-zinc-800/40 dark:text-zinc-600'}`}>
       {value || '·'}
     </td>
   );
@@ -588,29 +613,29 @@ function Cell({ value, level, title, strong }: { value: number; level: number; t
 
 // ───────────────────────────── Piezas ─────────────────────────────
 
-function Tile({ icon: Icon, label, value, extra, hint, bar, small }: {
-  icon: LucideIcon; label: string; value: string; extra?: string; hint?: string; bar?: number; small?: boolean;
+function Tile({ tone, icon: Icon, label, value, extra, hint, bar, small }: {
+  tone: Tone; icon: LucideIcon; label: string; value: string; extra?: string; hint?: string; bar?: number; small?: boolean;
 }) {
   return (
-    <div className={card}>
+    <div className={`${card} ${ACCENT[tone]}`}>
       <div className="flex items-center gap-2 text-xs text-zinc-500">
-        <span className="grid size-7 place-items-center rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-300"><Icon className="size-4" /></span>
+        <span className={`grid size-7 place-items-center rounded-lg ${TONE[tone].chip}`}><Icon className="size-4" /></span>
         {label}
       </div>
       <div className={`mt-2 ${small ? 'text-lg' : 'text-3xl'} font-semibold tabular-nums`}>
         {value}{extra && <span className="text-base font-normal text-zinc-400">{extra}</span>}
       </div>
-      {bar !== undefined && <div className="mt-2"><Bar value={bar} /></div>}
+      {bar !== undefined && <div className="mt-2"><Bar value={bar} fill={TONE[tone].bar} /></div>}
       {hint && <div className="mt-1 text-xs text-zinc-400">{hint}</div>}
     </div>
   );
 }
 
-function Bar({ value, thin }: { value: number; thin?: boolean }) {
+function Bar({ value, thin, fill = 'bg-indigo-500 dark:bg-indigo-400' }: { value: number; thin?: boolean; fill?: string }) {
   return (
     <div className={`${thin ? 'h-1' : 'h-1.5'} w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800`}
       role="meter" aria-valuenow={value} aria-valuemin={0} aria-valuemax={100}>
-      <div className="h-full rounded-full bg-indigo-500 dark:bg-indigo-400" style={{ width: `${Math.min(100, Math.max(0, value))}%` }} />
+      <div className={`h-full rounded-full ${fill}`} style={{ width: `${Math.min(100, Math.max(0, value))}%` }} />
     </div>
   );
 }
