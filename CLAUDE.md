@@ -849,6 +849,11 @@ ya usa.
 - **Más → Analítica** (`#/analytics`, `UsageView`, solo administradores): vista Equipo o una persona, 7/30/90 días; KPIs por
   pantalla (`domain/usageKpis.ts`, `screenKpis`: visitas, de calidad, tiempo medio, personas y los KPIs de `kpi.docx`), tabla
   por persona (en Equipo) y por día. Aviso en Ajustes → Mi cuenta y aviso si falta la migración 010.
+- **Diseño en panel** (rama `analitica-dashboard`): pestañas (`analytics-tab`) **Resumen** (cifras con icono y barra,
+  actividad diaria en barras, adopción con quién no ha entrado, pantallas más usadas con la parte de calidad, lo más
+  destacado; pulsar lleva a su tarjeta), **Por pantalla** (las mismas tarjetas de KPIs, con barras para porcentajes,
+  personas y desgloses), **Personas** (solo Equipo: estado, barras y últimos 14 días) y **Día a día** (mapa de calor).
+  Cálculos en `domain/usageDashboard.ts` (`screenRanking`, `activitySeries`, `adoption`, `percentOf`, `heatLevel`).
 
 ### Más adelante
 
