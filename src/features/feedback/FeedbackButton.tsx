@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { track } from '../usage/track';
 import { createPortal } from 'react-dom';
 import { MessageSquarePlus, X } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
@@ -16,11 +17,13 @@ export function FeedbackButton() {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} title="Cuéntanos qué no funciona, mejoras, ideas o dudas"
+      <button type="button" onClick={() => { track('feedback-open'); setOpen(true); }} title="Cuéntanos qué no funciona, mejoras, ideas o dudas"
         className={`fixed right-4 bottom-4 z-20 flex items-center gap-1.5 rounded-full bg-indigo-600 px-3.5 py-2 text-sm font-medium text-white shadow-lg hover:bg-indigo-500 print:hidden ${detailId ? 'xl:right-[436px]' : ''}`}>
         <MessageSquarePlus className="size-4" />Feedback
       </button>
-      {open && <FeedbackDialog taskOpen={!!detailId} onClose={() => setOpen(false)} />}
+      {open && <FeedbackDialog taskOpen={!!detailId}
+        onClose={() => { track('feedback-cancel'); setOpen(false); }}
+        onSent={() => { track('feedback-send'); setOpen(false); }} />}
     </>
   );
 }
@@ -29,7 +32,7 @@ const label = 'mb-1.5 block text-[11px] font-semibold tracking-wide text-zinc-50
 const field = 'w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-zinc-600 dark:bg-zinc-900';
 const Req = () => <span className="text-red-500"> *</span>;
 
-function FeedbackDialog({ taskOpen, onClose }: { taskOpen: boolean; onClose: () => void }) {
+function FeedbackDialog({ taskOpen, onClose, onSent }: { taskOpen: boolean; onClose: () => void; onSent: () => void }) {
   const toast = useToast();
   const [kind, setKind] = useState<Exclude<FeedbackKind, 'other'>>('bug');
   const [area, setArea] = useState(() => areaForHash(window.location.hash, taskOpen));
@@ -55,7 +58,7 @@ function FeedbackDialog({ taskOpen, onClose }: { taskOpen: boolean; onClose: () 
     try {
       await sync().sendFeedback({ kind, area, title: title.trim(), body: body.trim(), impact: kind === 'bug' ? impact : null, page });
       toast('¡Gracias! Hemos recibido tu feedback');
-      onClose();
+      onSent();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setSending(false);

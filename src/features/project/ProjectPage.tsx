@@ -1,4 +1,5 @@
-import { useState, type FormEvent, type ReactNode } from 'react';
+import { useState, type FormEvent, type MouseEvent, type ReactNode } from 'react';
+import { track } from '../usage/track';
 import { AlertTriangle, Users, CheckCircle2, Clock, FileText, List, KanbanSquare, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
 import { useWideLayout } from '../../app/Layout';
@@ -95,14 +96,14 @@ export function ProjectView({ id }: { id: string }) {
           </span>
         )}
         actions={
-          <>
+          <div className="contents" onClickCapture={trackProjectButton}>
             <ModeSwitch value={mode} onChange={setMode} />
             {SPACES_ENABLED && <ProjectSpace id={id} />}
             <AddSubproject parent={project} />
             <MoveProject id={id} />
             <ActionButton icon={<Pencil className="size-3.5" />} onClick={() => { setName(project.name); setRenaming(true); }}>Renombrar</ActionButton>
             <ActionButton icon={<Trash2 className="size-3.5" />} onClick={remove}>Eliminar</ActionButton>
-          </>
+          </div>
         }
       />
       <Stats tasks={mine} notes={notes.filter((n) => !n.deleted_at && ((n.project_id && scope.has(n.project_id)) || (n.task_id && mine.some((t) => t.id === n.task_id))))} today={today} />
@@ -145,6 +146,14 @@ function ProjectPeople({ people, selected, onSelect }: { people: BoardPerson[]; 
       {selected && <button type="button" onClick={() => onSelect(null)} className="ml-1 text-xs text-zinc-500 hover:underline">ver todas</button>}
     </div>
   );
+}
+
+/** Analítica: qué botón de la barra superior del proyecto se pulsa (por su texto). */
+const PROJECT_BUTTON_IDS: Record<string, string> = { Lista: 'mode-list', Tablero: 'mode-board', Subproyecto: 'subproject', 'Mover…': 'move', Renombrar: 'rename', Eliminar: 'delete' };
+function trackProjectButton(e: MouseEvent) {
+  const text = (e.target as HTMLElement).closest('button')?.textContent?.trim() ?? '';
+  const id = PROJECT_BUTTON_IDS[text] ?? (text.startsWith('Mover') ? 'move' : null);
+  if (id) track('project-button', id);
 }
 
 function ModeSwitch({ value, onChange }: { value: Mode; onChange: (m: Mode) => void }) {

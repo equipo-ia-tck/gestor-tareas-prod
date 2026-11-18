@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
  * Prueba la base de datos de Supabase (supabase/migrations) en un Postgres de verdad (PGlite), imitando
  * lo mínimo de Supabase: roles anon/authenticated y auth.uid()/auth.email() de la sesión.
  */
-const MIGRATION = ['001_equipo.sql', '002_baja_y_contrasenas.sql', '003_alta_sin_invitacion.sql', '004_claves_conectores.sql', '005_calendario_subido.sql', '006_feedback.sql', '007_feedback_formulario.sql', '008_feedback_bloqueado.sql', '009_analitica.sql'].map((f) => readFileSync(`supabase/migrations/${f}`, 'utf8')).join('\n');
+const MIGRATION = ['001_equipo.sql', '002_baja_y_contrasenas.sql', '003_alta_sin_invitacion.sql', '004_claves_conectores.sql', '005_calendario_subido.sql', '006_feedback.sql', '007_feedback_formulario.sql', '008_feedback_bloqueado.sql', '009_analitica.sql', '010_analitica_kpis.sql'].map((f) => readFileSync(`supabase/migrations/${f}`, 'utf8')).join('\n');
 let db: PGlite;
 
 const SUPABASE_STUB = `
@@ -322,5 +322,40 @@ describe('base de datos del equipo en Supabase', () => {
     expect(counts).toEqual({ 'session:': 1, 'screen:board': 2, 'screen:rally': 1 });
     expect(r.rows.every((x) => x.user === ana.id)).toBe(true);
     expect((await rpc(marta, 'admin_usage', { p_from: '2000-01-01', p_to: '2000-01-02' }) as { rows: unknown[] }).rows).toEqual([]);
+  });
+
+  it('analítica con KPIs: acciones y preferencias sin textos, y foto de los datos con recuentos', async () => {
+    const marta = await newUser('marta@vml.com');
+    await rpc(marta, 'register_profile', { p_name: 'Marta García', p_code: '' });
+    const ana = await newUser('ana@vml.com');
+    await rpc(ana, 'register_profile', { p_name: 'Ana', p_code: '' });
+
+    await rpc(ana, 'log_usage', { p_kind: 'screen', p_screen: 'board' }); // como la versión anterior (dos parámetros)
+    await rpc(ana, 'log_usage', { p_kind: 'visit', p_screen: 'board', p_name: '', p_detail: '', p_value: 40 });
+    await rpc(ana, 'log_usage', { p_kind: 'quality', p_screen: 'board', p_name: '', p_detail: '', p_value: null });
+    await rpc(ana, 'log_usage', { p_kind: 'action', p_screen: 'rally', p_name: 'rally-add', p_detail: 'all.project', p_value: 5 });
+    await rpc(ana, 'log_usage', { p_kind: 'state', p_screen: 'calendar', p_name: 'calendar-tasks', p_detail: '', p_value: 0 });
+    await rpc(ana, 'log_usage', { p_kind: 'state', p_screen: 'calendar', p_name: 'calendar-tasks', p_detail: '', p_value: 1 });
+    await expect(rpc(ana, 'log_usage', { p_kind: 'action', p_screen: 'rally', p_name: 'Un Título', p_detail: '', p_value: 1 })).rejects.toThrow();
+    await expect(rpc(ana, 'log_usage', { p_kind: 'action', p_screen: 'rally', p_name: 'x', p_detail: 'texto con espacios', p_value: 1 })).rejects.toThrow();
+
+    const now = new Date().toISOString();
+    await push(ana, [
+      { tbl: 'tasks', key: 't1', data: task('t1', { status: 'todo', due_date: '2026-11-20', project_id: 'p1', external_id: 'US-123', created_at: now }) },
+      { tbl: 'tasks', key: 't2', data: task('t2', { status: 'done', created_at: now }) },
+      { tbl: 'projects', key: 'p1', data: { id: 'p1', name: 'Sección', parent_id: null, created_at: now } },
+      { tbl: 'notes', key: 'n1', data: { id: 'n1', title: 'Acta', body: '- [x] Hacerlo [[t:t2]]', project_id: 'p1', people: [], created_at: now, deleted_at: null } },
+    ]);
+
+    const r = await rpc(marta, 'admin_usage', { p_from: '2000-01-01', p_to: '2100-01-01' }) as {
+      users: { name: string; snapshot: Record<string, unknown> }[]; rows: { kind: string; name: string; detail: string; count: number; value: number | null }[];
+      states: { name: string; value: number }[];
+    };
+    const snap = r.users.find((u) => u.name === 'Ana')!.snapshot;
+    expect(snap).toMatchObject({ tasksCreated: 2, createdWithDate: 1, tasksActive: 1, activeWithDate: 1, activeWithProject: 1, rallyActive: 1,
+      notesCreated: 1, notesInSection: 1, sections: 1, tasksFromNotes: 1, tasksFromNotesDone: 1, rallyConnected: false });
+    expect(r.rows.find((x) => x.kind === 'visit')?.value).toBe(40);
+    expect(r.rows.find((x) => x.kind === 'action')).toMatchObject({ name: 'rally-add', detail: 'all.project', count: 1, value: 5 });
+    expect(r.states).toEqual([expect.objectContaining({ name: 'calendar-tasks', value: 1 })]);
   });
 });

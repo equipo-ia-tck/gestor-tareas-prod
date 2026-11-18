@@ -1,3 +1,4 @@
+import { track } from '../usage/track';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ExternalLink, Paperclip, Pencil, Trash2, Plus, Send, Upload, X } from 'lucide-react';
 import { unlinkedMentions, type RallyDetail, type RallyItem, type RallyRef } from '../../domain/rally';
@@ -209,6 +210,7 @@ function NewRallyTask({ parent, onSelect }: { parent: RallyItem; onSelect: (item
     setError(null);
     try {
       const item = await rallyApi.create({ kind: 'TA', name, parentId: parent.id, assignToMe });
+      track('rally-create', 'task');
       setAdded((list) => [...list, item]);
       setName('');
     } catch (e) {

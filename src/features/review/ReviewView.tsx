@@ -1,4 +1,5 @@
-import { useState, type ReactNode } from 'react';
+import { useState, type ReactNode, useRef } from 'react';
+import { track } from '../usage/track';
 import { Check, ChevronLeft, ChevronRight, ClipboardCheck } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
 import { navigate, routeHref } from '../../app/router';
@@ -22,7 +23,10 @@ const STEPS = ['Bandeja', 'Atrasadas', 'Cómo fue la semana', 'Para hablar', 'La
 /** Revisión semanal guiada (unos 10 minutos): dejar todo en orden y la semana siguiente planificada. */
 export function ReviewView() {
   const { settings, today, tasks } = useApp();
-  const [step, setStep] = useState(0);
+  const [step, setStepState] = useState(0);
+  // Analítica: empieza el proceso al pasar del primer paso (una vez por visita).
+  const started = useRef(false);
+  const setStep = (n: number) => { if (!started.current && n !== step) { started.current = true; track('review-start'); } setStepState(n); };
   // Cuántas tareas hay que mirar en cada paso (los de resumen no llevan número).
   const counts: (number | null)[] = [
     inboxTasks(tasks).length,
@@ -36,6 +40,8 @@ export function ReviewView() {
 
   async function finish() {
     await repo.updateSettings({ ui: { ...settings.ui, last_review_on: today } });
+    if (!started.current) track('review-start');
+    track('review-done');
     navigate({ view: 'today' });
   }
 

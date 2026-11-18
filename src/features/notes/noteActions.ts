@@ -1,4 +1,5 @@
 import { repo } from '../../data/services';
+import { track } from '../usage/track';
 import { actionItems, plainLine, setChecked, setTaskMarker, type ActionItem } from '../../domain/markdown';
 import type { NewTask, Note, Task } from '../../domain/types';
 import type { CaptureContext } from '../../parser/types';
@@ -28,6 +29,7 @@ export async function createTasksFromActions(note: Note, ctx: CaptureContext, on
     }
     await repo.updateNote(note.id, { body });
   });
+  if (created) track('task-from-note', 'action', created);
   return created;
 }
 
@@ -58,5 +60,6 @@ export async function createTaskFromLine(note: Note, line: number, ctx: CaptureC
     [task] = await submitCapture(parsed.slice(0, 1), { project_id: note.project_id, notes: fromNote(note), ...defaults });
     await repo.updateNote(note.id, { body: setTaskMarker(note.body, line, task.id) });
   });
+  track('task-from-note', 'line');
   return task;
 }

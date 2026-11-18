@@ -1,5 +1,9 @@
 import type { RallyCategory, RallyCreatableKind, RallyCreateInput, RallyDetail, RallyFormOptions, RallyItem, RallyKind, RallyPick, RallyProject, RallyRef, RallyStatus } from '../../domain/rally';
 import { LOCAL_SERVER, serverCall as call } from '../../data/serverApi';
+import { track } from '../usage/track';
+
+/** Apunta en la analítica lo que se ha hecho en Rally (solo si ha ido bien). */
+const done = (name: string, detail = '') => <T,>(r: T) => { track(name, detail); return r; };
 
 
 /** Conector de Rally del servidor (`servidor/rally.ts`): la clave nunca llega al navegador. */
@@ -15,7 +19,7 @@ export const rallyApi = {
     call<{ item: RallyItem }>('POST', '/api/rally/move', {
       id, category, ...(opts.dryRun ? { dryRun: true } : {}), ...(opts.blockedReason ? { blockedReason: opts.blockedReason } : {}),
       ...(opts.flow ? { flow: opts.flow } : {}),
-    }).then((r) => r.item),
+    }).then((r) => { if (!opts.dryRun) track('rally-move', category); return r.item; }),
   lookup: (ids: string[]) => call<{ items: RallyItem[] }>('POST', '/api/rally/lookup', { ids }).then((r) => r.items),
   detail: (item: RallyItem) => call<RallyDetail>('GET', `/api/rally/detail?kind=${item.kind}&id=${item.objectId}`),
   create: (input: RallyCreateInput | { kind: 'TA'; name: string; parentId: string; assignToMe: boolean }) =>
@@ -32,25 +36,25 @@ export const rallyApi = {
     call<{ item: RallyItem }>('POST', '/api/rally/flag', { id, ...change }).then((r) => r.item),
   /** Mensaje en la discusión; las personas de `mentions` que salgan como «@Nombre» se mencionan (avisa por correo). */
   message: (id: string, text: string, mentions: RallyRef[]) =>
-    call<{ mentioned: string[] }>('POST', '/api/rally/message', { id, text, mentions }),
+    call<{ mentioned: string[] }>('POST', '/api/rally/message', { id, text, mentions }).then(done('rally-comment', 'message')),
   /** TS a Need Review a la vez: columna, Blocked con motivo y comentario con PO, defecto y analista. */
   needReview: (input: { id: string; defectId: string; text: string; analyst: RallyRef; reason: string; owner?: RallyRef | null }) =>
-    call<{ item: RallyItem; owner: string | null; analyst: string; commentError?: string }>('POST', '/api/rally/need-review', input),
+    call<{ item: RallyItem; owner: string | null; analyst: string; commentError?: string }>('POST', '/api/rally/need-review', input).then(done('rally-comment', 'need-review')),
   /** Comentario de un movimiento con el Owner (PO) y, si se elige, el analista. */
   /** `owner`: otra persona a mencionar en lugar del Owner (null = el Owner). */
   moveComment: (id: string, text: string, analyst: RallyRef | null, owner: RallyRef | null = null) =>
-    call<{ text: string; owner: string | null; analyst: string | null; people?: { name: string; email: string | null }[] }>('POST', '/api/rally/move-comment', { id, text, analyst, owner }),
+    call<{ text: string; owner: string | null; analyst: string | null; people?: { name: string; email: string | null }[] }>('POST', '/api/rally/move-comment', { id, text, analyst, owner }).then(done('rally-comment', 'move')),
   comment: (item: RallyItem, text: string, mentions: RallyRef[] = []) =>
-    call<{ post: RallyDetail['discussion'][number] }>('POST', '/api/rally/comment', { kind: item.kind, objectId: item.objectId, text, mentions }).then((r) => r.post),
+    call<{ post: RallyDetail['discussion'][number] }>('POST', '/api/rally/comment', { kind: item.kind, objectId: item.objectId, text, mentions }).then(done('rally-comment', 'free')).then((r) => r.post),
   /** Cambia el texto de un comentario propio (las menciones que tenía se conservan). */
   editComment: (objectId: string, text: string) =>
-    call<{ post: RallyDetail['discussion'][number] }>('POST', '/api/rally/comment-edit', { objectId, text }).then((r) => r.post),
+    call<{ post: RallyDetail['discussion'][number] }>('POST', '/api/rally/comment-edit', { objectId, text }).then(done('rally-comment-edit')).then((r) => r.post),
   /** Elimina un comentario propio de la discusión (no se puede deshacer). */
-  deleteComment: (objectId: string) => call<{ ok: boolean }>('POST', '/api/rally/comment-delete', { objectId }),
+  deleteComment: (objectId: string) => call<{ ok: boolean }>('POST', '/api/rally/comment-delete', { objectId }).then(done('rally-comment-delete')),
   attach: (item: RallyItem, file: { name: string; contentType: string; content: string }) =>
-    call<{ file: RallyDetail['attachments'][number] }>('POST', '/api/rally/attach', { kind: item.kind, objectId: item.objectId, ...file }).then((r) => r.file),
+    call<{ file: RallyDetail['attachments'][number] }>('POST', '/api/rally/attach', { kind: item.kind, objectId: item.objectId, ...file }).then(done('rally-attach')).then((r) => r.file),
   /** Elimina un adjunto en Rally (no se puede deshacer). */
-  deleteAttachment: (objectId: string) => call<{ ok: boolean }>('POST', '/api/rally/attachment-delete', { objectId }),
+  deleteAttachment: (objectId: string) => call<{ ok: boolean }>('POST', '/api/rally/attachment-delete', { objectId }).then(done('rally-attach-delete')),
   projects: () => call<{ projects: RallyProject[] }>('GET', '/api/rally/projects').then((r) => r.projects),
   /** `scope`: sumar los proyectos hijos (`down`) y padres (`up`) de los elegidos, como en Rally. */
   items: (days: number, projects: string[], tags: string[] = [], scope: { down: boolean; up: boolean } = { down: false, up: false }) =>

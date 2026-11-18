@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { track, trackState } from '../usage/track';
 import { CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, PanelLeft, Plus, RefreshCw, Rocket } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
 import { useWideLayout } from '../../app/Layout';
@@ -73,6 +74,8 @@ export function CalendarView({ initial }: { initial?: 'week' | 'month' }) {
   const [sidebar, setSidebar] = usePersistentState('calendar-sidebar', true);
   const [showMeetings, setShowMeetings] = usePersistentState('calendar-meetings', true);
   const [showTasks, setShowTasks] = usePersistentState('calendar-tasks', true);
+  // Analítica: si tiene a la vista las tareas en el calendario (la última elección cuenta).
+  useEffect(() => { trackState('calendar-tasks', '', showTasks ? 1 : 0); }, [showTasks]);
   const [showDone, setShowDone] = usePersistentState('calendar-done', false);
 
   const days = visibleDays(mode, cursor);
@@ -150,7 +153,7 @@ export function CalendarView({ initial }: { initial?: 'week' | 'month' }) {
                 </MenuItem>
               ))}
             </Popover>
-            <button type="button" onClick={() => open({ kind: 'capture', defaults: mode === 'list' ? {} : { due_date: cursor } })}
+            <button type="button" onClick={() => { track('calendar-new'); open({ kind: 'capture', defaults: mode === 'list' ? {} : { due_date: cursor } }); }}
               className="ml-1 flex items-center gap-1.5 rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500">
               <Plus className="size-4" />Nuevo
             </button>

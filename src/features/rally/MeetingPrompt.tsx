@@ -30,6 +30,6 @@ export function MeetingPrompt() {
   if (!request) return null;
   const close = () => { queue = queue.slice(1); emit(); };
   // `key`: cada petición empieza con su propio formulario.
-  return <NewMeeting key={`${request.title}-${queue.length}`} date={today} time={nextSlot()} title={request.title}
+  return <NewMeeting source="rally" key={`${request.title}-${queue.length}`} date={today} time={nextSlot()} title={request.title}
     invite={request.invite} onClose={close} />;
 }

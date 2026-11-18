@@ -1,4 +1,5 @@
 import { useState, type DragEvent } from 'react';
+import { track } from '../usage/track';
 import { Check, FolderInput } from 'lucide-react';
 import { MenuItem, Popover } from '../../components/ui/Popover';
 import { useApp } from '../../app/AppContext';
@@ -51,6 +52,7 @@ export async function createGroup(name: string, groups: PersonGroup[]): Promise<
   if (!n) return null;
   const group = { id: crypto.randomUUID(), name: n, color: PROJECT_COLORS[groups.length % PROJECT_COLORS.length] };
   await repo.updateSettings({ groups: [...groups, group] });
+  track('group-create');
   return group;
 }
 

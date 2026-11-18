@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type KeyboardEvent } from 'react';
+import { track } from '../usage/track';
 import { Video, X } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
 import { Modal } from '../../components/Modal';
@@ -27,7 +28,9 @@ const isEmail = (s: string) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s.trim());
  * el gestor la muestra como pendiente. También se abre desde la ficha de una persona («Nueva reunión»): `title` y `invite`
  * vienen ya puestos, y a quien no trae email se le busca entre los contactos por su nombre.
  */
-export function NewMeeting({ date: initialDate, time: initialTime, title: initialTitle = '', invite = [], onClose }: {
+export function NewMeeting({ date: initialDate, time: initialTime, title: initialTitle = '', invite = [], source, onClose }: {
+  /** Desde dónde se abre (analítica): doble clic en la agenda, ficha de una persona o entrega en Rally. */
+  source: 'dblclick' | 'person' | 'rally';
   date: ISODate;
   time: string;
   title?: string;
@@ -88,6 +91,7 @@ export function NewMeeting({ date: initialDate, time: initialTime, title: initia
     if (!date || !/^\d{2}:\d{2}$/.test(time)) { setError('Revisa el día y la hora.'); return; }
     const url = teamsMeetingUrl({ title, date, time, minutes, attendees: attendees.map((a) => a.email), content });
     openTeams(url, teamsApp);
+    track('meeting-create', source);
     const end = new Date(new Date(`${date}T${time}:00`).getTime() + minutes * 60_000);
     addPendingMeeting({
       title: title.trim(), date, time,

@@ -160,7 +160,7 @@ export function WeekAgenda({ days, tasksByDay, meetings, showTasks }: {
           ))}
         </div>
       </div>
-      {draft && <NewMeeting date={draft.date} time={draft.time} onClose={() => setDraft(null)} />}
+      {draft && <NewMeeting source="dblclick" date={draft.date} time={draft.time} onClose={() => setDraft(null)} />}
     </div>
   );
 }

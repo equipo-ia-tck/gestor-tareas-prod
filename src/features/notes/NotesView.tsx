@@ -1,4 +1,5 @@
 import { ProjectOptions } from '../../components/ui/ProjectOptions';
+import { track } from '../usage/track';
 import { DateButton } from '../../components/ui/DatePicker';
 import { lazy, Suspense, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 
@@ -221,6 +222,7 @@ function AddSection({ parent, onCreated }: { parent?: Project; onCreated: (id: s
     e.preventDefault();
     if (name.trim()) {
       const p = await repo.createProject(name.trim(), { parent_id: inside && canNest ? parent!.id : null });
+      track('section-create');
       onCreated(p.id);
     }
     setName('');

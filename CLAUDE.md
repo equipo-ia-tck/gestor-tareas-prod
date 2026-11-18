@@ -828,6 +828,28 @@ ya usa.
   sobre etiquetas, Flow State, nombre y Ready; mismo campo = o, campos distintos = y (`inRallyView`). Se aplican sobre lo
   cargado, antes del filtro por tipo y el buscador. Para cambiar una, se edita ese archivo.
 
+## Fase 32: analítica de uso (rama `dev`, nov 2026)
+
+- **Supabase** (`009_analitica.sql` y `010_analitica_kpis.sql`, después de 001 a 008): tabla `usage_events` (persona, tipo,
+  pantalla, `name`, `detail`, `value` y día de Madrid), sin lectura directa. Tipos: `session` (entrada), `screen` (visita),
+  `visit` (segundos a la vista), `quality` (visita de calidad: 15 s a la vista o una acción), `action` (algo hecho; `value` =
+  cuántas cosas) y `state` (preferencia; cuenta la última). `log_usage` solo admite claves `[a-z0-9-]` y detalles
+  `[a-z0-9_.,:-]` (nunca textos ni ids), tope de 5.000 por persona y día, borra lo de hace más de 400 días.
+  `admin_usage(desde, hasta)` (solo administradores) da cuentas con `snapshot` (`usage_snapshot`: recuentos de sus tareas,
+  notas, secciones, tareas salidas de notas, grupos, fichas y Rally conectado, calculados de `records`), filas agrupadas y
+  la última preferencia de cada uno.
+- **App**: `features/usage/track.ts` (`startVisit`, `track`, `trackAuto`, `trackState`) y `UsageTracker` (en `Shell`): entrada
+  por carga y al volver tras 30 min, visitas con tiempo a la vista y calidad, y del historial (`historyActions`) tareas,
+  notas y proyectos creados y cambios de estado (lo que trae Rally cuenta como `rally-in`, `cameFromRally`). `logUsage` va
+  por `fetch` con `keepalive` y no avisa si falla. Acciones con `track` en Rally (`rallyApi`: mover, comentarios, ediciones,
+  adjuntos; analista; altas por formulario/petición/tarea; botones y columnas de la pantalla; «Pasar a mis tareas» una o
+  todas, con o sin proyecto), Calendario (`calendar-tasks`, Unirse, reuniones por doble clic/persona/Rally, «Nuevo»), Notas
+  (tareas desde acciones o líneas, secciones), Proyecto (botones de la cabecera), Grupos, Personas (chat, renombrar,
+  eliminar), Revisión (empieza/acaba) y Feedback (abrir, enviar, cancelar).
+- **Más → Analítica** (`#/analytics`, `UsageView`, solo administradores): vista Equipo o una persona, 7/30/90 días; KPIs por
+  pantalla (`domain/usageKpis.ts`, `screenKpis`: visitas, de calidad, tiempo medio, personas y los KPIs de `kpi.docx`), tabla
+  por persona (en Equipo) y por día. Aviso en Ajustes → Mi cuenta y aviso si falta la migración 010.
+
 ### Más adelante
 
 - **Electron**: la app es web estática con rutas por hash y datos en IndexedDB, así que se puede empaquetar sin cambios
@@ -865,14 +887,3 @@ ya usa.
 ## Comprobaciones antes de cada commit
 
 `npm run typecheck && npm test && npm run build`
-
-## Fase 29: analítica de uso (rama `dev`, nov 2026)
-
-- **Supabase** (`supabase/migrations/009_analitica.sql`, después de 001 a 008): tabla `usage_events` (persona, `session` o
-  `screen`, pantalla y día de Madrid), sin lectura directa. `log_usage` la llama la app (solo pantallas `[a-z0-9-]`, nunca ids
-  ni textos; tope de 3.000 por persona y día; borra lo de hace más de 400 días) y `admin_usage(desde, hasta)` devuelve las
-  cuentas y los recuentos por persona, día, tipo y pantalla (solo administradores).
-- **App**: `UsageTracker` (en `Shell`) apunta una entrada por carga de la página y al volver tras 30 min oculta
-  (`SESSION_GAP_MS`), y una visita al cambiar de pantalla (`screenOf`: sin ids, Buscar y cada proyecto cuentan una vez).
-  `sync().logUsage` no avisa si falla. Más → Analítica (`#/analytics`, `UsageView`, solo administradores): cifras de 7/30/90
-  días, tabla por persona y tabla por día (del equipo o de la persona pulsada). Aviso en Ajustes → Mi cuenta.

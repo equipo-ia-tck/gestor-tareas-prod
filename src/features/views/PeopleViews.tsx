@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
+import { track } from '../usage/track';
 import { ArrowDown, ArrowUp, CheckSquare, FileText, FolderPlus, Layers, MessageCircle, MessageSquare, Plus, Quote, Trash2, UserCog, Users } from 'lucide-react';
 import { MenuItem, Popover } from '../../components/ui/Popover';
 import { fuzzyScore } from '../../domain/text';
@@ -161,7 +162,7 @@ export function PersonView({ name }: { name: string }) {
           <RoleField name={name} value={card?.role ?? ''} notes={card?.notes ?? ''} email={card?.email} />
         </div>
         {card?.email && teamsChatUrl([card.email]) && (
-          <a {...teamsLinkProps(teamsChatUrl([card.email])!, teamsApp)}
+          <a {...teamsLinkProps(teamsChatUrl([card.email])!, teamsApp)} onClick={() => track('person-chat')}
             className="flex items-center gap-1 rounded-md bg-[#5b5fc7] px-2.5 py-1 text-sm font-medium text-white hover:bg-[#4b4fb7]">
             <MessageCircle className="size-4" />Chat en Teams
           </a>
@@ -173,7 +174,7 @@ export function PersonView({ name }: { name: string }) {
           <Users className="size-4" />Nueva reunión
         </button>
       </header>
-      {meeting && <NewMeeting date={today} time={nextSlot()} title={`Reunión con ${name}`} invite={[{ name, email: card?.email }]}
+      {meeting && <NewMeeting source="person" date={today} time={nextSlot()} title={`Reunión con ${name}`} invite={[{ name, email: card?.email }]}
         onClose={() => setMeeting(false)} />}
 
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
@@ -229,6 +230,7 @@ function DeletePerson({ name }: { name: string }) {
       + ' Sus menciones en notas pasan a texto normal y se borra su ficha. Puedes deshacerlo con Cmd+Z.';
     if (!window.confirm(text)) return;
     await repo.deletePerson(name);
+    track('person-delete');
     navigate({ view: 'people' });
   };
   return (
@@ -249,6 +251,7 @@ function RenamePerson({ name }: { name: string }) {
   async function apply(to: string, close: () => void) {
     if (!to.trim()) return;
     const final = await repo.renamePerson(name, to.trim());
+    track('person-rename');
     close();
     setValue('');
     navigate({ view: 'person', name: final });

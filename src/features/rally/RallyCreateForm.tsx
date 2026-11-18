@@ -1,3 +1,4 @@
+import { track } from '../usage/track';
 import { useMemo, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Ban, Check, Paperclip, Plus, Wand2, X } from 'lucide-react';
 import { inputClass } from '../../components/ui/styles';
@@ -293,6 +294,7 @@ export function RallyCreateForm({ projects, defaultProjectId, defaultTags = [], 
     let item: RallyItem;
     try {
       item = await rallyApi.create(input);
+      track('rally-create', prefill ? 'request' : 'form');
     } catch (err) {
       const message = (err as Error).message;
       // Reglas de trabajo del proyecto: se añaden sus campos al formulario (y se recuerdan) para rellenarlos y reintentar.

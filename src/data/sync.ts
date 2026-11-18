@@ -81,7 +81,7 @@ function friendly(message: string): string {
   if (/could not find the function public\.send_feedback_form/i.test(message))
     return 'Falta actualizar el feedback en Supabase: un administrador tiene que ejecutar supabase/migrations/007_feedback_formulario.sql.';
   if (/could not find the function public\.admin_usage/i.test(message))
-    return 'Falta preparar la analítica en Supabase: un administrador tiene que ejecutar supabase/migrations/009_analitica.sql.';
+    return 'Falta preparar la analítica en Supabase: un administrador tiene que ejecutar supabase/migrations/009_analitica.sql y 010_analitica_kpis.sql.';
   if (/feedback_status_check/i.test(message))
     return 'Falta el estado «Bloqueado» del feedback en Supabase: un administrador tiene que ejecutar supabase/migrations/008_feedback_bloqueado.sql.';
   return message;
@@ -103,6 +103,10 @@ export class SyncClient {
   private accessVersion = 0;
   readonly supabase: SupabaseClient;
   private db: TasksDB;
+  private url: string;
+  private key: string;
+  /** Token de la sesión, para apuntar la analítica también al cerrar la pestaña (fetch con keepalive). */
+  private token: string | null = null;
 
   constructor(db: TasksDB) {
     this.db = db;
@@ -110,6 +114,9 @@ export class SyncClient {
     const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
     if (!url || !key) throw new Error('Falta la configuración de Supabase (.env: VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY).');
     this.supabase = createClient(url, key, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
+    this.url = url;
+    this.key = key;
+    this.supabase.auth.onAuthStateChange((_event, session) => { this.token = session?.access_token ?? null; });
   }
 
   // ---------- Estado para React ----------
@@ -274,9 +281,14 @@ export class SyncClient {
   // ---------- Analítica de uso (migración 009): la apunta la app; la leen solo los administradores ----------
 
   /** Sin aviso si falla (sin conexión, o sin la migración): la analítica nunca debe molestar al usar la app. */
-  logUsage = (kind: UsageKind, screen = '') => {
-    if (!this.state.user) return;
-    void this.supabase.rpc('log_usage', { p_kind: kind, p_screen: screen }).then(() => undefined, () => undefined);
+  logUsage = (kind: UsageKind, screen = '', name = '', detail = '', value: number | null = null) => {
+    if (!this.state.user || !this.token) return;
+    void fetch(`${this.url}/rest/v1/rpc/log_usage`, {
+      method: 'POST',
+      keepalive: true, // así llega aunque se cierre la pestaña
+      headers: { apikey: this.key, Authorization: `Bearer ${this.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_kind: kind, p_screen: screen, p_name: name, p_detail: detail, p_value: value }),
+    }).catch(() => undefined);
   };
   adminUsage = (from: string, to: string) => this.rpc<UsageReport>('admin_usage', { p_from: from, p_to: to });
 

@@ -21,6 +21,7 @@ import { RallyCreateForm, type RallyPrefill } from './RallyCreateForm';
 import { RallyRequestDialog } from './RallyRequestDialog';
 import { RallyDetailPanel } from './RallyDetailPanel';
 import { rallyApi } from './rallyApi';
+import { track, trackState } from '../usage/track';
 import { applyRallyStates } from './rallyStates';
 import { ValuesField } from './RallyPickers';
 
@@ -268,6 +269,9 @@ function RallyItems({ user, onDisconnect }: { user: string | null; onDisconnect:
   useWideLayout(true);
   const [storedColumns, setColumns] = usePersistentState<RallyColumns>('rally-columns', DEFAULT_COLUMNS);
   const cols = { ...DEFAULT_COLUMNS, ...storedColumns };
+  // Analítica: qué columnas tiene a la vista cada persona (la última elección cuenta).
+  const shownColumns = Object.entries(cols).filter(([, on]) => on).map(([k]) => k).sort().join(',');
+  useEffect(() => { trackState('rally-columns', shownColumns); }, [shownColumns]);
   const [storedWidths, setWidths] = usePersistentState<RallyWidths>('rally-widths', DEFAULT_WIDTHS);
   const widths = { ...DEFAULT_WIDTHS, ...storedWidths };
   const resize = (key: keyof RallyWidths, side: 'left' | 'right') => (
@@ -338,7 +342,11 @@ function RallyItems({ user, onDisconnect }: { user: string | null; onDisconnect:
     if (addToGestor) void add([it]);
     if (!keepOpen) show(it);
   };
-  const add = (list: RallyItem[]) => repo.batch(list.length === 1 ? `${list[0].id} añadida desde Rally` : `${list.length} añadidas desde Rally`, async () => {
+  const add = (list: RallyItem[], mode: 'one' | 'all' = 'one') => {
+    track('rally-add', `${mode}.${target ? 'project' : 'none'}`, list.length);
+    return addTasks(list);
+  };
+  const addTasks = (list: RallyItem[]) => repo.batch(list.length === 1 ? `${list[0].id} añadida desde Rally` : `${list.length} añadidas desde Rally`, async () => {
     for (const it of list) await repo.createTask(taskFromRally(it, itemTypes, target));
   });
 
@@ -349,11 +357,11 @@ function RallyItems({ user, onDisconnect }: { user: string | null; onDisconnect:
       subtitle={`Conectado como ${user ?? '—'}${loadedAt ? ` · actualizado ${loadedAt.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}` : ''}`}
       actions={(
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <RallySearch value={search} onChange={setSearch} shown={visible.length} onOpen={show} />
-          <ActionButton icon={<Plus className="size-4" />} onClick={() => { setPrefill(null); setCreating(!!rallyProjects); }}>Nuevo en Rally</ActionButton>
-          <ActionButton icon={<Wand2 className="size-4" />} onClick={() => setAsking(!!rallyProjects)}>Crear con petición</ActionButton>
-          <ActionButton icon={<RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} />} onClick={() => void load()}>Actualizar</ActionButton>
-          <button type="button" onClick={onDisconnect} title="Borra tu clave de Rally del servidor"
+          <RallySearch value={search} onChange={setSearch} shown={visible.length} onOpen={(it) => { track('rally-button', 'search'); show(it); }} />
+          <ActionButton icon={<Plus className="size-4" />} onClick={() => { track('rally-button', 'new'); setPrefill(null); setCreating(!!rallyProjects); }}>Nuevo en Rally</ActionButton>
+          <ActionButton icon={<Wand2 className="size-4" />} onClick={() => { track('rally-button', 'request'); setAsking(!!rallyProjects); }}>Crear con petición</ActionButton>
+          <ActionButton icon={<RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} />} onClick={() => { track('rally-button', 'refresh'); void load(); }}>Actualizar</ActionButton>
+          <button type="button" onClick={() => { track('rally-button', 'disconnect'); onDisconnect(); }} title="Borra tu clave de Rally del servidor"
             className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-zinc-400 hover:bg-zinc-100 hover:text-red-600 dark:hover:bg-zinc-800">
             <Unplug className="size-3.5" />Desconectar
           </button>
@@ -367,16 +375,16 @@ function RallyItems({ user, onDisconnect }: { user: string | null; onDisconnect:
         <div className="flex flex-wrap items-center gap-2 xl:flex-nowrap">
           <span className="text-xs font-semibold text-indigo-700 dark:text-indigo-300">Proyecto</span>
           {rallyProjects
-            ? <ProjectPicker projects={rallyProjects} selected={selected} onChange={setSelected} scope={scope} onScope={setScope} recent={recent} />
+            ? <ProjectPicker projects={rallyProjects} selected={selected} onChange={(ids) => { track('rally-button', 'project'); setSelected(ids); }} scope={scope} onScope={setScope} recent={recent} />
             : <span className="text-xs text-zinc-400">Cargando proyectos…</span>}
-          <button type="button" className={chipClass(!browsing)} onClick={() => { setSelected([]); setTags([]); }} title="Lo que tiene Assignee u Owner = tú">Asignado a mí</button>
+          <button type="button" className={chipClass(!browsing)} onClick={() => { track('rally-button', 'mine'); setSelected([]); setTags([]); }} title="Lo que tiene Assignee u Owner = tú">Asignado a mí</button>
           <span className="ml-2 text-xs font-semibold text-indigo-700 dark:text-indigo-300">Vista</span>
-          <select value={view.id} onChange={(e) => setViewId(e.target.value)} aria-label="Vista guardada" className={`${fieldClass} w-64 shrink-0`}>
+          <select value={view.id} onChange={(e) => { track('rally-button', 'view'); setViewId(e.target.value); }} aria-label="Vista guardada" className={`${fieldClass} w-64 shrink-0`}>
             {RALLY_VIEWS.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
           </select>
           <span className="ml-2 text-xs font-semibold text-indigo-700 dark:text-indigo-300">Etiquetas</span>
           <div className="min-w-64 flex-1">
-            <ValuesField title="Filtrar por etiquetas" value={tags} onChange={setTags} load={rallyApi.tags} recentKey="rally-recent-tags" />
+            <ValuesField title="Filtrar por etiquetas" value={tags} onChange={(t) => { track('rally-button', 'tags'); setTags(t); }} load={rallyApi.tags} recentKey="rally-recent-tags" />
           </div>
         </div>
         {/* Tipos, terminadas y agrupación. */}
@@ -384,14 +392,14 @@ function RallyItems({ user, onDisconnect }: { user: string | null; onDisconnect:
           {RALLY_KINDS.map(({ kind, label }) => {
             const on = kinds.includes(kind);
             return (
-              <button key={kind} type="button" title={label} onClick={() => setKinds(on ? kinds.filter((k) => k !== kind) : [...kinds, kind])}
+              <button key={kind} type="button" title={label} onClick={() => { track('rally-button', 'type'); setKinds(on ? kinds.filter((k) => k !== kind) : [...kinds, kind]); }}
                 className={`rounded-full border px-2.5 py-0.5 text-xs font-medium ${on ? 'border-indigo-500 bg-white text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300' : 'border-zinc-300 text-zinc-500 dark:border-zinc-600'}`}>
                 {kind} · {inView.filter((it) => it.kind === kind).length}
               </button>
             );
           })}
           <label className="ml-2 inline-flex items-center gap-1 text-xs text-zinc-600 dark:text-zinc-300">
-            <input type="checkbox" checked={hideDone} onChange={(e) => setHideDone(e.target.checked)} /> Ocultar terminadas
+            <input type="checkbox" checked={hideDone} onChange={(e) => { track('rally-button', 'hide-done'); setHideDone(e.target.checked); }} /> Ocultar terminadas
           </label>
         </div>
       </section>
@@ -406,7 +414,7 @@ function RallyItems({ user, onDisconnect }: { user: string | null; onDisconnect:
           <ProjectOptions />
         </select>
         {toAdd.length > 0 ? (
-          <ActionButton icon={<Plus className="size-4" />} onClick={() => void add(toAdd)}
+          <ActionButton icon={<Plus className="size-4" />} onClick={() => void add(toAdd, 'all')}
             title="Una tarea por cada elemento pendiente de la lista que aún no está en el gestor (se queda enlazada a Rally)">
             Crear {toAdd.length} {toAdd.length === 1 ? 'tarea' : 'tareas'}
           </ActionButton>
@@ -443,7 +451,7 @@ function RallyItems({ user, onDisconnect }: { user: string | null; onDisconnect:
           {/* Qué columnas se ven: aquí, en la cabecera de la lista. */}
           <span className="flex w-24 justify-end normal-case tracking-normal">
             <Popover align="right" width="w-64" trigger={(toggle, isOpen) => (
-              <button type="button" onClick={toggle} aria-expanded={isOpen}
+              <button type="button" onClick={() => { if (!isOpen) track('rally-button', 'columns'); toggle(); }} aria-expanded={isOpen}
                 className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2 py-0.5 text-xs text-zinc-600 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800">
                 <Columns3 className="size-3.5" />Columnas
               </button>
@@ -468,7 +476,7 @@ function RallyItems({ user, onDisconnect }: { user: string | null; onDisconnect:
             {g.items.map((it) => {
               const task = linkedTask(it, byId);
               return (
-                <li key={it.objectId} data-rally-row onClick={(e) => { if (!(e.target as HTMLElement).closest('a, button')) show(it); }}
+                <li key={it.objectId} data-rally-row onClick={(e) => { if (!(e.target as HTMLElement).closest('a, button')) { track('rally-button', 'open'); show(it); } }}
                   className={`-mx-2 flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/60 ${it.done ? 'opacity-60' : ''} ${open?.objectId === it.objectId ? 'bg-indigo-50 ring-1 ring-indigo-300 dark:bg-indigo-950/50 dark:ring-indigo-800' : ''}`}>
                   <span className="w-7 shrink-0 rounded px-1 text-center text-[10px] font-bold text-white" style={{ background: colorOf(it.kind) }}>{it.kind}</span>
                   <a href={it.url} target="_blank" rel="noreferrer" className="inline-flex shrink-0 items-center gap-0.5 truncate font-mono text-xs text-indigo-600 hover:underline" style={{ width: widths.id }} title="Abrir en Rally">

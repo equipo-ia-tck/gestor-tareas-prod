@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { track } from '../usage/track';
 import { Copy, MessageCircle, Share2, Video } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
 import { routeHref } from '../../app/router';
@@ -26,7 +27,7 @@ export function MeetingLink({ note }: { note: Note }) {
         placeholder="Pega el enlace de la reunión de Teams…"
         className="min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1.5 py-0.5 text-zinc-600 outline-none placeholder:text-zinc-400 hover:border-zinc-200 focus:border-indigo-500 dark:text-zinc-300 dark:hover:border-zinc-700" />
       {note.meeting_url && (
-        <a {...teamsLinkProps(note.meeting_url, teamsApp)}
+        <a {...teamsLinkProps(note.meeting_url, teamsApp)} onClick={() => track('meeting-join', 'notes')}
           className="flex shrink-0 items-center gap-1 rounded-md bg-[#5b5fc7] px-2.5 py-1 text-xs font-medium text-white hover:bg-[#4b4fb7]">
           <Video className="size-3.5" />Unirse
         </a>

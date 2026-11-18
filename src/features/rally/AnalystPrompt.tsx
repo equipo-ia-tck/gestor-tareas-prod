@@ -1,3 +1,4 @@
+import { track } from '../usage/track';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Check, Pencil, Search, UserRound } from 'lucide-react';
 import type { RallyRef } from '../../domain/rally';
@@ -29,10 +30,10 @@ const listeners = new Set<() => void>();
 const emit = () => { for (const l of listeners) l(); };
 
 export function askAnalyst(c: PendingComment): Promise<AnalystAnswer> {
-  return new Promise((resolve) => {
+  return new Promise<AnalystAnswer>((resolve) => {
     queue = [...queue, { ...c, resolve }];
     emit();
-  });
+  }).then((a) => { track('analyst', a === 'cancel' ? 'cancel' : a.analyst ? 'yes' : 'no'); return a; });
 }
 
 const subscribe = (l: () => void) => { listeners.add(l); return () => { listeners.delete(l); }; };

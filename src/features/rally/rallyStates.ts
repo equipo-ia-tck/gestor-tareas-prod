@@ -20,6 +20,9 @@ const pending = new Set<string>();
  */
 const fromRally = new WeakSet<HistoryEntry>();
 
+/** El cambio lo ha traído Rally (no lo ha hecho la persona): la analítica lo cuenta aparte. */
+export const cameFromRally = (entry: HistoryEntry) => applying || fromRally.has(entry);
+
 /**
  * Pone cada tarea enlazada con Rally en la categoría que tiene allí (Rally manda), en un solo "Deshacer". Con `items`
  * usa esos elementos (los que acaba de cargar la pantalla Rally); sin ellos, pide a Rally los de todas las tareas
