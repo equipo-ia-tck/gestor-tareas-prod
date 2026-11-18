@@ -854,6 +854,12 @@ ya usa.
   destacado; pulsar lleva a su tarjeta), **Por pantalla** (las mismas tarjetas de KPIs, con barras para porcentajes,
   personas y desgloses), **Personas** (solo Equipo: estado, barras y últimos 14 días) y **Día a día** (mapa de calor).
   Cálculos en `domain/usageDashboard.ts` (`screenRanking`, `activitySeries`, `adoption`, `percentOf`, `heatLevel`).
+  Un color por pantalla (`.scr-<pantalla>` con `--scr` en `index.css`, paleta categórica de ocho; el resto en gris).
+- **Periodo libre** (`domain/usageRange.ts`, `analytics-range`): atajos (7/30/90 días, esta semana, semana pasada, este mes,
+  mes pasado, 3/6/12 meses), una semana o un mes concretos, o de un día a otro (máx. 400 días atrás). Las flechas mueven el
+  periodo con su duración (meses enteros, mes a mes). Se pide también el periodo anterior de la misma duración y las cifras
+  del Resumen muestran la variación. La evolución se agrupa por día, semana o mes (`bucketSeries`, `analytics-granularity`;
+  por defecto según la duración).
 
 ### Más adelante
 

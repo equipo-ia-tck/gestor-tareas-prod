@@ -1,19 +1,24 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
-  Activity, BarChart3, CalendarDays, CalendarCheck, CheckSquare, Clock, Grid3x3, LayoutGrid, LogIn, MessageSquare, MousePointerClick,
-  NotebookPen, Plug, RefreshCw, User, UserRound, Users, type LucideIcon,
+  Activity, ArrowDownRight, ArrowUpRight, BarChart3, CalendarDays, CalendarCheck, CalendarRange, CheckSquare, ChevronDown, ChevronLeft,
+  ChevronRight, Clock, Grid3x3, LayoutGrid, LogIn, MessageSquare, MousePointerClick, NotebookPen, Plug, RefreshCw, User, UserRound, Users,
+  type LucideIcon,
 } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
 import { useWideLayout } from '../../app/Layout';
 import { sync, useSync } from '../../data/sync';
 import { addDays, formatDay } from '../../domain/dates';
 import { dailyUsage, screenLabel, summarizeUsers, usedScreens, type UsageReport, type UserSummary } from '../../domain/usage';
-import { activitySeries, adoption, heatLevel, percentOf, screenRanking, type DayPoint, type ScreenRank } from '../../domain/usageDashboard';
+import { activitySeries, adoption, heatLevel, percentOf, screenRanking, usersByDay, type DayPoint, type ScreenRank } from '../../domain/usageDashboard';
+import {
+  autoGranularity, bucketSeries, delta, isoWeekValue, MAX_DAYS_BACK, mondayOfIsoWeek, monthRange, PRESETS, previousRange, rangeDays, rangeLabel,
+  resolveRange, shiftRange, type Bucket, type Granularity, type UsageRange,
+} from '../../domain/usageRange';
+import { Popover } from '../../components/ui/Popover';
 import { formatSeconds, screenKpis, type Kpi, type KpiPart, type ScreenKpis } from '../../domain/usageKpis';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { ViewHeader } from '../views/ViewHeader';
 
-const PERIODS = [{ days: 7, label: '7 días' }, { days: 30, label: '30 días' }, { days: 90, label: '90 días' }];
 type Tab = 'summary' | 'screens' | 'people' | 'daily';
 const TABS: { id: Tab; label: string; icon: LucideIcon; team?: boolean }[] = [
   { id: 'summary', label: 'Resumen', icon: BarChart3 },
@@ -71,29 +76,50 @@ const HEAT = [
 export function UsageView() {
   const { isAdmin } = useSync();
   const { today } = useApp();
-  const [days, setDays] = usePersistentState('analytics-period', 30);
+  const [range, setRange] = usePersistentState<UsageRange>('analytics-range', { preset: '30d' });
   const [tab, setTab] = usePersistentState<Tab>('analytics-tab', 'summary');
   const [userId, setUserId] = useState<string | null>(null);
   const [report, setReport] = useState<UsageReport | null>(null);
+  const [prevReport, setPrevReport] = useState<UsageReport | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [jump, setJump] = useState<string | null>(null);
-  const from = addDays(today, -(days - 1));
+  const { from, to } = resolveRange(range, today);
+  const days = rangeDays(from, to);
+  const prev = previousRange(from, to);
   useWideLayout(true);
 
+  // El periodo elegido y el anterior de la misma duración (para comparar); si el anterior falla, se ve sin comparación.
   const load = useCallback(async () => {
     setError('');
     setLoading(true);
-    try { setReport(await sync().adminUsage(from, today)); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    try {
+      const [r, p] = await Promise.all([sync().adminUsage(from, to), sync().adminUsage(prev.from, prev.to).catch(() => null)]);
+      setReport(r);
+      setPrevReport(p);
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setLoading(false); }
-  }, [from, today]);
+  }, [from, to, prev.from, prev.to]);
   useEffect(() => { if (isAdmin) void load(); }, [isAdmin, load]);
 
   const people = useMemo(() => (report ? summarizeUsers(report) : []), [report]);
   const kpis = useMemo(() => (report ? screenKpis(report, userId ? [userId] : null) : []), [report, userId]);
-  const series = useMemo(() => (report ? activitySeries(report, from, today, userId) : []), [report, from, today, userId]);
+  const series = useMemo(() => (report ? activitySeries(report, from, to, userId) : []), [report, from, to, userId]);
+  const dayUsers = useMemo(() => (report ? usersByDay(report, userId) : new Map<string, Set<string>>()), [report, userId]);
+  const before = useMemo(() => {
+    if (!prevReport) return null;
+    const ps = summarizeUsers(prevReport).filter((p) => !userId || p.user.id === userId);
+    const s = activitySeries(prevReport, prev.from, prev.to, userId);
+    return {
+      sessions: ps.reduce((n, p) => n + p.sessions, 0),
+      screens: ps.reduce((n, p) => n + p.screens, 0),
+      active: ps.filter((p) => p.sessions || p.screens).length,
+      activeDays: s.filter((d) => d.sessions || d.people).length,
+      label: rangeLabel(prev.from, prev.to),
+    };
+  }, [prevReport, prev.from, prev.to, userId]);
   const ranking = useMemo(() => (report ? screenRanking(report, userId) : []), [report, userId]);
-  const daily = useMemo(() => (report ? dailyUsage(report, from, today, userId).filter((d) => d.sessions || Object.keys(d.screens).length) : []), [report, from, today, userId]);
+  const daily = useMemo(() => (report ? dailyUsage(report, from, to, userId).filter((d) => d.sessions || Object.keys(d.screens).length) : []), [report, from, to, userId]);
 
   // Al pulsar algo del Resumen se abre «Por pantalla» en su tarjeta.
   useEffect(() => {
@@ -127,9 +153,7 @@ export function UsageView() {
               </select>
             </label>
           </Segmented>
-          <Segmented>
-            {PERIODS.map((p) => <SegButton key={p.days} active={days === p.days} onClick={() => setDays(p.days)}>{p.label}</SegButton>)}
-          </Segmented>
+          <PeriodPicker range={range} from={from} to={to} today={today} onChange={setRange} />
           <button type="button" onClick={() => void load()} title="Actualizar"
             className="flex items-center gap-1 rounded-md border border-zinc-300 px-2.5 py-1 text-sm hover:bg-zinc-100 dark:border-zinc-600 dark:hover:bg-zinc-800">
             <RefreshCw className={`size-3.5 ${loading ? 'animate-spin' : ''}`} />Actualizar
@@ -158,11 +182,11 @@ export function UsageView() {
           </nav>
 
           {current === 'summary' && (
-            <Summary people={people} selected={selected} days={days} series={series} ranking={ranking} kpis={kpis}
+            <Summary people={people} selected={selected} days={days} series={series} dayUsers={dayUsers} before={before} ranking={ranking} kpis={kpis}
               onPerson={setUserId} onScreen={goScreen} />
           )}
           {current === 'screens' && <ScreensTab kpis={kpis} team={team} />}
-          {current === 'people' && team && <PeopleTab people={people} report={report} from={from} today={today} days={days} onPerson={setUserId} />}
+          {current === 'people' && team && <PeopleTab people={people} report={report} from={from} today={to} days={days} onPerson={setUserId} />}
           {current === 'daily' && <DailyTab daily={daily} today={today} />}
         </div>
       )}
@@ -172,8 +196,11 @@ export function UsageView() {
 
 // ───────────────────────────── Resumen ─────────────────────────────
 
-function Summary({ people, selected, days, series, ranking, kpis, onPerson, onScreen }: {
-  people: UserSummary[]; selected: UserSummary | null; days: number; series: DayPoint[]; ranking: ScreenRank[]; kpis: ScreenKpis[];
+type Before = { sessions: number; screens: number; active: number; activeDays: number; label: string } | null;
+
+function Summary({ people, selected, days, series, dayUsers, before, ranking, kpis, onPerson, onScreen }: {
+  people: UserSummary[]; selected: UserSummary | null; days: number; series: DayPoint[]; dayUsers: Map<string, Set<string>>; before: Before;
+  ranking: ScreenRank[]; kpis: ScreenKpis[];
   onPerson: (id: string) => void; onScreen: (id: string) => void;
 }) {
   const scope = selected ? [selected] : people;
@@ -181,6 +208,10 @@ function Summary({ people, selected, days, series, ranking, kpis, onPerson, onSc
   const screens = scope.reduce((n, p) => n + p.screens, 0);
   const ad = adoption(people);
   const activeDays = series.filter((d) => d.sessions || d.people).length;
+  const [granPref, setGranPref] = usePersistentState<Granularity | 'auto'>('analytics-granularity', 'auto');
+  const gran = granPref === 'auto' ? autoGranularity(days) : granPref;
+  const buckets = useMemo(() => bucketSeries(series, dayUsers, gran), [series, dayUsers, gran]);
+  const vs = (now: number, k: keyof NonNullable<Before>) => (before ? { pct: delta(now, before[k] as number), was: before[k] as number, label: before.label } : undefined);
 
   return (
     <div className="space-y-4">
@@ -189,23 +220,29 @@ function Summary({ people, selected, days, series, ranking, kpis, onPerson, onSc
           <Tile tone="emerald" icon={Clock} label="Última vez" value={when(selected.last)} small />
         ) : (
           <Tile tone="emerald" icon={Users} label="Personas activas" value={String(ad.active)} extra={` de ${ad.total}`}
-            bar={pct(ad.active, ad.total)} hint={`${pct(ad.active, ad.total)} % de las cuentas han entrado`} />
+            bar={pct(ad.active, ad.total)} hint={`${pct(ad.active, ad.total)} % de las cuentas han entrado`} vs={vs(ad.active, 'active')} />
         )}
-        <Tile tone="indigo" icon={LogIn} label="Entradas en la app" value={String(sessions)}
+        <Tile tone="indigo" icon={LogIn} label="Entradas en la app" value={String(sessions)} vs={vs(sessions, 'sessions')}
           hint={selected ? `${activeDays ? (sessions / activeDays).toFixed(1) : '0'} por día con uso` : `${ad.active ? (sessions / ad.active).toFixed(1) : '0'} por persona activa`} />
-        <Tile tone="sky" icon={MousePointerClick} label="Pantallas abiertas" value={String(screens)}
+        <Tile tone="sky" icon={MousePointerClick} label="Pantallas abiertas" value={String(screens)} vs={vs(screens, 'screens')}
           hint={sessions ? `${(screens / sessions).toFixed(1)} por entrada` : undefined} />
-        <Tile tone="violet" icon={CalendarDays} label="Días con uso" value={String(activeDays)} extra={` de ${days}`} bar={pct(activeDays, days)}
+        <Tile tone="violet" icon={CalendarDays} label="Días con uso" value={String(activeDays)} extra={` de ${days}`} bar={pct(activeDays, days)} vs={vs(activeDays, 'activeDays')}
           hint={selected ? 'días que ha entrado' : 'días que alguien ha entrado'} />
       </div>
 
       <div className="grid grid-cols-3 gap-3 max-lg:grid-cols-1">
         <div className={`${card} ${ACCENT.indigo} col-span-2 max-lg:col-span-1`}>
-          <div className="mb-3 flex items-baseline justify-between gap-2">
-            <h3 className={cardTitle}>Actividad diaria · entradas</h3>
-            <span className="text-xs text-zinc-400">Pasa el ratón por una barra para ver el día</span>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h3 className={cardTitle}>Evolución · entradas por {gran === 'day' ? 'día' : gran === 'week' ? 'semana' : 'mes'}</h3>
+            <Segmented>
+              {(['day', 'week', 'month'] as const).map((g) => (
+                <SegButton key={g} active={gran === g} onClick={() => setGranPref(g === autoGranularity(days) ? 'auto' : g)}>
+                  {g === 'day' ? 'Día' : g === 'week' ? 'Semana' : 'Mes'}
+                </SegButton>
+              ))}
+            </Segmented>
           </div>
-          <ActivityChart series={series} team={!selected} />
+          <ActivityChart buckets={buckets} team={!selected} gran={gran} />
         </div>
         {selected
           ? <PersonCard p={selected} ranking={ranking} />
@@ -226,32 +263,36 @@ function Summary({ people, selected, days, series, ranking, kpis, onPerson, onSc
   );
 }
 
-function ActivityChart({ series, team }: { series: DayPoint[]; team: boolean }) {
-  const max = Math.max(1, ...series.map((d) => d.sessions));
-  const total = series.reduce((n, d) => n + d.sessions, 0);
-  const labelEvery = series.length > 31 ? 14 : series.length > 10 ? 7 : 1;
+function ActivityChart({ buckets, team, gran }: { buckets: Bucket[]; team: boolean; gran: Granularity }) {
+  const max = Math.max(1, ...buckets.map((d) => d.sessions));
+  const total = buckets.reduce((n, d) => n + d.sessions, 0);
+  const labelEvery = Math.max(1, Math.ceil(buckets.length / 12));
+  const unit = gran === 'day' ? 'un día' : gran === 'week' ? 'una semana' : 'un mes';
   if (!total) return <Empty text="Sin entradas en este periodo." />;
   return (
     <div>
-      <div className="flex h-40 items-end gap-[2px] border-b border-zinc-200 dark:border-zinc-700" role="img"
-        aria-label={`Entradas por día: ${total} en total, máximo ${max} en un día`}>
-        {series.map((d) => (
-          <div key={d.day} className="group relative flex h-full flex-1 items-end justify-center">
-            <div className="w-full max-w-6 rounded-t-[4px] bg-indigo-500 transition-colors group-hover:bg-indigo-700 dark:bg-indigo-400 dark:group-hover:bg-indigo-300"
+      <div className="flex h-44 items-end gap-[2px] border-b border-zinc-200 dark:border-zinc-700" role="img"
+        aria-label={`Entradas: ${total} en total, máximo ${max} en ${unit}`}>
+        {buckets.map((d) => (
+          <div key={d.key} className="group relative flex h-full flex-1 items-end justify-center">
+            <div className={`w-full ${gran === 'day' ? 'max-w-6' : 'max-w-14'} rounded-t-[4px] bg-indigo-500 transition-colors group-hover:bg-indigo-700 dark:bg-indigo-400 dark:group-hover:bg-indigo-300`}
               style={{ height: `${(d.sessions / max) * 100}%`, minHeight: d.sessions ? 3 : 0 }} />
             <div className="pointer-events-none absolute bottom-full z-10 mb-1 hidden rounded-md bg-zinc-900 px-2 py-1 text-xs whitespace-nowrap text-white shadow group-hover:block dark:bg-zinc-100 dark:text-zinc-900">
-              <b className="capitalize">{weekday(d.day)} {shortDay(d.day)}</b><br />
+              <b className="capitalize">{gran === 'day' ? `${weekday(d.from)} ${shortDay(d.from)}` : d.from === d.to ? shortDay(d.from) : `${d.label} · ${shortDay(d.from)} – ${shortDay(d.to)}`}</b><br />
               {d.sessions} entradas{team && <> · {d.people} {d.people === 1 ? 'persona' : 'personas'}</>}
             </div>
           </div>
         ))}
       </div>
       <div className="mt-1 flex gap-[2px] text-[10px] text-zinc-400">
-        {series.map((d, i) => (
-          <span key={d.day} className="flex-1 text-center whitespace-nowrap">{(series.length - 1 - i) % labelEvery === 0 ? shortDay(d.day) : ''}</span>
+        {buckets.map((d, i) => (
+          <span key={d.key} className="flex-1 overflow-hidden text-center whitespace-nowrap">{(buckets.length - 1 - i) % labelEvery === 0 ? d.label : ''}</span>
         ))}
       </div>
-      <p className="mt-2 text-xs text-zinc-500">Máximo <b className="text-zinc-700 dark:text-zinc-200">{max}</b> entradas en un día · <b className="text-zinc-700 dark:text-zinc-200">{total}</b> en total</p>
+      <p className="mt-2 text-xs text-zinc-500">
+        Máximo <b className="text-zinc-700 dark:text-zinc-200">{max}</b> entradas en {unit} · <b className="text-zinc-700 dark:text-zinc-200">{total}</b> en total ·
+        pasa el ratón por una barra para ver el detalle
+      </p>
     </div>
   );
 }
@@ -500,7 +541,7 @@ function PeopleTab({ people, report, from, today, days, onPerson }: {
           <thead className="bg-zinc-50 dark:bg-zinc-800/60"><tr>
             <th className={th}>Persona</th><th className={th}>Estado</th><th className={`${th} min-w-40`}>Entradas</th>
             <th className={`${th} min-w-32`}>Días con uso</th><th className={`${th} text-right`}>Pantallas</th>
-            <th className={th}>La que más usa</th><th className={th}>Últimos 14 días</th><th className={th}>Última vez</th>
+            <th className={th}>La que más usa</th><th className={th}>Últimos 14 días del periodo</th><th className={th}>Última vez</th>
           </tr></thead>
           <tbody>
             {people.map((p) => {
@@ -613,8 +654,10 @@ function Cell({ value, cls, title, strong }: { value: number; cls: string; title
 
 // ───────────────────────────── Piezas ─────────────────────────────
 
-function Tile({ tone, icon: Icon, label, value, extra, hint, bar, small }: {
-  tone: Tone; icon: LucideIcon; label: string; value: string; extra?: string; hint?: string; bar?: number; small?: boolean;
+type Vs = { pct: number | null; was: number; label: string };
+
+function Tile({ tone, icon: Icon, label, value, extra, hint, bar, small, vs }: {
+  tone: Tone; icon: LucideIcon; label: string; value: string; extra?: string; hint?: string; bar?: number; small?: boolean; vs?: Vs;
 }) {
   return (
     <div className={`${card} ${ACCENT[tone]}`}>
@@ -627,6 +670,26 @@ function Tile({ tone, icon: Icon, label, value, extra, hint, bar, small }: {
       </div>
       {bar !== undefined && <div className="mt-2"><Bar value={bar} fill={TONE[tone].bar} /></div>}
       {hint && <div className="mt-1 text-xs text-zinc-400">{hint}</div>}
+      {vs && <Compare vs={vs} />}
+    </div>
+  );
+}
+
+/** Comparación con el periodo anterior: sube (verde), baja (rojo) o igual. */
+function Compare({ vs }: { vs: Vs }) {
+  const up = (vs.pct ?? 0) > 0;
+  const down = (vs.pct ?? 0) < 0;
+  const Icon = up ? ArrowUpRight : ArrowDownRight;
+  return (
+    <div className="mt-2 flex items-center gap-1.5 border-t border-zinc-100 pt-2 text-xs dark:border-zinc-800" title={`Periodo anterior: ${vs.label}`}>
+      {vs.pct === null
+        ? <span className="text-zinc-400">Antes: {vs.was}</span>
+        : <span className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 font-medium ${up
+            ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
+            : down ? 'bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300' : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300'}`}>
+            {(up || down) && <Icon className="size-3" />}{up ? '+' : ''}{vs.pct} %
+          </span>}
+      <span className="truncate text-zinc-400">vs. periodo anterior ({vs.was})</span>
     </div>
   );
 }
@@ -667,5 +730,92 @@ function SegButton({ active, onClick, children }: { active: boolean; onClick: ()
       className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-sm ${active ? 'bg-white font-medium shadow-sm dark:bg-zinc-900' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}`}>
       {children}
     </button>
+  );
+}
+
+// ───────────────────────────── Periodo ─────────────────────────────
+
+/**
+ * Elegir el periodo: atajos (días, semanas, meses), una semana o un mes concretos, o de un día a otro. Las flechas mueven el
+ * periodo hacia atrás o hacia delante con la misma duración (semana a semana, mes a mes…).
+ */
+function PeriodPicker({ range, from, to, today, onChange }: {
+  range: UsageRange; from: string; to: string; today: string; onChange: (r: UsageRange) => void;
+}) {
+  const [a, setA] = useState(from);
+  const [b, setB] = useState(to);
+  useEffect(() => { setA(from); setB(to); }, [from, to]);
+  const min = addDays(today, -MAX_DAYS_BACK);
+  const preset = 'preset' in range ? PRESETS.find((p) => p.id === range.preset) : undefined;
+  const back = shiftRange(from, to, -1);
+  const fwd = shiftRange(from, to, 1);
+  const canBack = back.to >= min;
+  const canFwd = to < today;
+  const arrow = 'grid size-7 place-items-center rounded-md text-zinc-500 hover:bg-white hover:text-zinc-900 disabled:opacity-30 disabled:hover:bg-transparent dark:hover:bg-zinc-900 dark:hover:text-zinc-100';
+  const input = 'rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-600 dark:bg-zinc-900';
+  const groups = [...new Set(PRESETS.map((p) => p.group))];
+
+  return (
+    <div className="inline-flex items-center rounded-lg bg-zinc-100 p-0.5 dark:bg-zinc-800">
+      <button type="button" className={arrow} disabled={!canBack} onClick={() => onChange(back)} title="Periodo anterior" aria-label="Periodo anterior">
+        <ChevronLeft className="size-4" />
+      </button>
+      <Popover width="w-[22rem]" align="right" trigger={(toggle, open) => (
+        <button type="button" onClick={toggle} aria-expanded={open}
+          className="flex items-center gap-1.5 rounded-md bg-white px-2.5 py-1 text-sm font-medium shadow-sm dark:bg-zinc-900">
+          <CalendarRange className="size-4 text-indigo-500" />
+          <span className="max-w-64 truncate">{preset ? preset.label : rangeLabel(from, to)}</span>
+          <ChevronDown className="size-3.5 text-zinc-400" />
+        </button>
+      )}>
+        {(close) => (
+          <div className="space-y-3 p-3 text-sm">
+            <p className="text-xs text-zinc-500">{rangeLabel(from, to)} · {rangeDays(from, to)} días</p>
+            {groups.map((g) => (
+              <div key={g}>
+                <p className="mb-1 text-[11px] font-semibold tracking-wide text-zinc-400 uppercase">{g}</p>
+                <div className="flex flex-wrap gap-1">
+                  {PRESETS.filter((p) => p.group === g).map((p) => (
+                    <button key={p.id} type="button" onClick={() => { onChange({ preset: p.id }); close(); }}
+                      className={`rounded-full border px-2.5 py-0.5 text-xs ${preset?.id === p.id
+                        ? 'border-indigo-500 bg-indigo-50 font-medium text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300'
+                        : 'border-zinc-200 hover:border-indigo-300 dark:border-zinc-700'}`}>
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+            <div className="grid grid-cols-2 gap-2 border-t border-zinc-100 pt-3 dark:border-zinc-800">
+              <label className="text-xs text-zinc-500">Una semana
+                <input type="week" className={`${input} mt-1 w-full`} value={isoWeekValue(from)}
+                  onChange={(e) => {
+                    const m = mondayOfIsoWeek(e.target.value);
+                    if (m && m <= today) { onChange({ from: m, to: addDays(m, 6) }); close(); }
+                  }} />
+              </label>
+              <label className="text-xs text-zinc-500">Un mes
+                <input type="month" className={`${input} mt-1 w-full`} value={from.slice(0, 7)} max={today.slice(0, 7)}
+                  onChange={(e) => { const r = monthRange(e.target.value); if (r && r.from <= today) { onChange(r); close(); } }} />
+              </label>
+            </div>
+            <form className="border-t border-zinc-100 pt-3 dark:border-zinc-800"
+              onSubmit={(e) => { e.preventDefault(); if (a && b) { onChange(a <= b ? { from: a, to: b } : { from: b, to: a }); close(); } }}>
+              <p className="mb-1 text-xs text-zinc-500">De un día a otro</p>
+              <div className="flex items-center gap-2">
+                <input type="date" className={`${input} min-w-0 flex-1`} value={a} min={min} max={today} onChange={(e) => setA(e.target.value)} aria-label="Desde" />
+                <span className="text-zinc-400">–</span>
+                <input type="date" className={`${input} min-w-0 flex-1`} value={b} min={min} max={today} onChange={(e) => setB(e.target.value)} aria-label="Hasta" />
+              </div>
+              <button type="submit" className="mt-2 w-full rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Aplicar</button>
+              <p className="mt-1.5 text-[11px] text-zinc-400">Hay datos desde que se activó la analítica, como mucho de los últimos {MAX_DAYS_BACK} días.</p>
+            </form>
+          </div>
+        )}
+      </Popover>
+      <button type="button" className={arrow} disabled={!canFwd} onClick={() => onChange(fwd)} title="Periodo siguiente" aria-label="Periodo siguiente">
+        <ChevronRight className="size-4" />
+      </button>
+    </div>
   );
 }

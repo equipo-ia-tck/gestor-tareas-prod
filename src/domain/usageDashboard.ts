@@ -68,3 +68,15 @@ export function heatLevel(value: number, max: number): 0 | 1 | 2 | 3 | 4 {
   if (value <= 0 || max <= 0) return 0;
   return Math.min(4, Math.max(1, Math.ceil((value / max) * 4))) as 1 | 2 | 3 | 4;
 }
+
+/** Personas distintas que usan la app cada día (para agrupar por semana o mes sin contar dos veces a nadie). */
+export function usersByDay(report: UsageReport, userId: string | null): Map<ISODate, Set<string>> {
+  const m = new Map<ISODate, Set<string>>();
+  for (const r of report.rows) {
+    if (userId && r.user !== userId) continue;
+    const s = m.get(r.day) ?? new Set<string>();
+    s.add(r.user);
+    m.set(r.day, s);
+  }
+  return m;
+}
