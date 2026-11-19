@@ -1,6 +1,9 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 import { ApiError } from './api.ts';
+import type { IcsAccount, IcsAccounts } from './icsExtra.ts';
 import type { RallyAccount, RallyAccounts } from './rallyAccounts.ts';
+
+const ICS_CONNECTOR = 'calendario-ics';
 
 type Fetch = typeof fetch;
 
@@ -39,6 +42,11 @@ export class SupabaseRallyAccounts implements RallyAccounts {
     this.token = token;
     this.secret = secret;
     this.fetch = fetchImpl;
+  }
+
+  /** Llamada a una función de Supabase con la sesión de la persona (también la usa `SupabaseIcsAccounts`). */
+  call(fn: string, args: Record<string, unknown>): Promise<unknown> {
+    return this.rpc(fn, args);
   }
 
   private async rpc(fn: string, args: Record<string, unknown>): Promise<unknown> {
@@ -80,5 +88,46 @@ export class SupabaseRallyAccounts implements RallyAccounts {
 
   async remove() {
     await this.rpc('delete_my_connector', { p_connector: 'rally' });
+  }
+}
+
+/**
+ * Enlace ICS del otro calendario (p. ej. La Caixa) en `connector_accounts` (conector `calendario-ics`, migración 012),
+ * cifrado como la clave de Rally: el enlace da acceso al calendario.
+ */
+export class SupabaseIcsAccounts implements IcsAccounts {
+  private rally: SupabaseRallyAccounts;
+  private secret: string;
+
+  constructor(config: { url: string; key: string }, token: string, secret: string, fetchImpl: Fetch = fetch) {
+    this.rally = new SupabaseRallyAccounts(config, token, secret, fetchImpl);
+    this.secret = secret;
+  }
+
+  private rpc(fn: string, args: Record<string, unknown>) {
+    return this.rally.call(fn, args).catch((e: unknown) => {
+      if (e instanceof ApiError && e.status === 502) {
+        throw new ApiError(503, 'Falta preparar la base de datos para el otro calendario (migración 012).');
+      }
+      throw e;
+    });
+  }
+
+  async get(): Promise<IcsAccount | undefined> {
+    const row = await this.rpc('my_connector', { p_connector: ICS_CONNECTOR }) as { secret: string; info: { name?: string } } | null;
+    if (!row?.secret) return undefined;
+    try {
+      return { url: decrypt(row.secret, this.secret), name: String(row.info?.name ?? 'Otro calendario') };
+    } catch {
+      return undefined; // cifrado con otro secreto: hay que volver a conectarlo
+    }
+  }
+
+  async set(_userId: string, a: IcsAccount) {
+    await this.rpc('set_my_connector', { p_connector: ICS_CONNECTOR, p_secret: encrypt(a.url, this.secret), p_info: { name: a.name } });
+  }
+
+  async remove() {
+    await this.rpc('delete_my_connector', { p_connector: ICS_CONNECTOR });
   }
 }

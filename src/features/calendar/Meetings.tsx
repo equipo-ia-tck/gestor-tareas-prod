@@ -8,7 +8,7 @@ import { repo } from '../../data/services';
 import type { CalendarEvent } from '../../domain/ics';
 import { teamsLinkProps, useTeamsApp } from '../../hooks/useTeamsApp';
 import { createMeetingNote, meetingNoteFor } from '../notes/IcsImport';
-import { connectOutlook, disconnectOutlook, hasCalendar, isPendingMeeting, removePendingMeeting, linkOutlookFile, loadOutlook, unlinkOutlookFile, uploadTokenApi, useOutlook } from './outlook';
+import { connectExtra, connectOutlook, disconnectExtra, disconnectOutlook, EXTRA_COLOR, hasCalendar, hasExtra, isPendingMeeting, removePendingMeeting, linkOutlookFile, loadOutlook, unlinkOutlookFile, uploadTokenApi, useOutlook } from './outlook';
 
 export const timeRange = (e: CalendarEvent) => (e.time ? `${e.time}${e.end ? `–${e.end}` : ''}` : 'Todo el día');
 
@@ -19,11 +19,12 @@ export function MeetingItem({ event, compact }: { event: CalendarEvent; compact?
       <button
         type="button"
         onClick={toggle}
-        title={`${timeRange(event)} · ${event.title}`}
+        title={`${timeRange(event)} · ${event.title}${event.calendar ? ` · ${event.calendar}` : ''}`}
         className={`flex w-full items-center gap-1.5 truncate rounded text-left hover:bg-violet-100 dark:hover:bg-violet-950
           ${compact ? 'px-1 py-0.5 text-[11px]' : 'px-2 py-1 text-sm'} ${open ? 'bg-violet-100 dark:bg-violet-950' : ''}`}
       >
-        <span className={`shrink-0 rounded-sm bg-violet-500 ${compact ? 'h-3 w-0.5' : 'h-4 w-1'}`} />
+        <span className={`shrink-0 rounded-sm ${event.calendar ? '' : 'bg-violet-500'} ${compact ? 'h-3 w-0.5' : 'h-4 w-1'}`}
+          style={event.calendar ? { background: EXTRA_COLOR } : undefined} />
         <span className={`shrink-0 tabular-nums text-violet-700 dark:text-violet-300 ${compact ? '' : 'w-24 text-xs'}`}>
           {compact ? event.time ?? '' : timeRange(event)}
         </span>
@@ -56,6 +57,11 @@ export function MeetingDetails({ event, close }: { event: CalendarEvent; close: 
   return (
     <div className="p-2">
       <p className="font-semibold leading-snug">{event.title}</p>
+      {event.calendar && (
+        <p className="mt-0.5 flex items-center gap-1 text-xs text-zinc-500">
+          <span className="size-2 rounded-sm" style={{ background: EXTRA_COLOR }} />Calendario {event.calendar}
+        </p>
+      )}
       <p className="mt-0.5 flex items-center gap-1 text-xs text-zinc-500">
         <CalendarClock className="size-3.5" />
         {new Date(`${event.date}T12:00`).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })} · {timeRange(event)}
@@ -104,9 +110,10 @@ export function MeetingDetails({ event, close }: { event: CalendarEvent; close: 
 
 /** En la cabecera del Calendario: mostrar u ocultar reuniones y refrescarlas, o el enlace para conectar Outlook. */
 export function OutlookControls({ show, setShow }: { show: boolean; setShow: (v: boolean) => void }) {
-  const { status, loading, error, at } = useOutlook();
+  const outlook = useOutlook();
+  const { status, loading, error, at } = outlook;
   if (!status) return null;
-  if (!hasCalendar(status)) {
+  if (!hasCalendar(status) && !hasExtra(outlook)) {
     return (
       <a href={routeHref({ view: 'settings' })} className="mr-2 inline-flex items-center gap-1 text-xs text-violet-600 hover:underline dark:text-violet-400">
         <CalendarClock className="size-3.5" />Conectar Outlook
@@ -136,6 +143,7 @@ export function OutlookSettings() {
   return (
     <div className="space-y-5 text-sm">
       <UploadSettings />
+      <ExtraSettings />
       {server ? (
         <>
           <FlowSettings />
@@ -359,6 +367,79 @@ function IcsSettings() {
           {formError && <p className="mt-2 rounded-md bg-red-50 px-2 py-1 text-xs text-red-700 dark:bg-red-950 dark:text-red-300">{formError}</p>}
         </form>
       )}
+    </section>
+  );
+}
+
+/**
+ * Otro calendario por su enlace ICS (p. ej. el de La Caixa, que trae los títulos): sale junto al de Outlook, en verde.
+ * Funciona también en la app publicada: el enlace se guarda cifrado y nunca vuelve al navegador.
+ */
+function ExtraSettings() {
+  const { extra, extraIcs, extraError, loading } = useOutlook();
+  const [name, setName] = useState('La Caixa');
+  const [url, setUrl] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  const run = async (fn: () => Promise<void>) => {
+    setBusy(true);
+    setFormError(null);
+    try { await fn(); } catch (e) { setFormError((e as Error).message); } finally { setBusy(false); }
+  };
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!url.trim()) return;
+    await run(async () => {
+      await connectExtra(url, name);
+      track('calendar-extra-connect');
+      setUrl('');
+    });
+  }
+  const count = extraIcs ? (extraIcs.match(/BEGIN:VEVENT/gi) ?? []).length : null;
+
+  return (
+    <section>
+      <h3 className="flex items-center gap-1.5 font-medium">
+        <span className="size-2.5 rounded-sm" style={{ background: EXTRA_COLOR }} />Otro calendario <span className="font-normal text-zinc-500">(enlace ICS, p. ej. La Caixa)</span>
+      </h3>
+      {extra?.connected ? (
+        <>
+          <p className="mt-1 text-zinc-600 dark:text-zinc-400">
+            <b>{extra.name}</b> conectado ({extra.host}). Sus reuniones salen en verde junto a las de Outlook y se actualizan cada 5 minutos.
+            {count !== null && ` ${count} reuniones cercanas.`}
+          </p>
+          {extraError && <p className="mt-2 rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-800 dark:bg-amber-950 dark:text-amber-300">{extraError}</p>}
+          <div className="mt-2 flex gap-2">
+            <button type="button" onClick={() => void loadOutlook(true)} disabled={loading}
+              className="rounded-md border border-zinc-300 px-3 py-1 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:hover:bg-zinc-800">
+              {loading ? 'Actualizando…' : 'Actualizar ahora'}
+            </button>
+            <button type="button" onClick={() => void run(disconnectExtra)} disabled={busy}
+              className="rounded-md px-3 py-1 text-red-600 hover:bg-red-50 dark:hover:bg-red-950">Quitar</button>
+          </div>
+        </>
+      ) : (
+        <form onSubmit={(e) => void submit(e)}>
+          <p className="mt-1 mb-2 text-zinc-600 dark:text-zinc-400">
+            Pega el enlace <b>ICS</b> del calendario publicado (en su Outlook web: Configuración → Calendario → Calendarios
+            compartidos → Publicar un calendario → «Puede ver todos los detalles» → enlace ICS). Solo tú ves sus reuniones; el
+            enlace se guarda cifrado y no vuelve al navegador.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nombre" maxLength={40}
+              className="w-32 rounded-md border border-zinc-300 bg-white px-2 py-1 outline-none focus:border-indigo-500 dark:border-zinc-600 dark:bg-zinc-900" />
+            <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://outlook.office365.com/owa/calendar/…/calendar.ics"
+              className="min-w-0 flex-1 rounded-md border border-zinc-300 bg-white px-2 py-1 outline-none focus:border-indigo-500 dark:border-zinc-600 dark:bg-zinc-900" />
+            <button type="submit" disabled={busy || !url.trim()}
+              className="rounded-md bg-indigo-600 px-3 py-1 font-medium text-white hover:bg-indigo-500 disabled:opacity-40">
+              {busy ? 'Comprobando…' : 'Conectar'}
+            </button>
+          </div>
+          {extraError && !formError && <p className="mt-2 text-xs text-zinc-500">{extraError}</p>}
+        </form>
+      )}
+      {formError && <p className="mt-2 rounded-md bg-red-50 px-2 py-1 text-xs text-red-700 dark:bg-red-950 dark:text-red-300">{formError}</p>}
     </section>
   );
 }

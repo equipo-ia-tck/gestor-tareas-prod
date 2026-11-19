@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
  * Prueba la base de datos de Supabase (supabase/migrations) en un Postgres de verdad (PGlite), imitando
  * lo mínimo de Supabase: roles anon/authenticated y auth.uid()/auth.email() de la sesión.
  */
-const MIGRATION = ['001_equipo.sql', '002_baja_y_contrasenas.sql', '003_alta_sin_invitacion.sql', '004_claves_conectores.sql', '005_calendario_subido.sql', '006_feedback.sql', '007_feedback_formulario.sql', '008_feedback_bloqueado.sql', '009_analitica.sql', '010_analitica_kpis.sql', '011_rally_herramienta.sql'].map((f) => readFileSync(`supabase/migrations/${f}`, 'utf8')).join('\n');
+const MIGRATION = ['001_equipo.sql', '002_baja_y_contrasenas.sql', '003_alta_sin_invitacion.sql', '004_claves_conectores.sql', '005_calendario_subido.sql', '006_feedback.sql', '007_feedback_formulario.sql', '008_feedback_bloqueado.sql', '009_analitica.sql', '010_analitica_kpis.sql', '011_rally_herramienta.sql', '012_calendario_ics.sql'].map((f) => readFileSync(`supabase/migrations/${f}`, 'utf8')).join('\n');
 let db: PGlite;
 
 const SUPABASE_STUB = `
@@ -214,6 +214,11 @@ describe('base de datos del equipo en Supabase', () => {
     await expect(as(ana, 'select * from connector_accounts')).rejects.toThrow();
     await rpc(ana, 'delete_my_connector', { p_connector: 'rally' });
     expect(await rpc(marta, 'my_connector', { p_connector: 'rally' })).not.toBeNull();
+    // 012: el enlace del otro calendario (cifrado) va en la misma tabla; otros conectores no.
+    await rpc(marta, 'set_my_connector', { p_connector: 'calendario-ics', p_secret: 'v1:enlace', p_info: { name: 'La Caixa' } });
+    expect(await rpc(marta, 'my_connector', { p_connector: 'calendario-ics' })).toEqual({ secret: 'v1:enlace', info: { name: 'La Caixa' } });
+    expect(await rpc(ana, 'my_connector', { p_connector: 'calendario-ics' })).toBeNull();
+    await expect(rpc(marta, 'set_my_connector', { p_connector: 'otro', p_secret: 'x', p_info: {} })).rejects.toThrow();
   });
 
   it('calendario subido: con la clave de subida, sin sesión, y cada uno solo ve lo suyo', async () => {

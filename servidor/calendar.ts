@@ -71,6 +71,22 @@ export function normalizeIcsUrl(raw: unknown): string {
   return url.toString();
 }
 
+/** Descarga un .ics publicado y comprueba que es un calendario. */
+export async function downloadIcs(fetcher: Fetch, url: string): Promise<string> {
+  let res: Response;
+  try {
+    res = await fetcher(url, { headers: { Accept: 'text/calendar, text/plain, */*' }, redirect: 'follow' });
+  } catch {
+    throw new ApiError(502, 'No se puede descargar el calendario. Revisa la conexión y el enlace.');
+  }
+  if (res.status === 404 || res.status === 410) throw new ApiError(400, 'El enlace ya no existe: vuelve a publicar el calendario en Outlook y pega el nuevo.');
+  if (!res.ok) throw new ApiError(502, `Outlook ha respondido con un error (${res.status}).`);
+  const text = await res.text();
+  if (text.length > MAX_BYTES) throw new ApiError(502, 'El calendario es demasiado grande.');
+  if (!/BEGIN:VCALENDAR/i.test(text)) throw new ApiError(400, 'Ese enlace no devuelve un calendario. Copia el enlace ICS, no el HTML.');
+  return text;
+}
+
 export class Calendar {
   private db: DatabaseSync;
   private fetch: Fetch;
@@ -146,19 +162,8 @@ export class Calendar {
     return { events: this.fileCache.events, updatedAt: new Date(mtime).toISOString() };
   }
 
-  private async download(url: string): Promise<string> {
-    let res: Response;
-    try {
-      res = await this.fetch(url, { headers: { Accept: 'text/calendar, text/plain, */*' }, redirect: 'follow' });
-    } catch {
-      throw new ApiError(502, 'No se puede descargar el calendario. Revisa la conexión y el enlace.');
-    }
-    if (res.status === 404 || res.status === 410) throw new ApiError(400, 'El enlace ya no existe: vuelve a publicar el calendario en Outlook y pega el nuevo.');
-    if (!res.ok) throw new ApiError(502, `Outlook ha respondido con un error (${res.status}).`);
-    const text = await res.text();
-    if (text.length > MAX_BYTES) throw new ApiError(502, 'El calendario es demasiado grande.');
-    if (!/BEGIN:VCALENDAR/i.test(text)) throw new ApiError(400, 'Ese enlace no devuelve un calendario. Copia el enlace ICS, no el HTML.');
-    return text;
+  private download(url: string): Promise<string> {
+    return downloadIcs(this.fetch, url);
   }
 
   /** Comprueba que el enlace devuelve un calendario y lo guarda. */

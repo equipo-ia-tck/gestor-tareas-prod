@@ -946,6 +946,24 @@ Marca en `~/Downloads/marea-brand` (manual, `marea.css`, `tokens.json`, logos). 
   lo anterior al primer apunte (con 5 min de margen) cuenta, salvo con «Contar solo desde que se mide»; lista de cambios leídos para comprobar. Por tipo, por semana y por persona de Rally («Tiene cuenta»
   compara el nombre con las cuentas).
 
+## Fase 33: otro calendario por enlace ICS (rama `dev`, nov 2026)
+
+Petición de la usuaria: ver en el gestor el calendario de La Caixa (su enlace ICS publicado sí trae los títulos) junto al
+de Outlook de WPP, también en la app publicada.
+
+- **Servidor** (`servidor/icsExtra.ts`): `IcsExtra` descarga el .ics (`downloadIcs`, compartida con `calendar.ts`), lo
+  recorta con `trimIcs` (−45/+120 días; las recurrentes y sus excepciones siempre, y las zonas horarias) para no pasar el
+  límite de respuesta de Vercel, y lo devuelve con su nombre. Rutas `icsExtraRoute` (`/api/calendario-extra`, `connect`
+  con `url` y `name`, `disconnect`, `ics`), iguales en el Mac (`SqliteIcsAccounts`, tabla `ics_extra_accounts`) y en
+  Vercel (`api/calendario-extra.ts` + rewrite en `vercel.json`; `SupabaseIcsAccounts`: enlace cifrado con `RALLY_SECRET`
+  en `connector_accounts`, conector `calendario-ics`). El enlace nunca vuelve al navegador.
+- **Supabase**: `012_calendario_ics.sql` (después de 001 a 011) solo amplía el check de `connector_accounts.connector`.
+- **App** (`features/calendar/outlook.ts`): `loadOutlook` carga también el otro calendario (`loadExtra`, en el `finally`:
+  un fallo no afecta a Outlook). `useMeetings` mezcla sus reuniones con `calendar: <nombre>` y uid `extra:…`. Salen en
+  verde (`EXTRA_COLOR`) en la agenda, la lista y el mes, con su interruptor en «Mis calendarios» (`calendar-extra`) y
+  «Calendario X» en la ficha. Ajustes → Calendario de Outlook → «Otro calendario» (`ExtraSettings`): nombre y enlace.
+  Un solo calendario extra por persona.
+
 ### Más adelante
 
 - **Electron**: la app es web estática con rutas por hash y datos en IndexedDB, así que se puede empaquetar sin cambios

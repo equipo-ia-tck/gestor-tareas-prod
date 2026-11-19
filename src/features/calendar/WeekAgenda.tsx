@@ -11,7 +11,7 @@ import { useTaskActions } from '../../hooks/useTaskActions';
 import { dropHighlight, setDraggedTasks, useTaskDrop } from '../../hooks/useTaskDrop';
 import { MeetingDetails, timeRange } from './Meetings';
 import { NewMeeting } from './NewMeeting';
-import { isPendingMeeting } from './outlook';
+import { EXTRA_COLOR, isPendingMeeting } from './outlook';
 
 /** Alto de una hora en la agenda (px): como Teams, una reunión de 30 minutos cabe en una línea holgada. */
 const HOUR = 80;
@@ -24,11 +24,16 @@ const eventRange = (e: CalendarEvent) => {
 
 /** Barra de color de la izquierda: lisa si está ocupado, rayada si es provisional (como Outlook). */
 function barStyle(e: CalendarEvent): CSSProperties {
-  if (e.showAs === 'tentative') return { backgroundImage: 'repeating-linear-gradient(135deg, #2E6BE6 0 3px, transparent 3px 6px)' };
-  if (e.showAs === 'free') return { background: 'transparent', boxShadow: 'inset 0 0 0 1px #2E6BE6' };
+  // Outlook en el azul de Marea; el otro calendario (La Caixa…), en verde.
+  const color = e.calendar ? EXTRA_COLOR : '#2E6BE6';
+  if (e.showAs === 'tentative') return { backgroundImage: `repeating-linear-gradient(135deg, ${color} 0 3px, transparent 3px 6px)` };
+  if (e.showAs === 'free') return { background: 'transparent', boxShadow: `inset 0 0 0 1px ${color}` };
   if (e.showAs === 'oof') return { background: '#c026d3' };
-  return { background: '#2E6BE6' }; // reuniones en el azul de Marea
+  return { background: color };
 }
+
+/** Fondo de la tarjeta: violeta para Outlook, verde para el otro calendario. */
+const cardBg = (e: CalendarEvent) => (e.calendar ? 'bg-emerald-50 dark:bg-emerald-950' : 'bg-violet-100 dark:bg-violet-950');
 
 /**
  * Agenda por horas como en Teams (Día, Semana laboral o Semana): una columna por día y las reuniones colocadas a su
@@ -131,9 +136,9 @@ export function WeekAgenda({ days, tasksByDay, meetings, showTasks }: {
                       <button
                         type="button"
                         onClick={toggle}
-                        title={`${timeRange(e)} · ${e.title}${e.organizer ? ` · ${e.organizer.name}` : ''}`}
+                        title={`${timeRange(e)} · ${e.title}${e.organizer ? ` · ${e.organizer.name}` : ''}${e.calendar ? ` · ${e.calendar}` : ''}`}
                         className={`flex h-full w-full overflow-hidden rounded-md text-left text-xs shadow-sm ring-violet-400 hover:brightness-95
-                          ${pending ? 'border border-dashed border-violet-400 bg-white/80 dark:bg-zinc-900/80' : e.showAs === 'free' ? 'bg-white dark:bg-zinc-900' : 'bg-violet-100 dark:bg-violet-950'}
+                          ${pending ? 'border border-dashed border-violet-400 bg-white/80 dark:bg-zinc-900/80' : e.showAs === 'free' ? 'bg-white dark:bg-zinc-900' : cardBg(e)}
                           ${open ? 'ring-2' : ''} ${d < today ? 'opacity-70' : ''}`}
                       >
                         <span className="w-1 shrink-0" style={barStyle(e)} />
@@ -176,7 +181,7 @@ function DayTasks({ day, tasks, allDay }: { day: ISODate; tasks: Task[]; allDay:
     <div {...dropProps} className={`min-h-9 space-y-0.5 border-l border-zinc-200 p-1 dark:border-zinc-800 ${over ? dropHighlight : ''}`}>
       {allDay.map((e) => (
         <Popover key={e.uid} width="w-80" className="block" trigger={(toggle) => (
-          <button type="button" onClick={toggle} className="flex w-full items-center gap-1 truncate rounded bg-violet-100 px-1.5 py-0.5 text-left text-[11px] font-medium dark:bg-violet-950">
+          <button type="button" onClick={toggle} className={`flex w-full items-center gap-1 truncate rounded px-1.5 py-0.5 text-left text-[11px] font-medium ${cardBg(e)}`}>
             <span className="h-3 w-0.5 shrink-0" style={barStyle(e)} />
             <span className="truncate">{e.title}</span>
           </button>

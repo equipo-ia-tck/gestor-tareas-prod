@@ -1,5 +1,8 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "rewrites": [{ "source": "/api/rally/:route*", "destination": "/api/rally?route=:route*" }],
-  "functions": { "api/rally.ts": { "maxDuration": 120 } }
+  "rewrites": [
+    { "source": "/api/rally/:route*", "destination": "/api/rally?route=:route*" },
+    { "source": "/api/calendario-extra/:route*", "destination": "/api/calendario-extra?route=:route*" }
+  ],
+  "functions": { "api/rally.ts": { "maxDuration": 120 }, "api/calendario-extra.ts": { "maxDuration": 30 } }
 }

@@ -19,6 +19,8 @@ export interface CalendarEvent {
   url: string | null;
   /** Cómo se muestra en Outlook: ocupado, provisional (sin confirmar), libre o fuera de la oficina. */
   showAs: 'busy' | 'tentative' | 'free' | 'oof';
+  /** Nombre del otro calendario (p. ej. «La Caixa») si no es el de Outlook; sale con otro color. */
+  calendar?: string;
 }
 
 interface Prop { name: string; params: Record<string, string>; value: string }

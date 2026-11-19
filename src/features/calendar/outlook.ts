@@ -19,6 +19,19 @@ export interface CalendarStatus {
 /** Hay alguna fuente de reuniones: el archivo del flujo, las subidas a Supabase o el enlace ICS. */
 export const hasCalendar = (s: CalendarStatus | null) => !!s && (s.connected || s.file.linked || !!s.cloud);
 
+/** Otro calendario por enlace ICS (p. ej. La Caixa): funciona en el servidor del Mac y en Vercel. */
+export interface ExtraStatus { connected: boolean; name: string | null; host: string | null }
+
+/** Color de las reuniones del otro calendario (verde de Marea), distinto del azul de Outlook. */
+export const EXTRA_COLOR = '#1F7A5C';
+
+export const extraApi = {
+  status: () => call<ExtraStatus>('GET', '/api/calendario-extra'),
+  connect: (url: string, name: string) => call<ExtraStatus>('POST', '/api/calendario-extra/connect', { url, name }),
+  disconnect: () => call<ExtraStatus>('POST', '/api/calendario-extra/disconnect', {}),
+  ics: () => call<{ name: string; ics: string }>('GET', '/api/calendario-extra/ics'),
+};
+
 /** Sin servidor local (p. ej. en Vercel): ninguna fuente del servidor. */
 const NO_SERVER: CalendarStatus = { connected: false, host: null, file: { linked: false, found: false } };
 
@@ -86,10 +99,14 @@ interface OutlookState {
   error: string | null;
   /** Hora de la última descarga correcta. */
   at: number | null;
+  /** El otro calendario (null si no se ha podido consultar) y su .ics recortado. */
+  extra: ExtraStatus | null;
+  extraIcs: string | null;
+  extraError: string | null;
 }
 
 /** Estado compartido por todas las vistas: una sola descarga para Semana, Mes y Ajustes. */
-let state: OutlookState = { status: null, ics: null, events: null, fileAt: null, cloud: null, server: false, loading: false, error: null, at: null };
+let state: OutlookState = { status: null, ics: null, events: null, fileAt: null, cloud: null, server: false, loading: false, error: null, at: null, extra: null, extraIcs: null, extraError: null };
 const listeners = new Set<() => void>();
 const set = (patch: Partial<OutlookState>) => {
   state = { ...state, ...patch };
@@ -129,12 +146,43 @@ export function loadOutlook(fresh = false): Promise<void> {
     } catch (e) {
       set({ error: (e as Error).message });
     } finally {
+      await loadExtra();
       set({ loading: false });
       inflight = null;
     }
   })();
   return inflight;
 }
+
+/** El otro calendario: si está conectado, su .ics (un fallo no afecta a las reuniones de Outlook). */
+async function loadExtra() {
+  let extra: ExtraStatus | null = null;
+  try {
+    extra = await extraApi.status();
+  } catch (e) {
+    set({ extra: null, extraIcs: null, extraError: (e as Error).message });
+    return;
+  }
+  if (!extra.connected) { set({ extra, extraIcs: null, extraError: null }); return; }
+  try {
+    const r = await extraApi.ics();
+    set({ extra: { ...extra, name: r.name }, extraIcs: r.ics, extraError: null, at: Date.now() });
+  } catch (e) {
+    set({ extra, extraError: (e as Error).message });
+  }
+}
+
+export async function connectExtra(url: string, name: string) {
+  set({ extra: await extraApi.connect(url, name) });
+  await loadOutlook(true);
+}
+
+export async function disconnectExtra() {
+  set({ extra: await extraApi.disconnect(), extraIcs: null, extraError: null });
+}
+
+/** Hay otro calendario conectado. */
+export const hasExtra = (s: OutlookState) => !!s.extra?.connected;
 
 export async function connectOutlook(url: string) {
   const status = await calendarApi.connect(url);
@@ -220,8 +268,9 @@ const subscribe = (l: () => void) => {
   // Con alguien mirando: primera carga y después cada 5 minutos y al volver a la ventana.
   if (listeners.size === 1) {
     if (!state.status && !inflight) void loadOutlook();
-    const timer = setInterval(() => { if (hasCalendar(state.status)) void loadOutlook(); }, EVERY_MS);
-    const onFocus = () => { if (hasCalendar(state.status) && Date.now() - (state.at ?? 0) > 60_000) void loadOutlook(); };
+    const any = () => hasCalendar(state.status) || hasExtra(state);
+    const timer = setInterval(() => { if (any()) void loadOutlook(); }, EVERY_MS);
+    const onFocus = () => { if (any() && Date.now() - (state.at ?? 0) > 60_000) void loadOutlook(); };
     window.addEventListener('focus', onFocus);
     stop = () => { clearInterval(timer); window.removeEventListener('focus', onFocus); };
   }
@@ -240,7 +289,7 @@ export function useMeetings(from: ISODate, to: ISODate): Map<ISODate, CalendarEv
   // `state` cambia también al añadir o quitar pendientes (`set({})`), así se recalcula.
   const snapshot = useOutlook();
   return useMemo(() => {
-    const { ics, events } = snapshot;
+    const { ics, events, extraIcs, extra } = snapshot;
     const byDay = new Map<ISODate, CalendarEvent[]>();
     let list: CalendarEvent[] = [];
     try {
@@ -248,9 +297,16 @@ export function useMeetings(from: ISODate, to: ISODate): Map<ISODate, CalendarEv
     } catch {
       // Un .ics raro no debe romper el calendario.
     }
+    let others: CalendarEvent[] = [];
+    try {
+      const name = extra?.name ?? 'Otro calendario';
+      others = extraIcs ? parseIcs(extraIcs, from, to).map((e) => ({ ...e, uid: `extra:${e.uid}`, calendar: name })) : [];
+    } catch {
+      // Igual con el otro calendario.
+    }
     // Las pendientes, mientras no llegue la de verdad (al llegar, `prunePending` las borra).
     const waiting = pending.filter((p) => Date.now() - p.createdAt < PENDING_MS && p.date >= from && p.date <= to && !list.some((e) => sameMeeting(e, p)));
-    for (const e of [...list, ...waiting]) byDay.set(e.date, [...(byDay.get(e.date) ?? []), e]);
+    for (const e of [...list, ...others, ...waiting]) byDay.set(e.date, [...(byDay.get(e.date) ?? []), e]);
     return byDay;
   }, [snapshot, from, to]);
 }

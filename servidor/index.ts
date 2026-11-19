@@ -9,6 +9,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { ApiError } from './api.ts';
 import { bearerOf, SupabaseAuth, supabaseConfig } from './auth.ts';
 import { Calendar } from './calendar.ts';
+import { IcsExtra, icsExtraRoute, SqliteIcsAccounts } from './icsExtra.ts';
 import { Rally } from './rally.ts';
 import { rallyRoute } from './rallyRoutes.ts';
 
@@ -23,6 +24,7 @@ const db = new DatabaseSync(join(DATA, 'equipo.sqlite'));
 const auth = new SupabaseAuth(supabaseConfig(ROOT));
 const rally = new Rally(db);
 const calendar = new Calendar(db);
+const icsExtra = new IcsExtra(new SqliteIcsAccounts(db));
 
 const TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -58,6 +60,9 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
   if (!user) throw new ApiError(401, 'Inicia sesión.');
   if (url.pathname === '/api/rally' || url.pathname.startsWith('/api/rally/')) {
     return send(res, 200, await rallyRoute(rally, user, req.method ?? 'GET', url.pathname, url.searchParams, () => readJson(req)));
+  }
+  if (url.pathname === '/api/calendario-extra' || url.pathname.startsWith('/api/calendario-extra/')) {
+    return send(res, 200, await icsExtraRoute(icsExtra, user, req.method ?? 'GET', url.pathname, () => readJson(req)));
   }
   switch (route) {
     case 'GET /api/calendar':

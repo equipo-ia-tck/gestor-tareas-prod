@@ -17,7 +17,7 @@ import { dropHighlight, setDraggedTasks, useTaskDrop } from '../../hooks/useTask
 import { useCommandCenter } from '../command/CommandCenter';
 import { WeekView } from '../views/WeekView';
 import { MeetingItem } from './Meetings';
-import { hasCalendar, loadOutlook, useMeetings, useOutlook } from './outlook';
+import { EXTRA_COLOR, hasCalendar, hasExtra, loadOutlook, useMeetings, useOutlook } from './outlook';
 import { WeekAgenda } from './WeekAgenda';
 
 const WEEKDAYS = ['lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom'];
@@ -81,8 +81,14 @@ export function CalendarView({ initial }: { initial?: 'week' | 'month' }) {
   const days = visibleDays(mode, cursor);
   const grid = monthGrid(cursor);
   const [from, to] = mode === 'month' ? [grid[0][0], grid[grid.length - 1][6]] : [days[0], days[days.length - 1]];
+  const [showExtra, setShowExtra] = usePersistentState('calendar-extra', true);
   const allMeetings = useMeetings(from, to);
-  const meetings = showMeetings ? allMeetings : new Map<ISODate, CalendarEvent[]>();
+  // Cada calendario con su interruptor: Outlook (sin `calendar`) y el otro (La Caixa…).
+  const meetings = new Map<ISODate, CalendarEvent[]>();
+  for (const [day, list] of allMeetings) {
+    const shown = list.filter((e) => (e.calendar ? showExtra : showMeetings));
+    if (shown.length) meetings.set(day, shown);
+  }
 
   // Tareas de cada día: las pendientes con esa fecha y, si se pide, las completadas (tachadas).
   const tasksOn = (day: ISODate): Task[] => [
@@ -93,6 +99,7 @@ export function CalendarView({ initial }: { initial?: 'week' | 'month' }) {
 
   const step = (dir: 1 | -1) => setCursor(mode === 'month' ? addMonths(cursor, dir) : addDays(cursor, mode === 'day' ? dir : dir * 7));
   const connected = hasCalendar(outlook.status);
+  const extra = hasExtra(outlook) ? outlook.extra : null;
 
   return (
     <div className="flex h-full overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
@@ -109,6 +116,7 @@ export function CalendarView({ initial }: { initial?: 'week' | 'month' }) {
                 <Plus className="size-4" />Conectar Outlook
               </a>
             )}
+            {extra && <Toggle checked={showExtra} onChange={setShowExtra} color={EXTRA_COLOR} label={extra.name ?? 'Otro calendario'} />}
             <Toggle checked={showTasks} onChange={setShowTasks} color="#244B98" label="Tareas" />
             {showTasks && <Toggle checked={showDone} onChange={setShowDone} color="#a1a1aa" label="Completadas" indent />}
           </section>
@@ -137,7 +145,7 @@ export function CalendarView({ initial }: { initial?: 'week' | 'month' }) {
           )}
 
           <span className="ml-auto flex items-center gap-1">
-            {connected && showMeetings && (
+            {((connected && showMeetings) || (extra && showExtra)) && (
               <IconButton label={outlook.error ?? 'Actualizar reuniones'} onClick={() => void loadOutlook(true)}>
                 <RefreshCw className={`size-4 ${outlook.loading ? 'animate-spin' : ''} ${outlook.error ? 'text-amber-600' : ''}`} />
               </IconButton>
