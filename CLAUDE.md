@@ -522,6 +522,19 @@ Petición de la usuaria (oct 2026): traer Rally al gestor sin tocar el resto (en
   (`MOVE_COMMENTS.accepted`); volver atrás no comenta. Con el lápiz (y en Need Review) se puede pulsar la mención del Owner y
   buscar en Rally a otra persona en su lugar (`OwnerMention` en `UserSearch.tsx`; `owner` en `move-comment` y `need-review`); si el comentario falla, el movimiento se mantiene y el aviso lo dice. New → Defined: pasar en el gestor a un
   estado de Por hacer que no sea el primero (Refinada, Diseñado) manda `todo` y el servidor lo lleva a Defined si está en New.
+- **Comentarios distintos para US y TS** (rama `mensajes-us-ts`, nov 2026; textos en `domain/rallyComments.ts`, compartido
+  por la app y el servidor): las US hablan de la guía y los TS de la validación (`TS_MOVE_COMMENTS`: «TS definida correctamente»,
+  «Se comienza a trabajar en la validación solicitada», «TS bloqueada», y en Accepted «…se entrega la validación y se da por
+  Accepted la TS. Gracias!»). `commentShape(tipo, paso)` dice cómo es la ventana: a quién va la primera mención (`owner`, con
+  lápiz; `analyst` en TS a Completed y al quitar Ready, con el mismo comentario opcional «Tengo la validación hecha por si la
+  quieres revisar antes de la entrega» y sin reunión; `po-it` en TS a Need Review, elegido a mano, no el Owner), si es opcional
+  («Mover sin comentar» / «Sin comentario»), si se espera analista y si se propone en el CC a todos los ya mencionados (TS a
+  Accepted: `move` con `dryRun` devuelve `mentioned`, leído de su discusión, y `commentStep`). Quitar Ready en una US: «Tengo la
+  guía validada…». **CC en todas las ventanas** (`CommentPeople.tsx`: `AddresseeRow`, `CcRow`): la última línea es «CC: @X @Y»
+  (sustituye a «Analista:»), con el analista (marcar o no; el último elegido a un clic) y «+ Mencionar a alguien más». Las
+  personas que faltan se avisan en ámbar, pero nunca impiden publicar (en Need Review siguen siendo obligatorios defecto,
+  comentario y motivo). `move-comment` y `need-review` aceptan `cc` (`{ ref }` o `{ uuid }`), `owner` y `noOwner`; `analyst`
+  de la versión anterior se suma al CC.
 - **Ready y Blocked** (`RallyFlags`, `POST /api/rally/flag`): botones en la ficha de Rally (pantalla Rally y panel de la tarea)
   que solo cambian esas marcas, nunca la columna. Blocked abre la misma ventana que mover a Bloqueado (comentario con el PO,
   lápiz y analista; cerrar no cambia nada) y su texto va a BlockedReason; desbloquear borra el motivo. Para que la marca no

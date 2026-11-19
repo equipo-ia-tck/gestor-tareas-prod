@@ -1,13 +1,18 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Bug, Search, X } from 'lucide-react';
-import type { RallyPick, RallyRef } from '../../domain/rally';
-import { lastAnalyst, rememberAnalyst } from './AnalystPrompt';
+import type { RallyCc, RallyPick, RallyRef } from '../../domain/rally';
+import { commentShape } from '../../domain/rallyComments';
+import { rememberAnalyst } from './AnalystPrompt';
+import { AddresseeRow, CcRow, MissingPeople, ccOf, initialPeople, missingPeople, type CommentPeopleValue } from './CommentPeople';
 import { rallyApi } from './rallyApi';
 import { Dialog } from './RallyPickers';
-import { AnalystSearch, OwnerMention, box, row, useSearch } from './UserSearch';
+import { box, row, useSearch } from './UserSearch';
 
-/** Lo que se ha rellenado en la ventana (todo obligatorio) o `cancel` si se cierra. */
-export type NeedReviewAnswer = { defect: RallyPick; text: string; analyst: RallyRef; reason: string; owner: RallyRef | null } | 'cancel';
+/**
+ * Lo que se ha rellenado en la ventana o `cancel` si se cierra. Defecto, comentario y motivo son obligatorios; las
+ * personas (PO IT y analista) se piden, pero no impiden seguir.
+ */
+export type NeedReviewAnswer = { defect: RallyPick; text: string; reason: string; owner: RallyRef | null; noOwner: boolean; cc: RallyCc[] } | 'cancel';
 
 interface Pending {
   /** FormattedID del TS. */
@@ -39,23 +44,25 @@ function answer(a: NeedReviewAnswer) {
   head.resolve(a);
 }
 
+const SHAPE = commentShape('TS', 'need-review');
+
 /**
- * TS a Need Review: primero el comentario («@PO se abre defect <enlace>…» + «Analista: @X», con buscador de defectos de
- * Rally que pone el enlace solo) y después el motivo del bloqueo (de entrada, el ID del defecto; solo va a BlockedReason,
- * no a la discusión). Todo es
- * obligatorio y se hace a la vez al final; cerrar en cualquier paso cancela todo.
+ * TS a Need Review: primero el comentario («@PO IT se abre defect <enlace>…» + «CC: @Analista…», con buscador de defectos
+ * de Rally que pone el enlace solo; el PO IT se elige a mano, no es el Owner) y después el motivo del bloqueo (de entrada,
+ * el ID del defecto; solo va a BlockedReason, no a la discusión). Defecto, comentario y motivo son obligatorios; si falta
+ * el PO IT o el analista se avisa, pero se puede seguir. Se hace todo a la vez al final; cerrar en cualquier paso cancela.
  */
 export function NeedReviewPrompt() {
   const pending = useSyncExternalStore(subscribe, current);
   const [step, setStep] = useState<'message' | 'reason'>('message');
   const [defect, setDefect] = useState<RallyPick | null>(null);
   const [text, setText] = useState(needReviewText(DEFECT_HOLE));
-  const [analyst, setAnalyst] = useState<RallyRef | null>(null);
   const [reason, setReason] = useState('');
-  /** Persona mencionada en lugar del Owner (null = el Owner). */
-  const [owner, setOwner] = useState<RallyRef | null>(null);
+  /** PO IT (Para) y CC (analista y más). */
+  const [people, setPeople] = useState<CommentPeopleValue>({ to: null, analyst: null, others: [] });
   useEffect(() => {
-    setStep('message'); setDefect(null); setText(needReviewText(DEFECT_HOLE)); setAnalyst(lastAnalyst()); setReason(''); setOwner(null);
+    setStep('message'); setDefect(null); setText(needReviewText(DEFECT_HOLE)); setReason('');
+    setPeople(initialPeople(SHAPE.addressee, SHAPE.analystExpected));
   }, [pending]);
   if (!pending) return null;
 
@@ -67,11 +74,12 @@ export function NeedReviewPrompt() {
     setReason((r) => (!r.trim() || r.trim() === defect?.id ? d?.id ?? '' : r));
     setDefect(d);
   };
-  const canNext = !!defect && !!analyst && !!text.trim() && !text.includes(DEFECT_HOLE);
+  const canNext = !!defect && !!text.trim() && !text.includes(DEFECT_HOLE);
+  const missing = missingPeople(SHAPE.addressee, SHAPE.analystExpected, pending.owner, people);
   const accept = () => {
     if (!canNext || !reason.trim()) return;
-    rememberAnalyst(analyst!);
-    answer({ defect: defect!, text: text.trim(), analyst: analyst!, reason: reason.trim(), owner });
+    if (people.analyst) rememberAnalyst(people.analyst);
+    answer({ defect: defect!, text: text.trim(), reason: reason.trim(), owner: people.to, noOwner: !people.to, cc: ccOf(people) });
   };
   const label = 'mb-0.5 block text-xs font-bold tracking-wide text-zinc-600 uppercase dark:text-zinc-300';
 
@@ -83,20 +91,19 @@ export function NeedReviewPrompt() {
           <div><span className={label}>Defecto</span><DefectSearch value={defect} onChange={chooseDefect} /></div>
           <div>
             <span className={label}>Comentario en la discusión</span>
-            <div className="rounded-md border border-zinc-300 bg-white p-2 dark:border-zinc-600 dark:bg-zinc-800">
-              <OwnerMention owner={pending.owner} value={owner} onChange={setOwner} />
+            <div className="space-y-2 rounded-md border border-zinc-300 bg-white p-2 dark:border-zinc-600 dark:bg-zinc-800">
+              <AddresseeRow addressee={SHAPE.addressee} owner={pending.owner} value={people} onChange={setPeople} />
               <textarea value={text} onChange={(e) => setText(e.target.value)} rows={4} aria-label="Comentario"
-                className="mt-1 w-full resize-y rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900" />
-              <p className="text-xs"><span className="text-zinc-500">Analista: </span>
-                {analyst ? <b className="text-indigo-700 dark:text-indigo-300">@{analyst.name}</b> : <span className="text-zinc-400">(elígelo abajo)</span>}</p>
+                className="w-full resize-y rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900" />
+              <CcRow addressee={SHAPE.addressee} analystExpected={SHAPE.analystExpected} value={people} onChange={setPeople} />
+              <MissingPeople items={missing} />
             </div>
           </div>
-          <div><span className={label}>Analista</span><AnalystSearch value={analyst} onChange={setAnalyst} /></div>
           <div className="flex justify-end">
             <button type="button" disabled={!canNext} onClick={() => setStep('reason')}
               className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-40">Siguiente: motivo del bloqueo</button>
           </div>
-          {!canNext && <p className="text-right text-xs text-zinc-400">Hace falta el defecto, el analista y el comentario.</p>}
+          {!canNext && <p className="text-right text-xs text-zinc-400">Hace falta el defecto y el comentario.</p>}
         </div>
       ) : (
         <div className="space-y-3">
