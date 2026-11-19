@@ -36,8 +36,9 @@ export function RallyMessage({ item, task, onClose, onPosted, onConfirm }: {
   onClose: () => void;
   onPosted: (message: string) => void;
   /**
-   * Marca Ready en Rally: antes de publicar el mensaje o con «Sin mensaje». Sin él, la ventana solo prepara y publica el
-   * mensaje («Preparar mensaje» del panel de una tarea enlazada).
+   * Marca Ready en Rally: antes de publicar el mensaje o con «Sin mensaje». En los TS, solo después de publicarlo (y sin
+   * «Sin mensaje»): si el mensaje no sale, Ready no se marca. Sin `onConfirm`, la ventana solo prepara y publica el mensaje
+   * («Preparar mensaje» del panel de una tarea enlazada).
    */
   onConfirm?: () => Promise<void>;
 }) {
@@ -96,14 +97,26 @@ export function RallyMessage({ item, task, onClose, onPosted, onConfirm }: {
   const unlinked = unlinkedMentions(text, mentions).length > 0;
   const canPublish = !!text.trim() && !busy && missing.length === 0 && !leftovers && !unpicked.length && !unlinked;
 
+  // TS: Ready solo si el mensaje se publica (primero el mensaje y, si sale bien, Ready; sin «Sin mensaje»).
+  const messageFirst = item.kind === 'TS';
   const publish = async () => {
     if (!canPublish) return;
     setBusy(true);
     setError(null);
     try {
-      await onConfirm?.();
+      if (!messageFirst) await onConfirm?.();
       const r = await rallyApi.message(item.id, text, tagged);
-      onPosted(`Mensaje publicado en ${item.id}${r.mentioned.length ? ` · etiquetados: ${r.mentioned.join(', ')}` : ''}`);
+      const posted = `Mensaje publicado en ${item.id}${r.mentioned.length ? ` · etiquetados: ${r.mentioned.join(', ')}` : ''}`;
+      if (messageFirst && onConfirm) {
+        try {
+          await onConfirm();
+        } catch (e) {
+          onPosted(`${posted}, pero no se ha podido marcar Ready: ${(e as Error).message}`);
+          onClose();
+          return;
+        }
+      }
+      onPosted(posted);
       onClose();
     } catch (e) {
       setError((e as Error).message);
@@ -125,7 +138,9 @@ export function RallyMessage({ item, task, onClose, onPosted, onConfirm }: {
       <div className="min-h-0 space-y-2 overflow-y-auto">
         <p className="text-xs text-zinc-500">
           {item.id} · {item.name} · {onConfirm
-            ? 'Ready se marca al publicar (o con «Sin mensaje»); si cierras con la cruz, no se marca'
+            ? messageFirst
+              ? 'En los TS, Ready solo se marca si se publica el mensaje; si cierras o falla, no se marca'
+              : 'Ready se marca al publicar (o con «Sin mensaje»); si cierras con la cruz, no se marca'
             : 'Se publica en la discusión de Rally y las personas elegidas reciben el aviso por correo'}
         </p>
         {options.length > 1 && (
@@ -182,7 +197,7 @@ export function RallyMessage({ item, task, onClose, onPosted, onConfirm }: {
         {error && <p className="text-xs text-red-600">{error}</p>}
       </div>
       <div className="mt-3 flex items-center justify-end gap-2">
-        {onConfirm && <button type="button" disabled={busy} onClick={() => {
+        {onConfirm && !messageFirst && <button type="button" disabled={busy} onClick={() => {
           setBusy(true);
           setError(null);
           onConfirm().then(onClose, (e: Error) => { setError(e.message); setBusy(false); });
