@@ -15,7 +15,8 @@ import { RallyMessage } from './RallyMessage';
  * al aceptar marca Blocked con ese texto como motivo y lo publica en la discusión. Cerrar la ventana no cambia nada.
  * Marcar Ready abre antes «Mensaje» (`RallyMessage`: plantillas y personas de Rally etiquetadas); Ready se marca al publicar o con «Sin mensaje», y cerrar con la cruz no lo marca
  * (Esc o clic fuera tampoco). Quitar Ready abre la ventana de los movimientos (`askComment`): en una US, «Tengo la guía
- * validada…» para el Owner; en un TS, el mismo comentario opcional que al pasar a Completed, para el analista.
+ * validada…» para el Owner, y Ready solo se quita si se envía (si se cierra, sigue marcado; si el comentario falla, se
+ * vuelve a marcar); en un TS, el mismo comentario opcional que al pasar a Completed, para el analista.
  */
 export function RallyFlags({ item, task, reason, onChanged }: {
   item: RallyItem;
@@ -47,6 +48,26 @@ export function RallyFlags({ item, task, reason, onChanged }: {
   const toggleReady = () => run(async () => {
     // Marcar Ready: primero el mensaje; Ready se marca al publicar o con «Sin mensaje» (la cruz no marca nada).
     if (!item.ready) { setMessage(item); return null; }
+    // US: Ready solo se quita si se envía el comentario. Primero la ventana; si se cierra, Ready no se toca; si el
+    // comentario falla después de quitarlo, Ready se vuelve a marcar solo.
+    if (item.kind === 'US') {
+      const answer = await askComment({ id: item.id, name: item.name, text: unreadyText(item.kind), owner: item.owner,
+        shape: commentShape(item.kind, 'unready'),
+        closeHint: 'Ready solo se quita si envías el comentario. Si cierras esta ventana, Ready se queda marcado.' });
+      if (answer === 'cancel' || answer === 'skip') { setNote('Ready sigue marcado: no se ha enviado el comentario.'); return null; }
+      const unready = await rallyApi.flag(item.id, { ready: false });
+      try {
+        const r = await rallyApi.moveComment(item.id, answer.text, answer);
+        setNote(`Ready quitado y comentado en ${item.id}${r.owner ? ` para ${r.owner}` : ''}${r.cc.length ? ` · CC ${r.cc.join(', ')}` : ''}`);
+        return unready;
+      } catch (e) {
+        const back = await rallyApi.flag(item.id, { ready: true }).catch(() => null);
+        setNote(back
+          ? `No se ha podido comentar (${(e as Error).message}), así que Ready se ha vuelto a marcar.`
+          : `No se ha podido comentar ni volver a marcar Ready: márcalo a mano en Rally. ${(e as Error).message}`);
+        return back ?? unready;
+      }
+    }
     const updated = await rallyApi.flag(item.id, { ready: false });
     if (updated.ready) setMessage(updated);
     else if (item.ready) {
