@@ -201,7 +201,7 @@ export function UsageView() {
           {current === 'screens' && <ScreensTab kpis={kpis} team={team} />}
           {current === 'people' && team && <PeopleTab people={people} report={report} from={from} today={to} days={days} onPerson={setUserId} />}
           {current === 'daily' && <DailyTab daily={daily} today={today} />}
-          {current === 'rally' && team && <RallyToolTab from={from} to={to} users={report.users} onlyPeople={!!picked} />}
+          {current === 'rally' && team && <RallyToolTab from={from} to={to} users={fullReport?.users ?? report.users} />}
         </div>
       )}
     </>
@@ -859,7 +859,7 @@ function AnalyticsPeople({ all, picked, onChange }: { all: UsageUser[]; picked: 
     )}>
       {() => (
         <div className="p-2 text-sm">
-          <p className="mb-2 text-xs text-zinc-500">Solo se cuentan las personas marcadas, en todas las pestañas (también en Rally).</p>
+          <p className="mb-2 text-xs text-zinc-500">Solo se cuentan las personas marcadas (en la pestaña de Rally se eligen aparte, por su nombre en Rally).</p>
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar persona…" aria-label="Buscar persona" autoFocus
             className="mb-2 w-full rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm outline-none focus:border-indigo-500 dark:border-zinc-600 dark:bg-zinc-900" />
           <div className="mb-2 flex gap-2 text-xs">

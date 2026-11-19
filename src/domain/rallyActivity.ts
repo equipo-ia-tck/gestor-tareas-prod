@@ -130,3 +130,26 @@ export function summarizeActivity(changes: RallyChange[], fromTool: boolean[], s
     before,
   };
 }
+
+/** Clave de una persona para comparar nombres de Rally y de cuentas: sin tildes, mayúsculas, guiones ni espacios. */
+export const personKey = (name: string) => name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z]/g, '');
+
+/** Los cambios hechos por las personas elegidas (null = todos), con su marca de herramienta. */
+export function changesBy(changes: RallyChange[], fromTool: boolean[], people: string[] | null): { changes: RallyChange[]; fromTool: boolean[] } {
+  if (!people) return { changes, fromTool };
+  const keep = new Set(people.map(personKey));
+  const idx = changes.map((c, i) => (keep.has(personKey(c.user)) ? i : -1)).filter((i) => i >= 0);
+  return { changes: idx.map((i) => changes[i]), fromTool: idx.map((i) => fromTool[i]) };
+}
+
+/** Personas de Rally que han hecho cambios, con cuántos (más cambios primero). */
+export function rallyPeople(changes: RallyChange[]): { name: string; count: number }[] {
+  const by = new Map<string, { name: string; count: number }>();
+  for (const c of changes) {
+    const k = personKey(c.user);
+    const e = by.get(k) ?? { name: c.user, count: 0 };
+    e.count++;
+    by.set(k, e);
+  }
+  return [...by.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'es'));
+}

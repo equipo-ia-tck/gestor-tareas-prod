@@ -870,7 +870,10 @@ ya usa.
   subproyectos) y una tarjeta por subproyecto.
 - **Personas analizadas** (Más → Analítica, botón «Personas»): `settings.analytics_people` (ids de cuenta; null = todas, sin
   migración) se guarda en los ajustes de quien mira, no en el código (el repositorio es público). `restrictReport` deja solo
-  esas cuentas en todas las pestañas; en «Rally: herramienta o Rally» solo cuentan los cambios hechos por ellas (por nombre).
+  esas cuentas en las pestañas de uso. **«Rally: herramienta o Rally»** tiene su propio botón «Personas de Rally»
+  (`settings.analytics_rally_people`, nombres de Rally; null = todas): lista quien ha hecho cambios en el periodo y cuenta solo
+  los suyos (`changesBy`), tengan o no cuenta. Los nombres se comparan con `personKey` (sin tildes, guiones ni espacios), también
+  en «Tiene cuenta».
 
 ## Fase 32: analítica de uso (rama `dev`, nov 2026)
 

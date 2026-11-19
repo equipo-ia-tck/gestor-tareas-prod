@@ -55,3 +55,15 @@ describe('Rally: herramienta o Rally', () => {
     expect(s).toMatchObject({ before: 0, total: { tool: 1, rally: 0 } });
   });
 });
+
+describe('personas de Rally en la analítica', async () => {
+  const { changesBy, personKey, rallyPeople } = await import('../src/domain/rallyActivity');
+  it('compara nombres sin tildes, guiones ni mayúsculas y filtra los cambios de las elegidas', () => {
+    expect(personKey('Marta García-Vallaure')).toBe(personKey('marta garcia vallaure'));
+    const changes = [ch('flow', 'US1', '2026-11-17T10:00:00Z', 'Lucas Solari'), ch('comment', 'US2', '2026-11-17T11:00:00Z', 'Raúl Blanco'),
+      ch('ready', 'US3', '2026-11-17T12:00:00Z', 'Raul Blanco')];
+    expect(changesBy(changes, [false, true, false], null).changes).toHaveLength(3);
+    expect(changesBy(changes, [false, true, false], ['raul blanco'])).toEqual({ changes: changes.slice(1), fromTool: [true, false] });
+    expect(rallyPeople(changes)).toEqual([{ name: 'Raúl Blanco', count: 2 }, { name: 'Lucas Solari', count: 1 }]);
+  });
+});
