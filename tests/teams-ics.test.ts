@@ -150,6 +150,10 @@ it('teamsWebUrl: abre la reunión en Teams web sin lanzar la app', () => {
   expect(web.searchParams.get('msLaunch')).toBe('false');
   expect(web.searchParams.get('suppressPrompt')).toBe('true');
   expect(web.searchParams.get('type')).toBe('meetup-join');
+  const short = new URL(teamsWebUrl('https://teams.microsoft.com/meet/3477372698?p=AbCdEf'));
+  expect(short.searchParams.get('url')).toBe('/_#/meet/3477372698?p=AbCdEf');
+  expect(short.searchParams.get('type')).toBe('meet');
+  expect(short.searchParams.get('msLaunch')).toBe('false');
   expect(teamsWebUrl('https://teams.live.com/meet/123')).toBe('https://teams.live.com/meet/123');
   expect(teamsWebUrl('https://zoom.us/j/1')).toBe('https://zoom.us/j/1');
 });

@@ -961,7 +961,7 @@ de Outlook de WPP, también en la app publicada.
 - **App** (`features/calendar/outlook.ts`): `loadOutlook` carga también el otro calendario (`loadExtra`, en el `finally`:
   un fallo no afecta a Outlook). `useMeetings` mezcla sus reuniones con `calendar: <nombre>` y uid `extra:…`. Salen en
   verde (`EXTRA_COLOR`) en la agenda, la lista y el mes, con su interruptor en «Mis calendarios» (`calendar-extra`) y
-  «Calendario X» en la ficha; su «Unirse en el navegador» abre siempre Teams web con `teamsWebUrl` (launcher con `msLaunch=false`, para que la página de Teams no lance la app, que va con la cuenta de WPP). Ajustes → Calendario de Outlook → «Otro calendario» (`ExtraSettings`): nombre y enlace.
+  «Calendario X» en la ficha; su «Unirse en el navegador» abre siempre Teams web con `teamsWebUrl` (launcher con `msLaunch=false`, para enlaces `/l/meetup-join/` y los cortos `/meet/`, que traen casi todas; para que la página de Teams no lance la app, que va con la cuenta de WPP). Ajustes → Calendario de Outlook → «Otro calendario» (`ExtraSettings`): nombre y enlace.
   Un solo calendario extra por persona.
 
 ### Más adelante
