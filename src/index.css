@@ -1,13 +1,71 @@
+/* Marca Marea (variables y componentes mr-), antes que los estilos de la app. */
+@import "./styles/marea.css";
 @import "tailwindcss";
+
+/*
+ * Rebranding Marea sin tocar los componentes: las escalas de Tailwind que usa toda la app se apoyan en los colores de la
+ * marca. `indigo` (el color principal de la app) es ahora el azul `marc` (#1B2B4B) con sus tintes; `zinc` (los grises)
+ * son los neutros de Marea (surface, surface-alt, line, line-strong, ink-muted y los fondos del tema oscuro). Los pasos
+ * intermedios se mezclan a partir de esos colores, sin tonos nuevos.
+ */
+@theme {
+  --font-sans: Inter, ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+
+  --color-indigo-50: color-mix(in oklab, #1B2B4B 5%, #FFFFFF);
+  --color-indigo-100: color-mix(in oklab, #1B2B4B 10%, #FFFFFF);
+  --color-indigo-200: color-mix(in oklab, #1B2B4B 20%, #FFFFFF);
+  --color-indigo-300: color-mix(in oklab, #1B2B4B 35%, #FFFFFF);
+  --color-indigo-400: color-mix(in oklab, #1B2B4B 55%, #FFFFFF);
+  --color-indigo-500: color-mix(in oklab, #1B2B4B 78%, #FFFFFF);
+  --color-indigo-600: #1B2B4B;
+  --color-indigo-700: color-mix(in oklab, #1B2B4B 85%, #000000);
+  --color-indigo-800: color-mix(in oklab, #1B2B4B 72%, #000000);
+  /* En oscuro se usan como fondos de lo seleccionado: line y surface-raised del tema oscuro, que se ven sobre surface. */
+  --color-indigo-900: #2A3A57;
+  --color-indigo-950: #20304D;
+
+  --color-zinc-50: color-mix(in oklab, #F2F4F7 50%, #FFFFFF);
+  --color-zinc-100: #F2F4F7;
+  --color-zinc-200: #DCE1EA;
+  --color-zinc-300: color-mix(in oklab, #DCE1EA 50%, #8A93A6);
+  --color-zinc-400: #8A93A6;
+  --color-zinc-500: #5A6478;
+  --color-zinc-600: color-mix(in oklab, #5A6478 60%, #1B2B4B);
+  --color-zinc-700: #2A3A57;
+  --color-zinc-800: #20304D;
+  --color-zinc-900: #18263F;
+  --color-zinc-950: #0F1A2E;
+}
 
 @layer base {
   html {
     @apply bg-white text-zinc-900 antialiased dark:bg-zinc-950 dark:text-zinc-100;
-    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-family: var(--font-sans);
+    background: var(--surface);
+    color: var(--ink);
   }
-  button:focus-visible, a:focus-visible {
-    @apply outline-2 outline-offset-1 outline-indigo-500;
+  /* Space Grotesk solo en titulares (y el nombre de la marca); Inter en todo lo demás. */
+  h1, h2 { font-family: var(--font-display); letter-spacing: -0.01em; }
+  /* Foco de teclado visible en todos los controles: anillo de 2 px separado 2 px. */
+  :where(button, a, select, summary, [role="button"], [role="switch"], [role="radio"], [tabindex], input[type="checkbox"], input[type="radio"]):focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
   }
+}
+
+/*
+ * Tema oscuro: en Marea el azul pasa a blanco. Sin esto, lo que va en azul marino (botón principal, enlaces) desaparecería
+ * sobre el fondo oscuro. El botón principal pasa a blanco con texto oscuro (on-marc) y los textos azules, a un tinte claro.
+ */
+@media (prefers-color-scheme: dark) {
+  .bg-indigo-600 { background-color: var(--marc); color: var(--on-marc); }
+  .hover\:bg-indigo-700:hover, .hover\:bg-indigo-500:hover { background-color: color-mix(in oklab, var(--marc) 85%, var(--surface)); color: var(--on-marc); }
+  .text-indigo-500, .text-indigo-600, .text-indigo-700 { color: var(--color-indigo-300); }
+  .hover\:text-indigo-600:hover, .hover\:text-indigo-700:hover { color: var(--color-indigo-200); }
+  .border-indigo-500, .border-indigo-600 { border-color: var(--color-indigo-300); }
+  /* Texto secundario sin variante oscura: ink-muted del tema oscuro (≥ 4.5:1 sobre surface y surface-alt). */
+  .text-zinc-500, .text-zinc-600 { color: var(--ink-muted); }
 }
 
 /* ---- Editor de notas con formato (TipTap) ---- */
@@ -28,7 +86,7 @@
 .note-editor ul[data-type='taskList'] { list-style: none; padding-left: 0.1rem; }
 .note-editor ul[data-type='taskList'] li { display: flex; align-items: flex-start; gap: 0.5rem; }
 .note-editor ul[data-type='taskList'] li > label { margin-top: 0.3rem; user-select: none; }
-.note-editor ul[data-type='taskList'] li > label input { width: 1rem; height: 1rem; accent-color: var(--color-emerald-600); cursor: pointer; }
+.note-editor ul[data-type='taskList'] li > label input { width: 1rem; height: 1rem; accent-color: var(--marta); cursor: pointer; }
 .note-editor ul[data-type='taskList'] li > div { flex: 1; min-width: 0; }
 .note-editor ul[data-type='taskList'] li[data-checked='true'] > div { color: var(--color-zinc-400); text-decoration: line-through; }
 .note-editor blockquote { border-left: 3px solid var(--color-zinc-300); padding-left: 0.75rem; color: var(--color-zinc-600); }

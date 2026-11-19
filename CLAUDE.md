@@ -875,6 +875,23 @@ ya usa.
   los suyos (`changesBy`), tengan o no cuenta. Los nombres se comparan con `personKey` (sin tildes, guiones ni espacios), también
   en «Tiene cuenta».
 
+## Marca Marea (rama `rebranding-marea`, nov 2026)
+
+Marca en `~/Downloads/marea-brand` (manual, `marea.css`, `tokens.json`, logos). Objetivo: que nada deje de funcionar.
+
+- `src/styles/marea.css` (copia de la marca, sin el `@import` de fuentes, que va con un `<link>` en `index.html`) se importa
+  antes de Tailwind en `index.css`. Fuentes: Space Grotesk 700 (titulares `h1`/`h2` y el nombre) e Inter 400/600 (el resto).
+- **Sin tocar los componentes**: en `@theme` las escalas `indigo` (el color principal) y `zinc` (grises) usan los colores de
+  la marca (`marc` #1B2B4B y sus tintes; neutros surface, line, ink-muted… y los fondos del tema oscuro). En tema oscuro, unas
+  reglas en `index.css` pasan el botón principal (`bg-indigo-600`) a blanco con texto `on-marc`, los textos azules a un tinte
+  claro y `text-zinc-500/600` a `ink-muted`, para que nada desaparezca sobre el fondo marino.
+- Coral (`--marta`) solo en el check de tarea hecha (filas, pasos, acciones de notas); hecha = check + tachado en `ink-muted`.
+- Logo: `components/ui/MareaLogo.tsx` dibuja el lockup en la página con `var(--marc)`/`var(--marta)` (en oscuro queda como
+  `marea-lockup-dark.svg`) y el nombre en Space Grotesk (en un `<img>` no cargaría la fuente). Barra lateral y entrada.
+- `index.html`: título «Marea», `theme-color` #1B2B4B, favicon de la marca. PWA: nombre «Marea», iconos PNG sacados de
+  `marea-app-icon.svg` (192, 512, `pwa-maskable-512.png` a sangre y `apple-touch-icon.png` de 180). Logos en `public/logos/`.
+- Foco de teclado: anillo de 2 px `--focus` separado 2 px en botones, enlaces, selects, casillas y similares.
+
 ## Fase 32: analítica de uso (rama `dev`, nov 2026)
 
 - **Supabase** (`009_analitica.sql` y `010_analitica_kpis.sql`, después de 001 a 008): tabla `usage_events` (persona, tipo,

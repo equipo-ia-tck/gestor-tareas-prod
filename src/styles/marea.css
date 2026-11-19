@@ -1,0 +1,113 @@
+/* Marea · variables de marca (generado desde tokens.json) */
+:root {
+  --marc: #1B2B4B;
+  --marta: #D9543A;
+  --marta-soft: #FBE7E2;
+  --navy-900: #1B2B4B;
+  --surface: #FFFFFF;
+  --surface-alt: #F2F4F7;
+  --surface-raised: #FFFFFF;
+  --ink: #1B2B4B;
+  --ink-muted: #5A6478;
+  --on-marc: #FFFFFF;
+  --on-marta: #FFFFFF;
+  --line: #DCE1EA;
+  --line-strong: #8A93A6;
+  --success: #1F7A5C;
+  --danger: #A3221A;
+  --focus: #2E6BE6;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-pill: 999px;
+  --shadow-card: 0 1px 2px rgba(27,43,75,0.06), 0 4px 12px rgba(27,43,75,0.06);
+  --shadow-pop: 0 8px 24px rgba(27,43,75,0.16);
+  --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --marc: #FFFFFF;
+    --marta: #F08A6E;
+    --marta-soft: #3A2A32;
+    --navy-900: #1B2B4B;
+    --surface: #0F1A2E;
+    --surface-alt: #18263F;
+    --surface-raised: #20304D;
+    --ink: #F2F4F7;
+    --ink-muted: #A9B3C7;
+    --on-marc: #0F1A2E;
+    --on-marta: #0F1A2E;
+    --line: #2A3A57;
+    --line-strong: #6B7A96;
+    --success: #5CC9A0;
+    --danger: #FF8A80;
+    --focus: #8FB3FF;
+  }
+}
+
+:root[data-theme="dark"] {
+  --marc: #FFFFFF;
+  --marta: #F08A6E;
+  --marta-soft: #3A2A32;
+  --navy-900: #1B2B4B;
+  --surface: #0F1A2E;
+  --surface-alt: #18263F;
+  --surface-raised: #20304D;
+  --ink: #F2F4F7;
+  --ink-muted: #A9B3C7;
+  --on-marc: #0F1A2E;
+  --on-marta: #0F1A2E;
+  --line: #2A3A57;
+  --line-strong: #6B7A96;
+  --success: #5CC9A0;
+  --danger: #FF8A80;
+  --focus: #8FB3FF;
+}
+
+/* Componentes */
+/* Las fuentes (Space Grotesk 700, Inter 400 y 600) se cargan con un <link> en index.html: un @import aquí, detrás de otras
+   reglas, el navegador lo ignora. */
+body { margin: 0; font-family: var(--font-sans); background: var(--surface); color: var(--ink); }
+.mr-row { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; padding: var(--space-4); }
+.mr-col { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4); max-width: 420px; }
+
+.mr-btn { font: inherit; font-size: 15px; font-weight: 600; height: 40px; padding: 0 var(--space-4); border-radius: var(--radius-md); border: 1px solid transparent; cursor: pointer; display: inline-flex; align-items: center; gap: var(--space-2); }
+.mr-btn-primary { background: var(--marc); color: var(--on-marc); }
+.mr-btn-accent { background: var(--marta); color: var(--on-marta); }
+.mr-btn-quiet { background: transparent; color: var(--ink); border-color: var(--line-strong); }
+.mr-btn:focus-visible, .mr-input:focus-visible, .mr-check:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+.mr-task { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); background: var(--surface-raised); border-radius: var(--radius-md); }
+.mr-check { appearance: none; margin: 0; width: 22px; height: 22px; flex: none; border: 2px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface-raised); cursor: pointer; display: grid; place-content: center; }
+.mr-check:checked { background: var(--marta); border-color: var(--marta); }
+.mr-check:checked::after { content: ""; width: 10px; height: 6px; border-left: 2.5px solid var(--on-marta); border-bottom: 2.5px solid var(--on-marta); transform: rotate(-45deg) translate(1px, -1px); }
+.mr-task-title { font-size: 16px; line-height: 24px; color: var(--ink); flex: 1; }
+.mr-task-done .mr-task-title { color: var(--ink-muted); text-decoration: line-through; }
+.mr-task-meta { font-size: 14px; color: var(--ink-muted); }
+
+.mr-badge { display: inline-block; font-size: 12px; line-height: 20px; font-weight: 600; padding: 0 var(--space-2); border-radius: var(--radius-sm); background: var(--surface-alt); color: var(--ink); }
+.mr-badge-accent { background: var(--marta-soft); color: var(--ink); }
+.mr-badge-success { color: var(--success); }
+.mr-badge-danger { color: var(--danger); }
+
+.mr-field { display: flex; flex-direction: column; gap: var(--space-1); }
+.mr-label { font-size: 14px; font-weight: 600; color: var(--ink); }
+.mr-input { font: inherit; font-size: 16px; height: 44px; padding: 0 var(--space-3); border: 1px solid var(--line-strong); border-radius: var(--radius-md); background: var(--surface-raised); color: var(--ink); }
+.mr-hint { font-size: 14px; color: var(--ink-muted); }
+
+.mr-header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-6); padding: var(--space-4) var(--space-8); border-bottom: 1px solid var(--line); background: var(--surface); }
+.mr-header img { height: 36px; display: block; }
+.mr-nav { display: flex; gap: var(--space-6); }
+.mr-nav a { font-size: 15px; font-weight: 600; color: var(--ink-muted); text-decoration: none; }
+.mr-nav a[aria-current="page"] { color: var(--ink); }

@@ -1,3 +1,4 @@
+import { MareaLogo } from '../components/ui/MareaLogo';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { BarChart3, Calendar, ChevronDown, ChevronRight, ClipboardCheck, FolderOpen, History, MessageSquarePlus, Plus, Inbox, KanbanSquare, Layers, NotebookPen, Settings, Sun, Users, type LucideIcon } from 'lucide-react';
 import { Avatar } from '../components/ui/Badges';
@@ -135,8 +136,7 @@ export function Sidebar({ route }: { route: Route }) {
   return (
     <nav className="flex h-full flex-col overflow-y-auto border-r border-zinc-200 bg-zinc-100/70 p-3 dark:border-zinc-800 dark:bg-zinc-900/60">
       <div className="mb-4 flex items-center gap-2 px-2">
-        <span className="flex size-6 items-center justify-center rounded-md bg-indigo-600 text-xs font-bold text-white">✓</span>
-        <span className="text-sm font-semibold">Tareas</span>
+        <MareaLogo width={124} />
       </div>
       <NavItem icon={Sun} href={routeHref({ view: 'today' })} active={is('today')} count={new Set([...tasksDueOn(tasks, today), ...overdueTasks(tasks, today), ...myDayTasks(tasks, today)].map((t) => t.id)).size}
         onDropTasks={(ids) => void moveIds(ids, { due_date: today }, 'Movida a hoy')}>Hoy</NavItem>

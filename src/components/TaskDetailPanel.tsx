@@ -520,7 +520,7 @@ function Checklist({ task }: { task: Task }) {
             <GripVertical className="size-3.5 shrink-0 cursor-grab text-zinc-300 opacity-0 group-hover:opacity-100" />
             <button type="button" aria-label={item.done ? 'Desmarcar paso' : 'Completar paso'}
               onClick={() => void save(items.map((x) => (x.id === item.id ? { ...x, done: !x.done } : x)), item.done ? 'Paso pendiente' : 'Paso completado')}
-              className={`flex size-4 shrink-0 items-center justify-center rounded border ${item.done ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-zinc-300 dark:border-zinc-600'}`}>
+              className={`flex size-4 shrink-0 items-center justify-center rounded border ${item.done ? 'border-[var(--marta)] bg-[var(--marta)] text-[var(--on-marta)]' : 'border-zinc-300 dark:border-zinc-600'}`}>
               {item.done && <Check className="size-3" />}
             </button>
             <StepText item={item} onSave={(t) => void save(items.map((x) => (x.id === item.id ? { ...x, text: t } : x)), 'Paso editado')} />
