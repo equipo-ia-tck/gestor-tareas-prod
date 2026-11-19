@@ -282,7 +282,7 @@ function Card({ task, showProject, display }: { task: Task; showProject: boolean
       {shows('tags') && task.tags.length > 0 && (
         <div className="mb-1.5 flex flex-wrap gap-1">{task.tags.map((t) => <LabelChip key={t} name={t} colors={labelColors} small />)}</div>
       )}
-      <p className={`flex items-start gap-1.5 text-sm leading-snug ${done ? 'text-zinc-400 line-through' : ''}`}>
+      <p className={`flex items-start gap-1.5 text-sm leading-snug ${done ? 'text-[var(--ink-muted)] line-through' : ''}`}>
         <TypeBadge type={type} />
         <span className={`min-w-0 flex-1 ${display.compact ? 'line-clamp-2' : ''}`}>{task.title}</span>
         <PriorityFlag priority={task.priority} />

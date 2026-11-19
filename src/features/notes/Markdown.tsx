@@ -42,10 +42,10 @@ function BlockView({ block: b, onToggle, onMakeTask }: { block: Block } & Omit<P
         <div className="group flex items-start gap-2" style={pad}>
           <button type="button" disabled={!onToggle} onClick={(e) => { e.stopPropagation(); onToggle?.(b.line, b.taskId); }}
             aria-label={done ? 'Marcar como pendiente' : 'Marcar como hecha'}
-            className={`mt-0.5 flex size-4 shrink-0 items-center justify-center rounded border ${done ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-zinc-400 dark:border-zinc-500'}`}>
+            className={`mt-0.5 flex size-4 shrink-0 items-center justify-center rounded border ${done ? 'border-[var(--marta)] bg-[var(--marta)] text-[var(--on-marta)]' : 'border-zinc-400 dark:border-zinc-500'}`}>
             {done && <Check className="size-3" />}
           </button>
-          <span className={done ? 'text-zinc-400 line-through' : ''}><Inlines items={b.inline} /></span>
+          <span className={done ? 'text-[var(--ink-muted)] line-through' : ''}><Inlines items={b.inline} /></span>
           {task && <TaskChip task={task} />}
           {!b.taskId && onMakeTask && b.inline.length > 0 && (
             <button type="button" onClick={(e) => { e.stopPropagation(); onMakeTask(b.line); }}

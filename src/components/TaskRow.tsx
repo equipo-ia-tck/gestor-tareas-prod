@@ -81,17 +81,17 @@ export function TaskRow({ task, today, projects, onEdit, hideDate, hideProject: 
       <button
         aria-label={done ? 'Marcar como pendiente' : 'Completar'}
         onClick={() => void toggleDone(isSelected ? targetsFor(task.id) : [task])}
-        className={`mt-0.5 flex size-[18px] shrink-0 items-center justify-center rounded-full border-2 transition-colors ${done ? 'border-emerald-500 bg-emerald-500' : 'border-zinc-300 hover:bg-emerald-50 dark:border-zinc-600 dark:hover:bg-emerald-950'}`}
+        className={`mt-0.5 flex size-[18px] shrink-0 items-center justify-center rounded-full border-2 transition-colors ${done ? 'border-[var(--marta)] bg-[var(--marta)]' : 'border-zinc-400 hover:bg-[var(--marta-soft)] dark:border-zinc-600'}`}
         style={done ? undefined : { borderColor: task.priority < 4 ? PRIORITY_COLOR[task.priority] : undefined }}
       >
-        {done ? <span className="text-[10px] leading-none text-white">✓</span> : <span className="text-[10px] leading-none text-emerald-500 opacity-0 group-hover:opacity-60">✓</span>}
+        {done ? <span className="text-[10px] leading-none text-[var(--on-marta)]">✓</span> : <span className="text-[10px] leading-none text-[var(--marta)] opacity-0 group-hover:opacity-60">✓</span>}
       </button>
 
       <div className="min-w-0 flex-1">
         {editField === 'title' ? (
           <TitleEditor task={task} onSave={(title) => { stopEdit(); if (title && title !== task.title) void update([task], { title }, 'Título cambiado'); }} onCancel={stopEdit} />
         ) : (
-          <div data-field="title" className={`flex items-center gap-1.5 text-sm ${done ? 'text-zinc-400 line-through' : ''}`}>
+          <div data-field="title" className={`flex items-center gap-1.5 text-sm ${done ? 'text-[var(--ink-muted)] line-through' : ''}`}>
             <TypeBadge type={type} />
             <span className="truncate">{task.title || <em className="text-zinc-400">Sin título</em>}</span>
             <PriorityFlag priority={task.priority} />

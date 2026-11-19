@@ -24,10 +24,10 @@ const eventRange = (e: CalendarEvent) => {
 
 /** Barra de color de la izquierda: lisa si está ocupado, rayada si es provisional (como Outlook). */
 function barStyle(e: CalendarEvent): CSSProperties {
-  if (e.showAs === 'tentative') return { backgroundImage: 'repeating-linear-gradient(135deg, #8b5cf6 0 3px, transparent 3px 6px)' };
-  if (e.showAs === 'free') return { background: 'transparent', boxShadow: 'inset 0 0 0 1px #8b5cf6' };
+  if (e.showAs === 'tentative') return { backgroundImage: 'repeating-linear-gradient(135deg, #2E6BE6 0 3px, transparent 3px 6px)' };
+  if (e.showAs === 'free') return { background: 'transparent', boxShadow: 'inset 0 0 0 1px #2E6BE6' };
   if (e.showAs === 'oof') return { background: '#c026d3' };
-  return { background: '#8b5cf6' };
+  return { background: '#2E6BE6' }; // reuniones en el azul de Marea
 }
 
 /**

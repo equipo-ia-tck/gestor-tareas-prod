@@ -1,3 +1,4 @@
+import { MareaLogo } from '../components/ui/MareaLogo';
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { repo } from '../data/services';
 import { sync, type SessionState } from '../data/sync';
@@ -60,8 +61,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
     <div className="flex min-h-dvh items-center justify-center bg-zinc-50 px-4 dark:bg-zinc-950">
       <div className="w-full max-w-sm rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
         <div className="mb-5 flex items-center gap-2">
-          <span className="flex size-7 items-center justify-center rounded-md bg-indigo-600 text-sm font-bold text-white">✓</span>
-          <span className="font-semibold">Tareas del equipo</span>
+          <MareaLogo width={132} />
+          <span className="sr-only">Marea, tareas del equipo</span>
         </div>
         {phase === 'loading' && <p className="text-sm text-zinc-500">Conectando…</p>}
         {phase === 'down' && (

@@ -175,7 +175,7 @@ const VIEWS: { id: FeedbackViewMode; label: string; Icon: typeof List }[] = [
 ];
 
 const FEEDBACK_MIME = 'application/x-gestor-feedback';
-const COLUMN_COLOR: Record<FeedbackStatus, string> = { new: '#6366f1', doing: '#f59e0b', blocked: '#ef4444', done: '#22c55e', dismissed: '#a1a1aa' };
+const COLUMN_COLOR: Record<FeedbackStatus, string> = { new: '#2E6BE6', doing: '#f59e0b', blocked: '#ef4444', done: '#22c55e', dismissed: '#a1a1aa' };
 
 /** Tablero del feedback: una columna por estado; arrastrar una tarjeta a otra columna le cambia el estado. */
 function FeedbackBoard({ items, columns, onUpdate }: {
