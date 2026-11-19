@@ -891,9 +891,12 @@ Marca en `~/Downloads/marea-brand` (manual, `marea.css`, `tokens.json`, logos). 
 - `index.html`: título «Marea», `theme-color` #1B2B4B, favicon de la marca. PWA: nombre «Marea», iconos PNG sacados de
   `marea-app-icon.svg` (192, 512, `pwa-maskable-512.png` a sangre y `apple-touch-icon.png` de 180). Logos en `public/logos/`.
 - Foco de teclado: anillo de 2 px `--focus` separado 2 px en botones, enlaces, selects, casillas y similares.
-- **Barra lateral** (`.mr-sidebar` en `index.css`): azul claro de la marca (en oscuro, `navy-900`) para separarla de la
-  zona de trabajo; cada sección (vistas, Proyectos, Grupos, Más) en su bloque (`.mr-side-section`) con su título en estilo
-  `label`; lo activo con fondo azul suave y la barra `marc` a la izquierda (`.mr-nav-active`).
+- **Barra lateral** (`.mr-sidebar` en `index.css`): siempre en el azul marino de la marca (`navy-900`), en claro y en
+  oscuro, para reconocer la herramienta de un vistazo. Dentro valen los colores del tema oscuro de Marea (logo blanco y coral)
+  y, en claro, se redefinen ahí las escalas `zinc`/`indigo`/`white` para que sus clases se lean sobre el azul marino. Cada
+  sección (vistas, Proyectos, Grupos, Más) va en su bloque (`.mr-side-section`) con su título en estilo `label`; lo abierto,
+  con fondo claro y una barra coral a la izquierda (`.mr-nav-active`). La zona de trabajo en claro lleva un 3,5 % del azul
+  de la marca en vez de blanco puro (tarjetas, paneles y campos siguen en blanco).
 - **Paleta de Marea** (`domain/colors.ts`, `BRAND_COLORS`): proyectos, grupos, etiquetas y avatares solo con colores de la
   marca y dos mezclas suyas, en un orden comprobado con el validador de paletas. Avatares con texto blanco o azul marino
   según el fondo (`textOn`). Los colores ya guardados de las paletas de antes se pasan una vez por cuenta al entrar
