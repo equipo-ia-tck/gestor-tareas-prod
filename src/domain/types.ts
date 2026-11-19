@@ -200,6 +200,8 @@ export interface Settings {
   groups: PersonGroup[];
   /** Plantillas propias de «Crear con petición» (Rally), en su orden; null = las de serie. */
   rally_templates: RequestTemplate[] | null;
+  /** Más → Analítica: cuentas (ids) que se analizan; null = todas. */
+  analytics_people: string[] | null;
 }
 
 /** Plantilla de «Crear con petición»: un nombre y la frase. */
@@ -242,6 +244,7 @@ export const DEFAULT_SETTINGS: Settings = {
   groups: [],
   rally_templates: null,
   routines_added: [],
+  analytics_people: null,
 };
 
 export type NewTask = Partial<Omit<Task, 'id' | 'created_at' | 'updated_at' | 'last_touched_at'>> & {

@@ -24,7 +24,8 @@ const shortDay = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString
  * cuántos salen de la herramienta y cuántos se hacen directamente en Rally, por tipo, por semana y por persona.
  * Se lee Rally con la clave de quien mira (tiene que tenerlo conectado) y se cruza con lo que apunta la herramienta.
  */
-export function RallyToolTab({ from, to, users }: { from: string; to: string; users: UsageUser[] }) {
+/** `onlyPeople`: en la analítica se han elegido personas: solo cuentan los cambios de Rally hechos por ellas (por nombre). */
+export function RallyToolTab({ from, to, users, onlyPeople = false }: { from: string; to: string; users: UsageUser[]; onlyPeople?: boolean }) {
   const [projects, setProjects] = useState<RallyProject[] | null>(null);
   const [stored, setStored] = usePersistentState<string[] | null>('analytics-rally-projects', null);
   const [scope, setScope] = usePersistentState('analytics-rally-scope', { down: true, up: false });
@@ -82,7 +83,17 @@ export function RallyToolTab({ from, to, users }: { from: string; to: string; us
     return <div className={card}><p className="text-sm text-zinc-500">Para ver esto, conecta Rally en la pantalla <b>Rally</b>: los cambios se leen con tu clave.</p></div>;
   }
 
-  const summary = useMemo(() => (result ? summarizeActivity(result.activity.changes, result.fromTool, result.since, onlySince) : null), [result, onlySince]);
+  // Con personas elegidas, solo sus cambios (la persona de Rally se compara por nombre con las cuentas elegidas).
+  const shown = useMemo<Loaded | null>(() => {
+    if (!result || !onlyPeople) return result;
+    const keep = result.activity.changes.map((c) => accounts.has(fold(c.user)));
+    return {
+      ...result,
+      activity: { ...result.activity, changes: result.activity.changes.filter((_, i) => keep[i]) },
+      fromTool: result.fromTool.filter((_, i) => keep[i]),
+    };
+  }, [result, onlyPeople, accounts]);
+  const summary = useMemo(() => (shown ? summarizeActivity(shown.activity.changes, shown.fromTool, shown.since, onlySince) : null), [shown, onlySince]);
   const s = summary;
   const total = s ? s.total.tool + s.total.rally : 0;
 
@@ -196,7 +207,7 @@ export function RallyToolTab({ from, to, users }: { from: string; to: string; us
             )}
           </div>
 
-          <ChangeList result={result} onlySince={onlySince} />
+          <ChangeList result={shown!} onlySince={onlySince} />
 
           <p className="flex gap-2 text-xs text-zinc-400">
             <Info className="mt-0.5 size-3.5 shrink-0" />

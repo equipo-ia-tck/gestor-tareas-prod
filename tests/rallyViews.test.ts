@@ -13,7 +13,10 @@ describe('vistas guardadas de Rally', () => {
   it('por etiqueta, sin distinguir mayúsculas; mismo campo = o', () => {
     expect(inRallyView(view('02'), item({ tags: ['pagos transaccionales'] }))).toBe(true);
     expect(inRallyView(view('02'), item({ tags: ['Seguros'] }))).toBe(false);
-    expect(inRallyView(view('05'), item({ tags: ['ANA_etiquetado'] }))).toBe(true);
+    // La 05 pide las dos etiquetas a la vez, como las dos filas del filtro de Rally.
+    expect(inRallyView(view('05'), item({ tags: ['onboarding', 'ANA_etiquetado'] }))).toBe(true);
+    expect(inRallyView(view('05'), item({ tags: ['ANA_etiquetado'] }))).toBe(false);
+    expect(inRallyView(view('05'), item({ tags: ['Onboarding'] }))).toBe(false);
     expect(inRallyView(view('default'), item({}))).toBe(true);
   });
   it('sin VS: ninguna etiqueta de VS y ni Accepted ni Completed', () => {

@@ -30,6 +30,7 @@ import { SettingsView } from '../features/backup/SettingsView';
 import { InboxView } from '../features/views/InboxView';
 import { PeopleView, PersonView } from '../features/views/PeopleViews';
 import { ProjectView } from '../features/project/ProjectPage';
+import { ProjectsView } from '../features/views/ProjectsView';
 import { TodayView } from '../features/views/TodayView';
 
 function View({ route }: { route: Route }) {
@@ -45,7 +46,7 @@ function View({ route }: { route: Route }) {
     case 'analytics': return <UsageView />;
     case 'calendar': return <CalendarView />;
     case 'rally': return <RallyView />;
-    case 'projects': return <TodayView />; // la pantalla "Proyectos" se quitó: se gestionan desde la barra lateral
+    case 'projects': return <ProjectsView />; // el título «Proyectos» de la barra lateral, como el de Grupos
     case 'inbox': return <InboxView />;
     case 'project': return <ProjectView key={route.id} id={route.id} />;
     case 'people': return <PeopleView />;

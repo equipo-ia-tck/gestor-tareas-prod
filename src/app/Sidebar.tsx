@@ -147,7 +147,7 @@ export function Sidebar({ route }: { route: Route }) {
       <NavItem icon={NotebookPen} href={routeHref({ view: 'notes' })} active={is('notes')}>Notas</NavItem>
       <NavItem icon={Layers} href={routeHref({ view: 'rally' })} active={is('rally')}>Rally</NavItem>
 
-      <Heading action={
+      <Heading href={routeHref({ view: 'projects' })} action={
         <button type="button" onClick={() => setAddingProject(true)} title="Nuevo proyecto" className="rounded p-0.5 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-700">
           <Plus className="size-3.5" />
         </button>

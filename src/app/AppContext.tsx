@@ -6,7 +6,7 @@ import { missingRallyTypes, RALLY_TYPE_IDS, withAcceptedState } from '../domain/
 import { knownPeople } from '../domain/selectors';
 import { matchesSpace, SPACES_ENABLED, spaceOf, spaceOfProject, type Space, type SpaceFilter } from '../domain/spaces';
 import { useSync } from '../data/sync';
-import { pendingRoutines, routineTask, TEAM_ROUTINES } from '../domain/routines';
+import { isHiddenRoutine, pendingRoutines, routineTask, TEAM_ROUTINES } from '../domain/routines';
 import { usePersistentState } from '../hooks/usePersistentState';
 import type { ActivityEntry, ISODate, ItemType, Label, Note, Person, Project, Release, Settings, Task } from '../domain/types';
 import { useActivity, useItemTypes, useLabels, useNotes, usePeople, useProjects, useReleases, useSettings, useTasks, useToday } from '../hooks/useData';
@@ -107,7 +107,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AppData>(() => {
     const projectMap = new Map(allProjects.map((p) => [p.id, p]));
-    const tasks = allTasks.filter((t) => matchesSpace(spaceOf(t, projectMap), spaceFilter));
+    // Las rutinas del equipo ya hechas no vuelven a verse hasta su próximo día (`isHiddenRoutine`).
+    const tasks = allTasks.filter((t) => matchesSpace(spaceOf(t, projectMap), spaceFilter) && !isHiddenRoutine(t, today));
     const notes = allNotes.filter((n) => matchesSpace(spaceOf(n, projectMap), spaceFilter));
     return {
     tasks,

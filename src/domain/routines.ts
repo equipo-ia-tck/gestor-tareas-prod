@@ -56,3 +56,16 @@ export function routineTask(r: TeamRoutine, today: ISODate): NewTask {
     tags: ['rutina'],
   };
 }
+
+/** Tarea de una rutina del equipo (por su serie `rutina:<id>`). */
+export const isRoutine = (t: Pick<Task, 'series_id'>) => !!t.series_id?.startsWith('rutina:');
+
+/**
+ * La siguiente ocurrencia de una rutina no se ve hasta su día: al completar la del lunes, la del lunes siguiente queda
+ * oculta toda la semana (si estuviera siempre a la vista, se dejaría de hacer caso). Las atrasadas sí se ven.
+ */
+export const isHiddenRoutine = (t: Task, today: ISODate) =>
+  isRoutine(t) && t.status === 'todo' && !t.deleted_at && !!t.due_date && t.due_date > today;
+
+/** Hora del aviso de una rutina el día que toca (la app avisa si está abierta). */
+export const ROUTINE_REMIND_HOUR = 9;

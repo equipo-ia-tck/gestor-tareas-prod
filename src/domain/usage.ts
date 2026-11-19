@@ -142,3 +142,14 @@ export function historyActions(changes: Change[], fromRally: boolean): TrackedAc
   }
   return [...counts.values()];
 }
+
+/** El informe solo con las cuentas elegidas (`null` = todas): personas, filas y preferencias. */
+export function restrictReport(report: UsageReport, ids: string[] | null): UsageReport {
+  if (!ids) return report;
+  const keep = new Set(ids);
+  return {
+    users: report.users.filter((u) => keep.has(u.id)),
+    rows: report.rows.filter((r) => keep.has(r.user)),
+    ...(report.states ? { states: report.states.filter((st) => keep.has(st.user)) } : {}),
+  };
+}

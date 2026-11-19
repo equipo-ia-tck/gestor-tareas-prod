@@ -8,7 +8,9 @@ import { useApp } from '../../app/AppContext';
 import { useWideLayout } from '../../app/Layout';
 import { sync, useSync } from '../../data/sync';
 import { addDays, formatDay } from '../../domain/dates';
-import { dailyUsage, screenLabel, summarizeUsers, usedScreens, type UsageReport, type UserSummary } from '../../domain/usage';
+import { dailyUsage, restrictReport, screenLabel, summarizeUsers, usedScreens, type UsageReport, type UsageUser, type UserSummary } from '../../domain/usage';
+import { repo } from '../../data/services';
+import { fold } from '../../domain/text';
 import { activitySeries, adoption, heatLevel, percentOf, screenRanking, usersByDay, type DayPoint, type ScreenRank } from '../../domain/usageDashboard';
 import {
   autoGranularity, bucketSeries, delta, isoWeekValue, MAX_DAYS_BACK, mondayOfIsoWeek, monthRange, PRESETS, previousRange, rangeDays, rangeLabel,
@@ -77,12 +79,17 @@ const HEAT = [
  */
 export function UsageView() {
   const { isAdmin } = useSync();
-  const { today } = useApp();
+  const { today, settings } = useApp();
+  /** Cuentas que se analizan (elegidas en «Personas»; null = todas). */
+  const picked = settings.analytics_people;
   const [range, setRange] = usePersistentState<UsageRange>('analytics-range', { preset: '30d' });
   const [tab, setTab] = usePersistentState<Tab>('analytics-tab', 'summary');
   const [userId, setUserId] = useState<string | null>(null);
-  const [report, setReport] = useState<UsageReport | null>(null);
-  const [prevReport, setPrevReport] = useState<UsageReport | null>(null);
+  const [fullReport, setReport] = useState<UsageReport | null>(null);
+  const [fullPrev, setPrevReport] = useState<UsageReport | null>(null);
+  // Todo lo de abajo cuenta solo a las personas elegidas.
+  const report = useMemo(() => (fullReport ? restrictReport(fullReport, picked) : null), [fullReport, picked]);
+  const prevReport = useMemo(() => (fullPrev ? restrictReport(fullPrev, picked) : null), [fullPrev, picked]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [jump, setJump] = useState<string | null>(null);
@@ -140,7 +147,7 @@ export function UsageView() {
 
   return (
     <>
-      <ViewHeader title="Analítica" subtitle={selected ? `Uso de ${nameOf(selected)}` : 'Uso de todo el equipo'}
+      <ViewHeader title="Analítica" subtitle={selected ? `Uso de ${nameOf(selected)}` : picked ? `Uso de las ${picked.length} personas elegidas` : 'Uso de todo el equipo'}
         actions={<>
           <Segmented>
             <SegButton active={team} onClick={() => setUserId(null)}><Users className="size-4" />Equipo</SegButton>
@@ -155,6 +162,10 @@ export function UsageView() {
               </select>
             </label>
           </Segmented>
+          <AnalyticsPeople all={fullReport?.users ?? []} picked={picked} onChange={(ids) => {
+            if (userId && ids && !ids.includes(userId)) setUserId(null);
+            void repo.updateSettings({ analytics_people: ids });
+          }} />
           <PeriodPicker range={range} from={from} to={to} today={today} onChange={setRange} />
           <button type="button" onClick={() => void load()} title="Actualizar"
             className="flex items-center gap-1 rounded-md border border-zinc-300 px-2.5 py-1 text-sm hover:bg-zinc-100 dark:border-zinc-600 dark:hover:bg-zinc-800">
@@ -190,7 +201,7 @@ export function UsageView() {
           {current === 'screens' && <ScreensTab kpis={kpis} team={team} />}
           {current === 'people' && team && <PeopleTab people={people} report={report} from={from} today={to} days={days} onPerson={setUserId} />}
           {current === 'daily' && <DailyTab daily={daily} today={today} />}
-          {current === 'rally' && team && <RallyToolTab from={from} to={to} users={report.users} />}
+          {current === 'rally' && team && <RallyToolTab from={from} to={to} users={report.users} onlyPeople={!!picked} />}
         </div>
       )}
     </>
@@ -820,5 +831,55 @@ function PeriodPicker({ range, from, to, today, onChange }: {
         <ChevronRight className="size-4" />
       </button>
     </div>
+  );
+}
+
+// ───────────────────────────── Personas analizadas ─────────────────────────────
+
+/**
+ * «Personas»: qué cuentas entran en la analítica (todas las vistas y la pestaña de Rally). Se guarda en los ajustes de
+ * quien mira (`settings.analytics_people`), así que se sincroniza y no está en el código (el repositorio es público).
+ */
+function AnalyticsPeople({ all, picked, onChange }: { all: UsageUser[]; picked: string[] | null; onChange: (ids: string[] | null) => void }) {
+  const [q, setQ] = useState('');
+  const sorted = [...all].sort((a, b) => (a.name || a.login).localeCompare(b.name || b.login, 'es'));
+  const shown = sorted.filter((u) => !q.trim() || fold(`${u.name} ${u.login}`).includes(fold(q.trim())));
+  const chosen = new Set(picked ?? all.map((u) => u.id));
+  const toggle = (id: string) => {
+    const next = new Set(chosen);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    onChange(next.size === all.length ? null : [...next]);
+  };
+  return (
+    <Popover width="w-80" trigger={(toggleOpen) => (
+      <button type="button" onClick={toggleOpen} title="Qué personas se analizan"
+        className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-sm ${picked ? 'border-indigo-400 bg-indigo-50 text-indigo-700 dark:border-indigo-700 dark:bg-indigo-950 dark:text-indigo-300' : 'border-zinc-300 hover:bg-zinc-100 dark:border-zinc-600 dark:hover:bg-zinc-800'}`}>
+        <Users className="size-4" />{picked ? `${picked.length} personas` : 'Todas las personas'}
+      </button>
+    )}>
+      {() => (
+        <div className="p-2 text-sm">
+          <p className="mb-2 text-xs text-zinc-500">Solo se cuentan las personas marcadas, en todas las pestañas (también en Rally).</p>
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar persona…" aria-label="Buscar persona" autoFocus
+            className="mb-2 w-full rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm outline-none focus:border-indigo-500 dark:border-zinc-600 dark:bg-zinc-900" />
+          <div className="mb-2 flex gap-2 text-xs">
+            <button type="button" onClick={() => onChange(null)} className="text-indigo-600 hover:underline">Todas</button>
+            <button type="button" onClick={() => onChange([])} className="text-indigo-600 hover:underline">Ninguna</button>
+            <span className="ml-auto text-zinc-400">{chosen.size} de {all.length}</span>
+          </div>
+          <ul className="max-h-72 overflow-y-auto">
+            {shown.map((u) => (
+              <li key={u.id}>
+                <label className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 hover:bg-zinc-100 dark:hover:bg-zinc-800">
+                  <input type="checkbox" checked={chosen.has(u.id)} onChange={() => toggle(u.id)} />
+                  <span className={`min-w-0 flex-1 truncate ${u.disabled ? 'text-zinc-400 line-through' : ''}`}>{u.name || u.login}</span>
+                </label>
+              </li>
+            ))}
+            {!shown.length && <li className="px-1.5 py-1 text-xs text-zinc-400">Nadie con ese nombre.</li>}
+          </ul>
+        </div>
+      )}
+    </Popover>
   );
 }
