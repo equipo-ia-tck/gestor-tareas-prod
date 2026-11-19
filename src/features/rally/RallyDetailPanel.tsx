@@ -7,6 +7,7 @@ import { MAX_UPLOAD, rallyApi, toBase64, tooBigMessage } from './rallyApi';
 import { RallyFlags } from './RallyFlags';
 import { MentionTextarea, UnlinkedWarning } from './MentionTextarea';
 import { RallyEditForm } from './RallyEditForm';
+import { NewDefect } from './NewDefect';
 
 /** Campos que se ven primero (con el nombre que les da Rally); el resto va en "Más campos". */
 const PRIMARY = [
@@ -212,6 +213,15 @@ export function RallyDetailBody({ item: current, detail, error, onSelect, task, 
               </ul>
             </Block>
           ))}
+          {current.kind === 'US' && (
+            <Block title={`Nuevo defecto en ${current.id}`}>
+              <div className="flex flex-wrap items-center gap-2">
+                <NewDefect us={current} detail={detail} task={task}
+                  onCreated={() => { rallyApi.detail(current).then((d) => onDetail?.(d), () => {}); }} />
+                <span className="text-xs text-zinc-500">Con la User Story, Open, New, PRE, Minor Problem, Normal, ANA_etiquetado, el APPGAR de la US y «Afectación a usuario» No.</span>
+              </div>
+            </Block>
+          )}
           {(current.kind === 'US' || current.kind === 'DE') && <NewRallyTask key={`new-${current.objectId}`} parent={current} onSelect={onSelect} />}
           <Discussion key={current.objectId} item={current} posts={detail.discussion} />
           <Attachments key={`files-${current.objectId}`} item={current} files={detail.attachments} />

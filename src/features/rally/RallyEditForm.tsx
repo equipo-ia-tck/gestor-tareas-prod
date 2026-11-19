@@ -16,7 +16,7 @@ import { rememberRally } from './rallyStore';
 
 /** Proyectos de Rally (una vez por sesión: el servidor ya los guarda 10 minutos). */
 let projectsOnce: Promise<RallyProject[]> | null = null;
-const loadProjects = () => (projectsOnce ??= rallyApi.projects().catch((e) => { projectsOnce = null; throw e; }));
+export const loadProjects = () => (projectsOnce ??= rallyApi.projects().catch((e) => { projectsOnce = null; throw e; }));
 
 const DEFECT_FIELDS = [['Severity', 'severity'], ['Priority', 'priority'], ['State', 'state'], ['Environment', 'environment']] as const;
 const sameRefs = (a: RallyRef[], b: RallyRef[]) => a.length === b.length && a.every((x, i) => x.ref === b[i].ref);

@@ -545,6 +545,12 @@ Petición de la usuaria (oct 2026): traer Rally al gestor sin tocar el resto (en
   Rally de antes y deja las demás). La descripción y las notas se editan como texto: si en Rally tienen formato (negritas,
   listas, imágenes…, `richDescription`) se avisa de que al cambiarlas se pierde. Los demás campos se ven en «Todos los campos
   de Rally» (solo lectura); Ready, Blocked, discusión y adjuntos siguen igual.
+- **Nuevo defecto desde una US** (`NewDefect.tsx`, misma rama): en la ficha de una US (Tablero y pantalla Rally), «Nuevo
+  defecto» abre «Nuevo elemento» rellenado con la guía del equipo (`defectPrefill`): «Error found in TS», proyecto y User
+  Story de la US, State Open, New, Owner quien lo crea y Assignee vacío (`noAssignee`), el APPGAR de la US, PRE, Minor
+  Problem, Normal, ANA_etiquetado y «Afectación a usuario» No. Descripción, Canal y el documento de validación, a mano. Los
+  campos personalizados de `RallyPrefill.custom` van por su nombre visible y se piden a `formOptions` aunque no sean
+  obligatorios. Al crearlo se relee la ficha de la US y, si se marca, se añade al gestor en el proyecto de la tarea de la US.
 - **Ready y Blocked** (`RallyFlags`, `POST /api/rally/flag`): botones en la ficha de Rally (pantalla Rally y panel de la tarea)
   que solo cambian esas marcas, nunca la columna. Blocked abre la misma ventana que mover a Bloqueado (comentario con el PO,
   lápiz y analista; cerrar no cambia nada) y su texto va a BlockedReason; desbloquear borra el motivo. Para que la marca no

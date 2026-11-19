@@ -32,3 +32,19 @@ describe('editar en Rally desde la ficha', () => {
     expect(categoryOfState('In-Progress')).toBe('doing');
   });
 });
+
+describe('nuevo defecto desde una US', async () => {
+  const { defectPrefill } = await import('../src/features/rally/NewDefect');
+  const us = { id: 'US9', name: 'Guía login', project: 'Onboarding' } as Parameters<typeof defectPrefill>[0];
+  it('sale con los valores de la guía del equipo', () => {
+    const p = defectPrefill(us, { edit: { ...base, projectId: '7', custom: { c_APPGAR: 'APP002' } } } as unknown as Parameters<typeof defectPrefill>[1], { ref: '/tag/1', name: 'ANA_etiquetado' });
+    expect(p).toMatchObject({
+      kind: 'DE', name: 'Error found in TS', projectId: '7', parent: { id: 'US9' }, state: 'New', owner: '@me', noAssignee: true,
+      defect: { State: 'Open', Environment: 'PRE', Severity: 'Minor Problem', Priority: 'Normal' },
+      custom: { APPGAR: 'APP002', 'Afectación a usuario': 'No' }, tags: [{ name: 'ANA_etiquetado' }], warnings: [],
+    });
+    const sin = defectPrefill(us, { edit: { ...base, custom: {} } } as unknown as Parameters<typeof defectPrefill>[1], null);
+    expect(sin.custom).toEqual({ 'Afectación a usuario': 'No' });
+    expect(sin.warnings).toHaveLength(2);
+  });
+});
