@@ -15,7 +15,7 @@ import { fold } from '../../domain/text';
  * se aprenden del error al crear y se recuerdan por tipo y proyecto en este navegador.
  */
 const ruleKey = (kind: string, projectId: string) => `gestor-tareas:rally-rule-fields:${kind}:${projectId}`;
-function ruleFieldsFor(kind: string, projectId: string): string[] {
+export function ruleFieldsFor(kind: string, projectId: string): string[] {
   try {
     const v = JSON.parse(localStorage.getItem(ruleKey(kind, projectId)) ?? '[]') as unknown;
     return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
@@ -62,6 +62,12 @@ export interface RallyPrefill {
   blockedReason?: string;
   expedite?: boolean;
   defect?: Record<string, string>;
+  /** Campos personalizados por su nombre visible («APPGAR», «Afectación a usuario»); se piden aunque no sean obligatorios. */
+  custom?: Record<string, string>;
+  /** Dejar el Assignee vacío (aunque esté marcado «asignármelo» de otras veces). */
+  noAssignee?: boolean;
+  /** Título del aviso de arriba (por defecto, el de «Crear con petición»). */
+  title?: string;
   warnings: string[];
 }
 
@@ -89,11 +95,11 @@ export const PARENT: Partial<Record<RallyCreatableKind, { label: string; types: 
   DE: { label: 'User Story', types: [US] },
   TA: { label: 'Work Product', types: [US, { key: 'DE', label: 'Defect' }], required: true },
 };
-const FEATURE = [{ key: 'F', label: 'Feature' }];
+export const FEATURE = [{ key: 'F', label: 'Feature' }];
 
 const labelClass = 'mb-1 block text-sm font-semibold text-zinc-600 dark:text-zinc-300';
 
-function Field({ label, required, children }: { label: string; required?: boolean; children: ReactNode }) {
+export function Field({ label, required, children }: { label: string; required?: boolean; children: ReactNode }) {
   return (
     <div>
       <span className={labelClass}>{label}{required && <span className="text-red-600"> *</span>}</span>
@@ -103,7 +109,7 @@ function Field({ label, required, children }: { label: string; required?: boolea
 }
 
 /** Interruptor como el «Expedite» de Rally. */
-function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
+export function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
     <button type="button" role="switch" aria-checked={checked} aria-label={label} onClick={() => onChange(!checked)}
       className={`relative h-6 w-11 rounded-full transition-colors ${checked ? 'bg-indigo-600' : 'bg-zinc-300 dark:bg-zinc-600'}`}>
@@ -192,13 +198,14 @@ export function RallyCreateForm({ projects, defaultProjectId, defaultTags = [], 
     let live = true;
     setOptions(null);
     setOptionsError(null);
-    rallyApi.formOptions(kind, projectId, ruleFieldsFor(kind, projectId)).then((o) => {
+    const extra = Object.keys(pending.current?.custom ?? {});
+    rallyApi.formOptions(kind, projectId, [...new Set([...ruleFieldsFor(kind, projectId), ...extra])]).then((o) => {
       if (!live) return;
       setOptions(o);
       const has = (list: RallyRef[], r: string) => list.some((x) => x.ref === r);
       // Owner y Assignee pueden ser de fuera del equipo (buscados en Rally): se conservan al cambiar de proyecto.
       setOwner((u) => u ?? o.me);
-      setAssignee((u) => u ?? (assignToMe ? o.me : null));
+      setAssignee((u) => u ?? (assignToMe && !prefill?.noAssignee ? o.me : null));
       setFlowStateRef((r) => (has(o.flowStates, r) ? r : o.flowStates[0]?.ref ?? ''));
       setScheduleState((s) => (o.scheduleStates.includes(s) ? s : o.flowStates[0]?.scheduleState ?? o.scheduleStates[0] ?? ''));
       setState((s) => (o.taskStates.includes(s) ? s : o.taskStates[0] ?? ''));
@@ -243,6 +250,16 @@ export function RallyCreateForm({ projects, defaultProjectId, defaultTags = [], 
           const next: Record<string, string> = {};
           for (const [f, v] of Object.entries(p.defect)) { const m = byName(o.values[f] ?? [], v, (x) => x); if (m) next[f] = m; else missing.push(`${f} «${v}»`); }
           setDefect((d) => ({ ...d, ...next }));
+        }
+        if (p.custom) {
+          const next: Record<string, string> = {};
+          for (const [label, v] of Object.entries(p.custom)) {
+            const field = o.custom.find((c) => same(c.label, label));
+            if (!field) { missing.push(`campo «${label}»`); continue; }
+            const value = field.values.length ? byName(field.values, v, (x) => x) : v;
+            if (value) next[field.field] = value; else missing.push(`${label} «${v}»`);
+          }
+          setCustom((c) => ({ ...c, ...next }));
         }
         if (missing.length) setWarnings((w) => [...w, ...missing.map((m) => `No está en este proyecto: ${m}`)]);
       }
@@ -361,7 +378,7 @@ export function RallyCreateForm({ projects, defaultProjectId, defaultTags = [], 
         <div className="flex-1 space-y-4 overflow-y-auto px-6 py-4 text-sm">
           {prefill && (
             <div className="rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100">
-              <p className="flex items-center gap-1 font-semibold"><Wand2 className="size-3.5" />Rellenado con tu petición: revísalo antes de crear</p>
+              <p className="flex items-center gap-1 font-semibold"><Wand2 className="size-3.5" />{prefill.title ?? 'Rellenado con tu petición: revísalo antes de crear'}</p>
               <p className="mt-0.5 italic text-amber-800 dark:text-amber-200">«{prefill.source}»</p>
               {warnings.length > 0 && (
                 <ul className="mt-1 list-disc pl-4">{warnings.map((w) => <li key={w}>{w}</li>)}</ul>
@@ -561,7 +578,7 @@ export function RallyCreateForm({ projects, defaultProjectId, defaultTags = [], 
             <section className="space-y-3 border-t border-zinc-200 pt-3 dark:border-zinc-700">
               <p className="text-xs text-zinc-500">Campos obligatorios de vuestro Rally</p>
               {options!.custom.map((c) => (
-                <Field key={c.field} label={c.rule ? `${c.label} · regla del proyecto` : c.label} required>
+                <Field key={c.field} label={c.rule && !Object.keys(prefill?.custom ?? {}).some((l) => same(l, c.label)) ? `${c.label} · regla del proyecto` : c.label} required>
                   {c.values.length
                     ? select(custom[c.field] ?? '', (v) => setCustom((x) => ({ ...x, [c.field]: v })), c.values.map((v) => ({ value: v, label: v })), 'Elige…', c.label)
                     : <input className={inputClass} value={custom[c.field] ?? ''} onChange={(e) => setCustom((x) => ({ ...x, [c.field]: e.target.value }))} aria-label={c.label} />}

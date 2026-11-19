@@ -551,6 +551,7 @@ function RallyItems({ user, onDisconnect }: { user: string | null; onDisconnect:
           onAdd={() => void add([open])}
           onOpenTask={() => { const t = linkedTask(open, byId); if (t) openTask(t); }}
           onClose={closePanel}
+          onChanged={(it) => setItems((list) => list?.map((x) => (x.objectId === it.objectId ? it : x)) ?? list)}
         />
       )}
     </div>

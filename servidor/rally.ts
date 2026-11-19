@@ -1,7 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { commentsFor, type MoveStep } from '../src/domain/rallyComments.ts';
 import type { RallyActivity, RallyChange, RallyChangeKind } from '../src/domain/rallyActivity.ts';
-import type { RallyCategory, RallyDetail, RallyFormOptions, RallyItem, RallyKind, RallyPick, RallyProject, RallyRef, RallyStatus } from '../src/domain/rally.ts';
+import type { RallyCategory, RallyDetail, RallyEditValues, RallyFormOptions, RallyItem, RallyKind, RallyPick, RallyProject, RallyRef, RallyStatus } from '../src/domain/rally.ts';
 import { ApiError } from './api.ts';
 import type { TeamUser } from './auth.ts';
 import { SqliteRallyAccounts, type RallyAccounts } from './rallyAccounts.ts';
@@ -281,6 +281,62 @@ export function parseCc(v: unknown): CcPerson[] | null {
     else return null;
   }
   return out;
+}
+
+/** La descripción o las notas llevan formato que no se puede editar aquí sin perderlo (listas, negritas, imágenes, tablas…). */
+const RICH = /<(img|table|ul|ol|li|b|strong|i|em|u|a|font|h[1-6]|pre|code)\b|style=/i;
+
+/** Valores del formulario de edición a partir del objeto de Rally (`fetch=true`). */
+export function editValues(o: RallyObject, kind: RallyKind, relative: (ref: unknown) => string | null, tags: RallyRef[], milestones: RallyRef[],
+  parents: { parent: RallyPick | null; feature: RallyPick | null }): RallyEditValues {
+  const person = (v: unknown): RallyRef | null => {
+    const r = v && typeof v === 'object' ? v as RallyObject : null;
+    const ref = r ? relative(r._ref) : null;
+    return ref ? { ref, name: refName(r) ?? '' } : null;
+  };
+  const refOf = (v: unknown) => (v && typeof v === 'object' ? relative((v as RallyObject)._ref) ?? '' : '');
+  const str = (v: unknown) => (typeof v === 'string' ? v : '');
+  const numOr = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  const day = (v: unknown) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v) ? v.slice(0, 10) : '');
+  const custom: Record<string, string> = {};
+  for (const [k, v] of Object.entries(o)) {
+    if (!k.startsWith('c_') || k === ASSIGNEE_FIELD) continue;
+    if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') custom[k] = String(v);
+  }
+  const defect: Record<string, string> = {};
+  if (kind === 'DE') for (const f of ['Severity', 'Priority', 'State', 'Environment']) defect[f] = str(o[f]);
+  const description = str(o.Description);
+  const notes = str(o.Notes);
+  return {
+    projectId: refId(o.Project) ?? '',
+    name: str(o.Name),
+    owner: person(o.Owner),
+    assignee: person(o[ASSIGNEE_FIELD]),
+    color: str(o.DisplayColor),
+    flowStateRef: refOf(o.FlowState),
+    scheduleState: str(o.ScheduleState),
+    taskState: kind === 'TA' ? str(o.State) : '',
+    planEstimate: numOr(o.PlanEstimate),
+    estimate: numOr(o.Estimate),
+    toDo: numOr(o.ToDo),
+    description: description ? htmlToText(description) : '',
+    notes: notes ? htmlToText(notes) : '',
+    richDescription: RICH.test(description),
+    richNotes: RICH.test(notes),
+    parent: parents.parent,
+    feature: parents.feature,
+    tags,
+    milestones,
+    releaseRef: refOf(o.Release),
+    iterationRef: refOf(o.Iteration),
+    expedite: o.Expedite === true,
+    defect,
+    portfolioStateRef: kind === 'FE' ? refOf(o.State) : '',
+    preliminaryEstimateRef: refOf(o.PreliminaryEstimate),
+    plannedStart: day(o.PlannedStartDate),
+    plannedEnd: day(o.PlannedEndDate),
+    custom,
+  };
 }
 
 /** Une condiciones de la WSAPI, que solo admite dos por paréntesis: ((a OR b) OR c). */
@@ -1318,13 +1374,19 @@ export class Rally {
       const ref = sub(k);
       return ref ? this.collection(a, ref, fetchFields, order).catch(() => []) : Promise.resolve([] as RallyObject[]);
     };
-    const [tags, posts, files, ...lists] = await Promise.all([
+    const editable = CREATABLE.includes(info.kind);
+    const [tags, posts, files, milestones, edit, ...lists] = await Promise.all([
       fetchSub('Tags', 'Name'),
       fetchSub('Discussion', 'Text,User,CreationDate,ObjectID', 'CreationDate'),
       fetchSub('Attachments', 'Name,Size,ObjectID'),
+      editable ? fetchSub('Milestones', 'Name') : Promise.resolve([] as RallyObject[]),
+      editable ? this.editParents(a, type, o) : Promise.resolve(null),
       ...RELATED.map(([k]) => fetchSub(k, FETCH)),
     ]);
+    const asRefs = (list: RallyObject[]) => list.map((t) => ({ ref: this.relative(a, t._ref) ?? '', name: String(t.Name ?? t._refObjectName ?? '') }))
+      .filter((r) => r.ref && r.name);
     return {
+      ...(editable && edit ? { edit: editValues(o, info.kind, (r) => this.relative(a, r), asRefs(tags), asRefs(milestones), edit) } : {}),
       item,
       blockedReason: item.blocked ? String(o.BlockedReason ?? '') || null : null,
       fields,
@@ -1337,6 +1399,138 @@ export class Rally {
       discussion: posts.map((p) => this.toPost(a, p)),
       attachments: files.map((f) => ({ name: String(f.Name ?? ''), size: Number(f.Size ?? 0), ...(f.ObjectID ? { objectId: String(f.ObjectID) } : {}) })),
     };
+  }
+
+  /** Padre y feature de un elemento con su FormattedID (en la ficha solo llegan el nombre y la referencia). */
+  private async editParents(a: { base_url: string; api_key: string }, type: string, o: RallyObject): Promise<{ parent: RallyPick | null; feature: RallyPick | null }> {
+    const field = type === 'defect' ? 'Requirement' : type === 'task' ? 'WorkProduct' : 'Parent';
+    const pick = async (v: unknown): Promise<RallyPick | null> => {
+      const ref = v && typeof v === 'object' ? this.relative(a, (v as RallyObject)._ref) : null;
+      if (!ref) return null;
+      try {
+        const r = await this.get(a.base_url, a.api_key, `${ref}?fetch=FormattedID,Name,Project`);
+        const x = Object.values(r)[0] as RallyObject | undefined;
+        return x?.FormattedID ? { id: String(x.FormattedID), name: String(x.Name ?? ''), project: refName(x.Project) } : null;
+      } catch {
+        return null;
+      }
+    };
+    const [parent, feature] = await Promise.all([pick(o[field]), type === 'hierarchicalrequirement' ? pick(o.PortfolioItem) : Promise.resolve(null)]);
+    return { parent, feature };
+  }
+
+  /**
+   * Guarda los cambios de la ficha (solo los campos que llegan; vacío = quitar el valor) y devuelve la ficha nueva.
+   * Los estados no se cambian aquí: se mueven con `move` (y su ventana de comentario).
+   */
+  async update(user: TeamUser, input: { kind?: unknown; objectId?: unknown; changes?: unknown }): Promise<RallyDetail> {
+    const a = await this.connected(user);
+    const entry = Object.entries(KINDS).find(([, info]) => info.kind === input.kind);
+    if (!entry || !CREATABLE.includes(String(input.kind)) || !/^\d+$/.test(String(input.objectId))) throw new ApiError(400, 'Elemento de Rally no válido.');
+    const [type, info] = entry;
+    const c = input.changes && typeof input.changes === 'object' ? input.changes as Record<string, unknown> : {};
+    const has = (k: string) => Object.prototype.hasOwnProperty.call(c, k);
+    const text = (k: string, max = 30_000) => {
+      const v = String(c[k] ?? '').trim();
+      if (v.length > max) throw new ApiError(400, `El campo ${k} es demasiado largo.`);
+      return v;
+    };
+    const ref = (k: string, kinds: string) => {
+      const v = String(c[k] ?? '');
+      if (!v) return null;
+      if (!new RegExp(`^/(${kinds})/\\d+$`).test(v)) throw new ApiError(400, `Valor no válido en ${k}.`);
+      return v;
+    };
+    const num = (k: string) => {
+      const v = c[k];
+      if (v === null || v === undefined || v === '') return null;
+      const n = Number(v);
+      if (!Number.isFinite(n) || n < 0 || n > 9999) throw new ApiError(400, `El número de ${k} no es válido.`);
+      return n;
+    };
+    const refs = (k: string, kinds: string) => (Array.isArray(c[k]) ? c[k] as unknown[] : []).slice(0, 50).map((v) => {
+      if (!new RegExp(`^/(${kinds})/\\d+$`).test(String(v))) throw new ApiError(400, `Valor no válido en ${k}.`);
+      return { _ref: String(v) };
+    });
+
+    const patch: RallyObject = {};
+    if (has('name')) {
+      const name = text('name', 256).replace(/\s+/g, ' ');
+      if (!name) throw new ApiError(400, 'El nombre no puede quedar vacío.');
+      patch.Name = name;
+    }
+    if (has('ownerRef')) patch.Owner = ref('ownerRef', 'user');
+    if (has('assigneeRef') && info.assignee) patch[ASSIGNEE_FIELD] = ref('assigneeRef', 'user');
+    if (has('description')) patch.Description = commentHtml(text('description'));
+    if (has('notes')) patch.Notes = commentHtml(text('notes'));
+    if (has('color')) {
+      const color = String(c.color ?? '');
+      if (color && !/^#[0-9a-f]{6}$/i.test(color)) throw new ApiError(400, 'Color no válido.');
+      patch.DisplayColor = color ? color.toLowerCase() : null;
+    }
+    if (has('tagRefs')) patch.Tags = refs('tagRefs', 'tag');
+    if (has('milestoneRefs')) patch.Milestones = refs('milestoneRefs', 'milestone');
+    if (has('releaseRef')) patch.Release = ref('releaseRef', 'release');
+    if (has('iterationRef') && info.kind !== 'FE') patch.Iteration = ref('iterationRef', 'iteration');
+    if (has('projectId')) {
+      const projectId = String(c.projectId ?? '');
+      if (!/^\d+$/.test(projectId)) throw new ApiError(400, 'Elige el proyecto de Rally.');
+      patch.Project = `/project/${projectId}`;
+    }
+    const parentId = has('parentId') ? String(c.parentId ?? '').trim() : null;
+    if (type === 'task') {
+      if (parentId !== null) {
+        if (!parentId) throw new ApiError(400, 'Una tarea de Rally va siempre dentro de una User Story o un defecto.');
+        patch.WorkProduct = (await this.findByFormattedId(a, parentId, { US: 'hierarchicalrequirement', DE: 'defect' }, 'Una tarea de Rally va dentro de una User Story o un defecto')).ref;
+      }
+      if (has('estimate')) patch.Estimate = num('estimate');
+      if (has('toDo')) patch.ToDo = num('toDo');
+    } else if (info.kind === 'FE') {
+      if (has('portfolioStateRef')) patch.State = ref('portfolioStateRef', 'state');
+      if (has('preliminaryEstimateRef')) patch.PreliminaryEstimate = ref('preliminaryEstimateRef', 'preliminaryestimate');
+      for (const [k, field] of [['plannedStart', 'PlannedStartDate'], ['plannedEnd', 'PlannedEndDate']] as const) {
+        if (!has(k)) continue;
+        const v = String(c[k] ?? '');
+        if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) throw new ApiError(400, `Fecha no válida en ${k}.`);
+        patch[field] = v ? `${v}T12:00:00.000Z` : null;
+      }
+      if (parentId !== null) {
+        if (!parentId) patch.Parent = null;
+        else {
+          const clean = parentId.replace(/[-\s]/g, '').toUpperCase();
+          const [p] = /^[A-Z]{1,3}\d{1,12}$/.test(clean) ? await this.list(a, '/portfolioitem', { query: `(FormattedID = "${clean}")`, fetch: 'ObjectID', pagesize: '1' }) : [];
+          const parentRef = p ? this.relative(a, p._ref) : null;
+          if (!parentRef) throw new ApiError(404, `${clean} no existe en Rally.`);
+          patch.Parent = parentRef;
+        }
+      }
+    } else {
+      if (has('planEstimate')) patch.PlanEstimate = num('planEstimate');
+      if (has('expedite')) patch.Expedite = c.expedite === true;
+      if (parentId !== null && type === 'hierarchicalrequirement') {
+        patch.Parent = parentId ? (await this.findByFormattedId(a, parentId, { US: 'hierarchicalrequirement' }, 'El padre de una User Story es otra User Story')).ref : null;
+      }
+      if (parentId !== null && type === 'defect') {
+        patch.Requirement = parentId ? (await this.findByFormattedId(a, parentId, { US: 'hierarchicalrequirement' }, 'El defecto se enlaza con una User Story')).ref : null;
+      }
+      if (has('featureId') && type === 'hierarchicalrequirement') {
+        const featureId = String(c.featureId ?? '').trim();
+        patch.PortfolioItem = featureId ? (await this.findByFormattedId(a, featureId, { F: 'portfolioitem/feature' }, 'La feature')).ref : null;
+      }
+      if (type === 'defect') {
+        for (const [k, f] of [['severity', 'Severity'], ['priority', 'Priority'], ['state', 'State'], ['environment', 'Environment']]) {
+          if (has(k)) patch[f] = text(k, 100) || null;
+        }
+      }
+    }
+    const custom = c.custom && typeof c.custom === 'object' ? c.custom as Record<string, unknown> : {};
+    for (const [k, v] of Object.entries(custom).slice(0, 50)) {
+      if (!/^c_[\p{L}\p{N}_]{1,80}$/u.test(k) || k === ASSIGNEE_FIELD) throw new ApiError(400, `Campo personalizado no válido: ${k}.`);
+      patch[k] = String(v ?? '').trim().slice(0, 30_000) || null;
+    }
+    if (!Object.keys(patch).length) throw new ApiError(400, 'No hay cambios que guardar.');
+    await this.post(a, `/${type}/${input.objectId}?fetch=FormattedID`, { [info.typeName]: patch });
+    return this.detail(user, info.kind, input.objectId);
   }
 
   /**

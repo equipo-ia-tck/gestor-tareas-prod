@@ -83,6 +83,48 @@ export interface RallyCreateInput {
   custom?: Record<string, string>;
 }
 
+/**
+ * Valores editables de un elemento (`RallyDetail.edit`), con las mismas referencias que `RallyFormOptions`. Los estados
+ * (Flow State, Schedule State y el State de una tarea) no se guardan con el resto: se mueven con su ventana de comentario.
+ */
+export interface RallyEditValues {
+  projectId: string;
+  name: string;
+  owner: RallyRef | null;
+  assignee: RallyRef | null;
+  color: string;
+  flowStateRef: string;
+  scheduleState: string;
+  /** State de una tarea. */
+  taskState: string;
+  planEstimate: number | null;
+  estimate: number | null;
+  toDo: number | null;
+  description: string;
+  notes: string;
+  /** La descripción o las notas tienen formato de Rally (negritas, listas, imágenes…) que se perdería al cambiarlas aquí. */
+  richDescription: boolean;
+  richNotes: boolean;
+  parent: RallyPick | null;
+  feature: RallyPick | null;
+  tags: RallyRef[];
+  milestones: RallyRef[];
+  releaseRef: string;
+  iterationRef: string;
+  expedite: boolean;
+  /** Severity, Priority, State y Environment de un defecto. */
+  defect: Record<string, string>;
+  portfolioStateRef: string;
+  preliminaryEstimateRef: string;
+  plannedStart: string;
+  plannedEnd: string;
+  /** Campos personalizados (c_…) con valor de texto. */
+  custom: Record<string, string>;
+}
+
+/** Cambios al editar (`POST /api/rally/update`): solo los campos tocados. Vacío = quitar el valor. */
+export type RallyUpdateInput = Partial<Omit<RallyCreateInput, 'kind' | 'ready' | 'blocked' | 'blockedReason' | 'scheduleState' | 'flowStateRef'>>;
+
 /** Colores de tarjeta de Rally (DisplayColor). */
 export const RALLY_COLORS: { name: string; hex: string }[] = [
   { name: 'Azul', hex: '#105cab' }, { name: 'Celeste', hex: '#21a2e0' }, { name: 'Verde azulado', hex: '#107c83' },
@@ -161,6 +203,8 @@ export interface RallyDetail {
   discussion: { author: string | null; date: string; text: string; objectId?: string; mine?: boolean }[];
   /** `objectId`: el del adjunto en Rally (para eliminarlo). */
   attachments: { name: string; size: number; objectId?: string }[];
+  /** Valores para el formulario de edición (no está en los test cases, que no se editan desde aquí). */
+  edit?: RallyEditValues;
 }
 
 export type RallyGroupBy = 'column' | 'category' | 'state' | 'iteration' | 'assignee' | 'tag';
@@ -350,6 +394,22 @@ export const RALLY_COLUMNS: { name: string; category: RallyCategory; color: stri
   { name: 'Completed', category: 'done', color: '#22c55e', home: true },
   { name: 'Accepted', category: 'accepted', color: '#047857', home: true },
 ];
+
+/**
+ * Categoría a la que se mueve un elemento al elegir una columna (Flow State) o un Schedule State en su ficha: la de la
+ * columna del Tablero si coincide, si no por el Schedule State (o el State de una tarea).
+ */
+export function categoryOfState(name: string, scheduleState?: string | null): RallyCategory {
+  const key = (v: string) => v.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const column = RALLY_COLUMNS.find((c) => key(c.name) === key(name));
+  if (column) return column.category;
+  if (/block/i.test(name)) return 'blocked';
+  const s = key(scheduleState || name);
+  if (['accepted', 'released', 'closed'].includes(s)) return 'accepted';
+  if (s === 'completed' || s === 'done') return 'done';
+  if (s === 'inprogress' || /progress|review|curso|desarrollo/.test(key(name))) return 'doing';
+  return 'todo';
+}
 
 /** Columna del Tablero en la que sale un elemento de Rally (la misma que usa el Tablero para una tarea enlazada). */
 export const boardColumnOf = (it: Pick<RallyItem, 'state' | 'category'>) => rallyColumnOf(it.state, it.category);

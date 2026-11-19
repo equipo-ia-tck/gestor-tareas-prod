@@ -6,6 +6,8 @@ import type { Task } from '../../domain/types';
 import { MAX_UPLOAD, rallyApi, toBase64, tooBigMessage } from './rallyApi';
 import { RallyFlags } from './RallyFlags';
 import { MentionTextarea, UnlinkedWarning } from './MentionTextarea';
+import { RallyEditForm } from './RallyEditForm';
+import { NewDefect } from './NewDefect';
 
 /** Campos que se ven primero (con el nombre que les da Rally); el resto va en "Más campos". */
 const PRIMARY = [
@@ -44,10 +46,13 @@ function Fields({ fields }: { fields: RallyDetail['fields'] }) {
 
 /**
  * Ficha de un elemento de Rally en un panel a la derecha (como el de las tareas del Tablero): todos sus campos, textos, etiquetas,
- * elementos relacionados, discusión y adjuntos. Solo lectura; los relacionados se abren en el mismo panel.
+ * elementos relacionados, discusión y adjuntos. Los campos se editan como en «Nuevo elemento» (`RallyEditForm`); los
+ * relacionados se abren en el mismo panel.
  */
-export function RallyDetailPanel({ item, task, color, onSelect, onAdd, onOpenTask, onClose }: {
+export function RallyDetailPanel({ item, task, color, onSelect, onAdd, onOpenTask, onClose, onChanged }: {
   item: RallyItem;
+  /** El elemento ha cambiado en Rally (guardado o movido desde la ficha): para poner al día la lista. */
+  onChanged?: (item: RallyItem) => void;
   task: Task | undefined;
   color: string;
   onSelect: (item: RallyItem) => void;
@@ -125,22 +130,30 @@ export function RallyDetailPanel({ item, task, color, onSelect, onAdd, onOpenTas
           <RallyFlags item={current} task={task?.external_id === current.id ? task : undefined} reason={detail?.blockedReason ?? null} onChanged={flagged} />
         </div>
 
-        <RallyDetailBody item={current} detail={detail} error={error} onSelect={onSelect} />
+        <RallyDetailBody item={current} detail={detail} error={error} onSelect={onSelect}
+          task={task?.external_id === current.id ? task : undefined} onDetail={(d) => { setDetail(d); onChanged?.(d.item); }} />
       </div>
     </aside>
   );
 }
 
 /** Contenido de la ficha (detalles, etiquetas, textos, relacionados, discusión y adjuntos): panel de Rally y de la tarea. */
-export function RallyDetailBody({ item: current, detail, error, onSelect }: {
+export function RallyDetailBody({ item: current, detail, error, onSelect, task, onDetail }: {
   item: RallyItem;
   detail: RallyDetail | null;
   error: string | null;
   onSelect: (item: RallyItem) => void;
+  /** Tarea del gestor enlazada a este elemento (al guardar, recibe el nombre y las etiquetas). */
+  task?: Task;
+  /** Ficha nueva tras guardar o mover desde el formulario. */
+  onDetail?: (detail: RallyDetail) => void;
 }) {
   const primary = (detail?.fields ?? []).filter((f) => PRIMARY.includes(f.label))
     .sort((a, b) => PRIMARY.indexOf(a.label) - PRIMARY.indexOf(b.label));
   const rest = (detail?.fields ?? []).filter((f) => !PRIMARY.includes(f.label));
+  // Con formulario (todos los tipos salvo los test cases), la descripción, las notas y las etiquetas van en él.
+  const edit = detail?.edit && onDetail && detail.item.objectId === current.objectId ? detail as RallyDetail & { edit: NonNullable<RallyDetail['edit']> } : null;
+  const texts = (detail?.texts ?? []).filter((t) => !edit || !['Description', 'Notes', 'Descripción', 'Notas'].includes(t.label));
   return (
     <>
       {error && <p className="mx-4 mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{error}</p>}
@@ -148,7 +161,20 @@ export function RallyDetailBody({ item: current, detail, error, onSelect }: {
 
       {detail && (
         <>
-          {primary.length > 0 && (
+          {edit && (
+            <Block title="Detalles">
+              <RallyEditForm key={current.objectId} item={detail.item} detail={edit} task={task} onSaved={onDetail!} />
+            </Block>
+          )}
+          {edit && (primary.length + rest.length) > 0 && (
+            <Block title="Todos los campos de Rally">
+              <details>
+                <summary className="cursor-pointer text-xs text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">Ver todos · {primary.length + rest.length} (solo lectura)</summary>
+                <div className="mt-2"><Fields fields={[...primary, ...rest]} /></div>
+              </details>
+            </Block>
+          )}
+          {!edit && primary.length > 0 && (
             <Block title="Detalles">
               <Fields fields={primary} />
               {rest.length > 0 && (
@@ -159,14 +185,14 @@ export function RallyDetailBody({ item: current, detail, error, onSelect }: {
               )}
             </Block>
           )}
-          {detail.tags.length > 0 && (
+          {!edit && detail.tags.length > 0 && (
             <Block title="Etiquetas">
               <div className="flex flex-wrap gap-1">
                 {detail.tags.map((t) => <span key={t} className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs dark:bg-zinc-800">{t}</span>)}
               </div>
             </Block>
           )}
-          {detail.texts.map((t) => (
+          {texts.map((t) => (
             <Block key={t.label} title={t.label}>
               <p className="text-sm leading-relaxed break-words whitespace-pre-wrap">{t.text}</p>
             </Block>
@@ -187,6 +213,15 @@ export function RallyDetailBody({ item: current, detail, error, onSelect }: {
               </ul>
             </Block>
           ))}
+          {current.kind === 'US' && (
+            <Block title={`Nuevo defecto en ${current.id}`}>
+              <div className="flex flex-wrap items-center gap-2">
+                <NewDefect us={current} detail={detail} task={task}
+                  onCreated={() => { rallyApi.detail(current).then((d) => onDetail?.(d), () => {}); }} />
+                <span className="text-xs text-zinc-500">Con la User Story, Open, New, PRE, Minor Problem, Normal, ANA_etiquetado, el APPGAR de la US y «Afectación a usuario» No.</span>
+              </div>
+            </Block>
+          )}
           {(current.kind === 'US' || current.kind === 'DE') && <NewRallyTask key={`new-${current.objectId}`} parent={current} onSelect={onSelect} />}
           <Discussion key={current.objectId} item={current} posts={detail.discussion} />
           <Attachments key={`files-${current.objectId}`} item={current} files={detail.attachments} />
