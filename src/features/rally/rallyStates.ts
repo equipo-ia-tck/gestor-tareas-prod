@@ -1,9 +1,10 @@
 import { repo } from '../../data/services';
 import type { HistoryEntry, HistoryEvent } from '../../data/repository';
-import { rallyIdsOf, rallyMoves, rallyPushes, type RallyCategory, type RallyItem, type RallyRef } from '../../domain/rally';
+import { rallyIdsOf, rallyMoves, rallyPushes, type RallyCategory, type RallyItem } from '../../domain/rally';
 import type { Task } from '../../domain/types';
 import { rallyApi } from './rallyApi';
-import { askAnalyst } from './AnalystPrompt';
+import { askComment, type CommentAnswer } from './AnalystPrompt';
+import { commentShape } from '../../domain/rallyComments';
 import { askNeedReview } from './NeedReviewPrompt';
 import { DONE_COMMENT } from './doneComment';
 import { askMeeting } from './MeetingPrompt';
@@ -81,36 +82,38 @@ export async function pushToRally(event: HistoryEvent, notify: (message: string)
 
 /**
  * Mueve un elemento en Rally (a la categoría o, con `flow`, a esa columna): primero sin escribir para saber si lleva
- * comentario; si lo lleva, pregunta por el analista (cerrar = `cancel`, no se toca Rally), mueve, y publica el
- * comentario. Devuelve el elemento movido, `cancel` o `null` si ha fallado (ya avisado).
+ * comentario; si lo lleva, abre la ventana del comentario (Para, texto y CC; cerrar = `cancel`, no se toca Rally; si es
+ * opcional, «Mover sin comentar»), mueve y publica el comentario. Devuelve el elemento movido, `cancel` o `null` si ha fallado (ya avisado).
  */
 async function moveInRally(id: string, category: RallyCategory, flow: string | undefined, notify: (message: string) => void): Promise<RallyItem | 'cancel' | null> {
   pending.add(id);
   try {
     const preview = await rallyApi.move(id, category, { dryRun: true, flow });
-    let analyst: RallyRef | null = null;
-    let text: string | null = null;
-    let owner: RallyRef | null = null;
+    let answer: Exclude<CommentAnswer, 'cancel'> | null = null;
+    const kind = preview.kind;
+    const step = preview.commentStep ?? null;
     if (preview.comment) {
-      // A Completed, el texto de la plantilla «Owner · Entrega de la guía» (si no, el previsto por el servidor).
-      const suggested = category === 'done' && DONE_COMMENT ? DONE_COMMENT : preview.comment;
-      const answer = await askAnalyst({ id: preview.id, name: preview.name, text: suggested, owner: preview.owner });
-      if (answer === 'cancel') return 'cancel';
-      analyst = answer.analyst;
-      text = answer.text;
-      owner = answer.owner;
+      // US a Completed: la plantilla «Owner · Entrega de la guía» (si no, el texto previsto por el servidor).
+      const suggested = step === 'done' && kind !== 'TS' && DONE_COMMENT ? DONE_COMMENT : preview.comment;
+      const shape = step ? commentShape(kind, step) : undefined;
+      const a = await askComment({ id: preview.id, name: preview.name, text: suggested, owner: preview.owner, shape,
+        cc: shape?.ccEveryone ? preview.mentioned ?? [] : [], skipLabel: 'Mover sin comentar' });
+      if (a === 'cancel') return 'cancel';
+      answer = a;
     }
+    const comment = answer && answer !== 'skip' ? answer : null;
     // Al bloquear, el comentario (sin las personas) va también al motivo de bloqueo de Rally.
-    const blockedReason = category === 'blocked' ? (text ?? preview.comment ?? undefined) : undefined;
+    const blockedReason = category === 'blocked' ? (comment?.text ?? preview.comment ?? undefined) : undefined;
     const item = await rallyApi.move(id, category, { blockedReason, flow });
     rememberRally([item]);
-    if (!item.comment) { notify(`${id} en Rally: ${item.state}`); return item; }
+    if (!item.comment || answer === 'skip') { notify(`${id} en Rally: ${item.state}${answer === 'skip' ? ' · sin comentario' : ''}`); return item; }
     try {
       // El texto que se haya escrito en la ventana (lápiz) manda sobre el previsto.
-      const r = await rallyApi.moveComment(item.id, text ?? item.comment, analyst, owner);
-      notify(`${id} en Rally: ${item.state} · comentado${r.owner ? ` para ${r.owner}` : ''}${r.analyst ? ` · analista ${r.analyst}` : ''}`);
-      // Entrega (a Completed): «Os mando la convocatoria» → se abre la reunión nueva con las personas mencionadas.
-      if (category === 'done') askMeeting({ title: `Entrega de la guía · ${item.id} ${item.name}`, invite: r.people ?? [] });
+      const r = await rallyApi.moveComment(item.id, comment?.text ?? item.comment,
+        comment ? { owner: comment.owner, noOwner: comment.noOwner, cc: comment.cc } : { owner: null, noOwner: false, cc: [] });
+      notify(`${id} en Rally: ${item.state} · comentado${r.owner ? ` para ${r.owner}` : ''}${r.cc.length ? ` · CC ${r.cc.join(', ')}` : ''}`);
+      // Entrega de una US (a Completed): se abre la reunión nueva con las personas mencionadas. Los TS no tienen reunión.
+      if (category === 'done' && item.kind !== 'TS') askMeeting({ title: `Entrega de la guía · ${item.id} ${item.name}`, invite: r.people ?? [] });
     } catch (e) {
       notify(`${id} en Rally: ${item.state}, pero no se ha podido comentar: ${(e as Error).message}`);
     }
@@ -158,11 +161,11 @@ export async function moveToNeedReview(task: Task, notify: (message: string) => 
   try {
     const answer = await askNeedReview({ id, name: known?.name ?? task.title, owner: known?.owner ?? null });
     if (answer === 'cancel') { notify(`Movimiento de ${id} cancelado`); return; }
-    const r = await rallyApi.needReview({ id, defectId: answer.defect.id, text: answer.text, analyst: answer.analyst, reason: answer.reason, owner: answer.owner });
+    const r = await rallyApi.needReview({ id, defectId: answer.defect.id, text: answer.text, reason: answer.reason, owner: answer.owner, noOwner: answer.noOwner, cc: answer.cc });
     rememberRally([r.item]);
     notify(r.commentError
       ? `${id} en Need Review y bloqueada, pero no se ha podido comentar: ${r.commentError}`
-      : `${id} en Need Review · bloqueada · comentado${r.owner ? ` para ${r.owner}` : ''} · analista ${r.analyst}`);
+      : `${id} en Need Review · bloqueada · comentado${r.owner ? ` para ${r.owner}` : ''}${r.cc.length ? ` · CC ${r.cc.join(', ')}` : ''}`);
     const [move] = rallyMoves([task], [r.item], await repo.listItemTypes());
     if (!move) return;
     applying = true;

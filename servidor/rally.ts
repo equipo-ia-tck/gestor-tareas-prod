@@ -1,4 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
+import { commentsFor, type MoveStep } from '../src/domain/rallyComments.ts';
 import type { RallyActivity, RallyChange, RallyChangeKind } from '../src/domain/rallyActivity.ts';
 import type { RallyCategory, RallyDetail, RallyFormOptions, RallyItem, RallyKind, RallyPick, RallyProject, RallyRef, RallyStatus } from '../src/domain/rally.ts';
 import { ApiError } from './api.ts';
@@ -169,30 +170,29 @@ export function rallyCategory(flow: string | null, schedule: string, blocked: bo
   return 'todo';
 }
 
-/** Comentarios que se dejan en la discusión de Rally al mover un elemento desde el gestor. */
-export const MOVE_COMMENTS = {
-  defined: 'Guía definida correctamente',
-  doing: 'Se comienza a trabajar en la guía solicitada',
-  blocked: 'Guía bloqueada',
-  done: 'Se finaliza la guía a la espera de validación',
-  accepted: 'Tras la revisión y OK del PO, PO IT y analista, se entrega la guía y se da por Accepted la US.\n\nGracias!',
-} as const;
+export { MOVE_COMMENTS, TS_MOVE_COMMENTS } from '../src/domain/rallyComments.ts';
 
 const isNew = (state: string) => /^new$/i.test(state.trim());
 const isDefined = (state: string) => /^defined$/i.test(state.trim());
 
 /**
- * Comentario para un movimiento (null si no toca): de New a Defined, a En curso, a Bloqueado, a Completed o a Accepted.
- * Volver atrás a Por hacer no deja comentario.
+ * Paso de un movimiento que lleva comentario (null si no toca): de New a Defined, a En curso, a Bloqueado, a Completed o
+ * a Accepted. Volver atrás a Por hacer no deja comentario.
  */
-export function moveComment(from: Pick<RallyItem, 'state' | 'category'>, to: Pick<RallyItem, 'state' | 'category'>): string | null {
+export function moveStep(from: Pick<RallyItem, 'state' | 'category'>, to: Pick<RallyItem, 'state' | 'category'>): MoveStep | null {
   if (from.category === to.category && from.state === to.state) return null;
-  if (to.category === 'blocked') return from.category === 'blocked' ? null : MOVE_COMMENTS.blocked;
-  if (to.category === 'doing') return from.category === 'doing' ? null : MOVE_COMMENTS.doing;
-  if (to.category === 'done') return MOVE_COMMENTS.done;
-  if (to.category === 'accepted') return from.category === 'accepted' ? null : MOVE_COMMENTS.accepted;
-  if (to.category === 'todo' && isNew(from.state) && isDefined(to.state)) return MOVE_COMMENTS.defined;
+  if (to.category === 'blocked') return from.category === 'blocked' ? null : 'blocked';
+  if (to.category === 'doing') return from.category === 'doing' ? null : 'doing';
+  if (to.category === 'done') return 'done';
+  if (to.category === 'accepted') return from.category === 'accepted' ? null : 'accepted';
+  if (to.category === 'todo' && isNew(from.state) && isDefined(to.state)) return 'defined';
   return null;
+}
+
+/** Comentario de un movimiento según el paso y el tipo (los TS tienen sus textos). */
+export function moveComment(from: Pick<RallyItem, 'state' | 'category'>, to: Pick<RallyItem, 'state' | 'category'> & { kind?: RallyKind }): string | null {
+  const step = moveStep(from, to);
+  return step ? commentsFor(to.kind)[step] : null;
 }
 
 /** Persona de Rally que llega del navegador (`{ ref: '/user/123', name }`); null si no es válida. */
@@ -258,9 +258,29 @@ export function blockedReasonText(text: unknown): string | null {
   return t ? (t.length > 256 ? `${t.slice(0, 255)}…` : t) : null;
 }
 
-export function moveCommentHtml(text: string, owner: Mention | null, analyst: Mention | null): string {
+/** Comentario de un movimiento: «@Persona texto» y, si hay alguien más, «CC: @X @Y» en la última línea. */
+export function moveCommentHtml(text: string, owner: Mention | null, cc: Mention[]): string {
   const first = owner ? `${mentionHtml(owner)} ${commentHtml(text)}` : commentHtml(text);
-  return `<p>${analyst ? `${first}<br />Analista: ${mentionHtml(analyst)}` : first}</p>`;
+  return `<p>${cc.length ? `${first}<br />CC: ${cc.map(mentionHtml).join(' ')}` : first}</p>`;
+}
+
+/** Persona del CC que llega del navegador: por referencia (`/user/123`) o por su ObjectUUID (las ya mencionadas). */
+export interface CcPerson { name: string; ref?: string; uuid?: string }
+
+export function parseCc(v: unknown): CcPerson[] | null {
+  if (v == null) return [];
+  if (!Array.isArray(v) || v.length > 30) return null;
+  const out: CcPerson[] = [];
+  for (const x of v) {
+    if (!x || typeof x !== 'object') return null;
+    const { ref, uuid, name } = x as { ref?: unknown; uuid?: unknown; name?: unknown };
+    const n = String(name ?? '').trim().slice(0, 120);
+    if (!n) return null;
+    if (typeof ref === 'string' && /^\/user\/\d+$/.test(ref)) out.push({ name: n, ref });
+    else if (typeof uuid === 'string' && UUID.test(uuid)) out.push({ name: n, uuid });
+    else return null;
+  }
+  return out;
 }
 
 /** Une condiciones de la WSAPI, que solo admite dos por paréntesis: ((a OR b) OR c). */
@@ -559,25 +579,53 @@ export class Rally {
     if (!Object.keys(patch).length) return current;
     if (input.dryRun === true) {
       const preview = toRallyItem({ _type: type, ...o, ...patch, ...(flowName ? { FlowState: { _refObjectName: flowName } } : {}) }, a.base_url, a.rally_user_id)!;
-      const text = moveComment(current, preview);
-      return { ...preview, ...(text ? { comment: text } : {}) };
+      const step = moveStep(current, preview);
+      if (!step) return preview;
+      // TS a Accepted: en el CC se propone a todas las personas ya mencionadas en su discusión.
+      const mentioned = step === 'accepted' && info.kind === 'TS' ? await this.mentionedIn(a, o) : undefined;
+      return { ...preview, comment: commentsFor(info.kind)[step], commentStep: step, ...(mentioned ? { mentioned } : {}) };
     }
     const updated = await this.post(a, `/${type}/${o.ObjectID}?fetch=${FETCH}`, { [info.typeName]: patch });
     const item = toRallyItem({ _type: type, ...updated }, a.base_url, a.rally_user_id)!;
-    // El comentario no se publica aquí: la app pregunta antes por el analista y lo manda con `moveCommentPost`.
-    const text = moveComment(current, item);
-    if (text) item.comment = text;
+    // El comentario no se publica aquí: la app pregunta antes por las personas y lo manda con `moveCommentPost`.
+    const step = moveStep(current, item);
+    if (step) { item.comment = commentsFor(info.kind)[step]; item.commentStep = step; }
     return item;
   }
 
   /**
-   * Publica en la discusión el comentario de un movimiento, mencionando al Owner (el PO) y, si se ha elegido, al
-   * analista: «@PO Guía bloqueada» + «Analista: @X». El texto es el de `MOVE_COMMENTS` o el que se haya escrito con el lápiz.
+   * Personas mencionadas en la discusión de un elemento (sin el Owner), para proponerlas en el CC. Si la discusión no se
+   * puede leer, ninguna.
    */
-  async moveCommentPost(user: TeamUser, input: { id?: unknown; text?: unknown; analyst?: unknown; owner?: unknown }): Promise<{ text: string; owner: string | null; analyst: string | null; people: MentionedPerson[] }> {
+  private async mentionedIn(a: { base_url: string; api_key: string }, o: RallyObject): Promise<{ name: string; uuid: string }[]> {
+    if (!/^\d+$/.test(String(o.ObjectID ?? ''))) return [];
+    try {
+      const posts = await this.list(a, '/conversationpost', { query: `(Artifact.ObjectID = ${o.ObjectID})`, fetch: 'Text', pagesize: '200' });
+      const ownerUuid = o.Owner && typeof o.Owner === 'object' ? (o.Owner as RallyObject)._refObjectUUID : null;
+      const out: { name: string; uuid: string }[] = [];
+      for (const p of posts) {
+        for (const m of mentionsIn(String(p.Text ?? ''))) {
+          if (!m.uuid || !UUID.test(m.uuid)) continue;
+          const uuid = m.uuid.toLowerCase();
+          if (uuid === String(ownerUuid ?? '').toLowerCase() || out.some((x) => x.uuid === uuid)) continue;
+          out.push({ name: m.name, uuid });
+        }
+      }
+      return out.slice(0, 20);
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Publica en la discusión el comentario de un movimiento: «@Persona texto» + «CC: @X @Y». La primera mención es el
+   * Owner (el PO), otra persona elegida en la ventana (`owner`) o nadie (`noOwner`). El CC lleva al analista y a quien se
+   * haya añadido; `analyst` (versión anterior de la app) se suma al CC. El texto es el propuesto o el escrito con el lápiz.
+   */
+  async moveCommentPost(user: TeamUser, input: { id?: unknown; text?: unknown; analyst?: unknown; owner?: unknown; noOwner?: unknown; cc?: unknown }):
+    Promise<{ text: string; owner: string | null; analyst: string | null; cc: string[]; people: MentionedPerson[] }> {
     const a = await this.connected(user);
     const id = String(input.id ?? '').replace(/-/g, '').toUpperCase();
-    // El texto parte de MOVE_COMMENTS, pero se puede modificar en la ventana antes de publicarlo.
     const text = String(input.text ?? '').trim();
     const entry = kindOfId(id);
     if (!entry || !text || text.length > 10_000) throw new ApiError(400, 'Comentario de Rally no válido.');
@@ -585,26 +633,29 @@ export class Rally {
     if (input.analyst != null && !analyst) throw new ApiError(400, 'Analista no válido.');
     const ownerOverride = parseUserRef(input.owner);
     if (input.owner != null && !ownerOverride) throw new ApiError(400, 'Persona a mencionar no válida.');
+    const ccIn = parseCc(input.cc);
+    if (!ccIn) throw new ApiError(400, 'Personas en copia no válidas.');
+    const cc = analyst && !ccIn.some((p) => p.ref === analyst.ref) ? [{ name: analyst.name, ref: analyst.ref }, ...ccIn] : ccIn;
     const [type] = entry;
     const [o] = await this.query(a, type, `(FormattedID = "${id}")`);
     if (!o) throw new ApiError(404, `${id} no existe en Rally.`);
-    const { owner, people } = await this.postMoveComment(a, type, o, text, analyst, ownerOverride);
-    return { text, owner, analyst: analyst?.name ?? null, people };
+    const { owner, people } = await this.postMoveComment(a, type, o, text, cc, ownerOverride, input.noOwner === true);
+    return { text, owner, analyst: analyst?.name ?? null, cc: cc.map((p) => p.name), people };
   }
 
   /**
-   * Publica «@PO texto» + «Analista: @X» en la discusión de `o`. Devuelve el nombre del Owner mencionado y las personas
-   * mencionadas con su email (para convocar la reunión de entrega desde la app).
+   * Publica «@Persona texto» + «CC: @X @Y» en la discusión de `o`. Devuelve el nombre de la primera persona mencionada y
+   * todas las mencionadas con su email (para convocar la reunión de entrega desde la app).
    */
-  private async postMoveComment(a: { base_url: string; api_key: string }, type: string, o: RallyObject, text: string, analyst: RallyRef | null,
-    ownerOverride: RallyRef | null = null): Promise<{ owner: string | null; people: MentionedPerson[] }> {
-    // Se menciona al Owner del elemento, salvo que en la ventana se haya elegido a otra persona en su lugar.
+  private async postMoveComment(a: { base_url: string; api_key: string }, type: string, o: RallyObject, text: string, cc: CcPerson[],
+    ownerOverride: RallyRef | null = null, noOwner = false): Promise<{ owner: string | null; people: MentionedPerson[] }> {
+    // Se menciona al Owner del elemento, salvo que en la ventana se haya elegido a otra persona (o a nadie).
     let owner: Mention | null = null;
     let ownerInfo: { uuid: string | null; email: string | null } | null = null;
     if (ownerOverride) {
       ownerInfo = await this.userInfo(a, ownerOverride.ref.split('/').pop()!);
       owner = { name: ownerOverride.name, uuid: ownerInfo?.uuid ?? null };
-    } else {
+    } else if (!noOwner) {
       const ownerRef = o.Owner && typeof o.Owner === 'object' ? o.Owner as RallyObject : null;
       const ownerId = refId(ownerRef);
       ownerInfo = ownerRef && ownerId && /^\d+$/.test(ownerId) ? await this.userInfo(a, ownerId) : null;
@@ -612,22 +663,23 @@ export class Rally {
         ? { name: refName(ownerRef) ?? 'Owner', uuid: typeof ownerRef._refObjectUUID === 'string' ? ownerRef._refObjectUUID : ownerInfo.uuid }
         : null;
     }
-    const analystInfo = analyst ? await this.userInfo(a, analyst.ref.split('/').pop()!) : null;
-    const analystMention: Mention | null = analyst ? { name: analyst.name, uuid: analystInfo?.uuid ?? null } : null;
-    await this.post(a, '/conversationpost/create', { ConversationPost: { Artifact: `/${type}/${o.ObjectID}`, Text: moveCommentHtml(text, owner, analystMention) } });
+    const ccInfo = await Promise.all(cc.map((p) => (p.ref ? this.userInfo(a, p.ref.split('/').pop()!) : Promise.resolve(null))));
+    const ccMentions: Mention[] = cc.map((p, i) => ({ name: p.name, uuid: p.uuid ?? ccInfo[i]?.uuid ?? null }))
+      .filter((m, i, all) => all.findIndex((x) => x.name === m.name) === i && m.name !== owner?.name);
+    await this.post(a, '/conversationpost/create', { ConversationPost: { Artifact: `/${type}/${o.ObjectID}`, Text: moveCommentHtml(text, owner, ccMentions) } });
     const people: MentionedPerson[] = [];
     if (owner) people.push({ name: owner.name, email: ownerInfo?.email ?? null });
-    if (analystMention) people.push({ name: analystMention.name, email: analystInfo?.email ?? null });
+    cc.forEach((p, i) => { if (!people.some((x) => x.name === p.name)) people.push({ name: p.name, email: ccInfo[i]?.email ?? null }); });
     return { owner: owner?.name ?? null, people };
   }
 
   /**
    * TS a Need Review por errores de validación, todo a la vez: columna Need Review, Blocked con su motivo (que no va a la
-   * discusión) y el comentario «@PO se abre defect <enlace>…» + «Analista: @X». Todo es obligatorio: defecto, analista,
-   * comentario y motivo. Solo test sets.
+   * discusión) y el comentario «@PO IT se abre defect <enlace>…» + «CC: @Analista…». Son obligatorios el defecto, el
+   * comentario y el motivo; las personas no (la app avisa si faltan). Solo test sets.
    */
-  async needReview(user: TeamUser, input: { id?: unknown; defectId?: unknown; text?: unknown; analyst?: unknown; reason?: unknown; owner?: unknown }):
-    Promise<{ item: RallyItem; owner: string | null; analyst: string; commentError?: string }> {
+  async needReview(user: TeamUser, input: { id?: unknown; defectId?: unknown; text?: unknown; analyst?: unknown; reason?: unknown; owner?: unknown; noOwner?: unknown; cc?: unknown }):
+    Promise<{ item: RallyItem; owner: string | null; analyst: string | null; cc: string[]; commentError?: string }> {
     const a = await this.connected(user);
     const id = String(input.id ?? '').replace(/-/g, '').toUpperCase();
     const entry = kindOfId(id);
@@ -636,10 +688,14 @@ export class Rally {
     if (!/^DE\d{1,12}$/.test(defectId)) throw new ApiError(400, 'Elige el defecto que se abre.');
     const text = String(input.text ?? '').trim();
     if (!text || text.length > 10_000) throw new ApiError(400, 'Escribe el comentario.');
+    // Las personas no son obligatorias: la app avisa si faltan, pero deja publicar.
     const analyst = parseUserRef(input.analyst);
-    if (!analyst) throw new ApiError(400, 'Elige el analista.');
+    if (input.analyst != null && !analyst) throw new ApiError(400, 'Analista no válido.');
     const ownerOverride = parseUserRef(input.owner);
     if (input.owner != null && !ownerOverride) throw new ApiError(400, 'Persona a mencionar no válida.');
+    const ccIn = parseCc(input.cc);
+    if (!ccIn) throw new ApiError(400, 'Personas en copia no válidas.');
+    const cc = analyst && !ccIn.some((p) => p.ref === analyst.ref) ? [{ name: analyst.name, ref: analyst.ref }, ...ccIn] : ccIn;
     const reason = blockedReasonText(input.reason);
     if (!reason) throw new ApiError(400, 'Escribe el motivo del bloqueo.');
     const [type, info] = entry;
@@ -656,10 +712,10 @@ export class Rally {
     const updated = await this.post(a, `/${type}/${o.ObjectID}?fetch=${FETCH}`, { [info.typeName]: { FlowState: flow.ref, Blocked: true, BlockedReason: reason } });
     const item = toRallyItem({ _type: type, ...updated }, a.base_url, a.rally_user_id)!;
     try {
-      const { owner } = await this.postMoveComment(a, type, o, text, analyst, ownerOverride);
-      return { item, owner, analyst: analyst.name };
+      const { owner } = await this.postMoveComment(a, type, o, text, cc, ownerOverride, input.noOwner === true);
+      return { item, owner, analyst: analyst?.name ?? null, cc: cc.map((p) => p.name) };
     } catch (e) {
-      return { item, owner: null, analyst: analyst.name, commentError: (e as Error).message };
+      return { item, owner: null, analyst: analyst?.name ?? null, cc: cc.map((p) => p.name), commentError: (e as Error).message };
     }
   }
 

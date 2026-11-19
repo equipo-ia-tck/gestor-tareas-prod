@@ -1,7 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
 import { Api } from './fakeAccounts.ts';
-import { mentionsIn, commentHtml, fieldValue, htmlToText, joinQuery, MOVE_COMMENTS, blockedReasonText, messageHtml, moveComment, normalizeBaseUrl, Rally, rallyCategory, toRallyItem } from '../servidor/rally.ts';
+import { mentionsIn, commentHtml, fieldValue, htmlToText, joinQuery, MOVE_COMMENTS, TS_MOVE_COMMENTS, blockedReasonText, messageHtml, moveComment, normalizeBaseUrl, Rally, rallyCategory, toRallyItem } from '../servidor/rally.ts';
 import { workRuleFields, groupRally, isRallyId, rallyColumnOf, linkedTask, rallyIdsOf, rallyMoves, rallyPushes, taskFromRally, tasksByRallyId, type RallyItem } from '../src/domain/rally';
 import { DEFAULT_ITEM_TYPES } from '../src/domain/workflows';
 import { makeTask } from './factories';
@@ -211,7 +211,7 @@ describe('Rally: mover', () => {
   const flows = ['New', 'Defined', 'To Do', 'Blocked', 'In-Progress', 'Need Review', 'Completed', 'Accepted']
     .map((Name, i) => ({ Name, _ref: `${ws}/flowstate/${i + 1}` }));
 
-  async function setup(row: Record<string, unknown>, opts: { readOnly?: boolean; noAssignee?: boolean } = {}) {
+  async function setup(row: Record<string, unknown>, opts: { readOnly?: boolean; noAssignee?: boolean; discussion?: string[] } = {}) {
     const db = new DatabaseSync(':memory:');
     const api = new Api(db);
     const marta = api.register({ login: 'marta@vml.com', name: 'Marta', password: 'contraseña-larga', code: api.teamCode }).user;
@@ -233,7 +233,7 @@ describe('Rally: mover', () => {
       // Buscar un usuario por ObjectID (para su ObjectUUID); sin consulta, es la comprobación de la clave.
       const results = path === '/user'
         ? (u.searchParams.has('query') ? [{ _refObjectUUID: 'BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB', EmailAddress: `u${u.searchParams.get('query')!.replace(/\D/g, '')}@wpp.com` }] : null)
-        : path === '/flowstate' ? flows : [row];
+        : path === '/flowstate' ? flows : path === '/conversationpost' && opts.discussion ? opts.discussion.map((Text) => ({ Text })) : [row];
       return new Response(JSON.stringify(results ? { QueryResult: { Errors: [], Results: results, TotalResultCount: results.length } } : { User: { ObjectID: 42, DisplayName: 'Marta' } }));
     }) as unknown as typeof fetch;
     const rally = new Rally(db, fetcher);
@@ -264,13 +264,13 @@ describe('Rally: mover', () => {
     expect(item.comment).toBe(MOVE_COMMENTS.defined);
 
     const r = await nueva.rally.moveCommentPost(nueva.marta, { id: 'US-1', text: item.comment, analyst: { ref: '/user/77', name: 'Luis <QA>' } });
-    expect(r).toEqual({ text: MOVE_COMMENTS.defined, owner: 'Pepa PO', analyst: 'Luis <QA>',
+    expect(r).toEqual({ text: MOVE_COMMENTS.defined, owner: 'Pepa PO', analyst: 'Luis <QA>', cc: ['Luis <QA>'],
       // Con su email de Rally, para invitarlas a la reunión de entrega.
       people: [{ name: 'Pepa PO', email: 'u55@wpp.com' }, { name: 'Luis <QA>', email: 'u77@wpp.com' }] });
     expect(comments(nueva.posts)).toEqual([{
       Artifact: '/hierarchicalrequirement/111',
       // Como el editor de Rally: <span class="mention" data-mention="ObjectUUID">, que es lo que hace que avise por correo.
-      Text: `<p><span class="mention" data-mention="2a75bf52-cfd9-4550-97ec-fc6383373083">@Pepa PO</span> Guía definida correctamente<br />Analista: <span class="mention" data-mention="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb">@Luis &lt;QA&gt;</span></p>`,
+      Text: `<p><span class="mention" data-mention="2a75bf52-cfd9-4550-97ec-fc6383373083">@Pepa PO</span> Guía definida correctamente<br />CC: <span class="mention" data-mention="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb">@Luis &lt;QA&gt;</span></p>`,
     }]);
     // Sin analista: solo el PO.
     await nueva.rally.moveCommentPost(nueva.marta, { id: 'US1', text: MOVE_COMMENTS.blocked, analyst: null });
@@ -282,6 +282,13 @@ describe('Rally: mover', () => {
     const otro = await nueva.rally.moveCommentPost(nueva.marta, { id: 'US1', text: 'Hola', analyst: null, owner: { ref: '/user/88', name: 'Ana PO IT' } });
     expect(otro).toMatchObject({ owner: 'Ana PO IT', people: [{ name: 'Ana PO IT', email: 'u88@wpp.com' }] });
     expect(comments(nueva.posts)[3].Text).toBe(`<p><span class="mention" data-mention="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb">@Ana PO IT</span> Hola</p>`);
+    // CC con varias personas (elegidas en Rally o ya mencionadas por su UUID) y sin nadie delante (`noOwner`).
+    const cc = await nueva.rally.moveCommentPost(nueva.marta, { id: 'US1', text: 'Hola', noOwner: true,
+      cc: [{ ref: '/user/77', name: 'Luis QA' }, { uuid: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', name: 'Eva PO IT' }] });
+    expect(cc).toMatchObject({ owner: null, cc: ['Luis QA', 'Eva PO IT'] });
+    expect(comments(nueva.posts)[4].Text).toBe('<p>Hola<br />CC: <span class="mention" data-mention="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb">@Luis QA</span> '
+      + '<span class="mention" data-mention="cccccccc-cccc-4ccc-8ccc-cccccccccccc">@Eva PO IT</span></p>');
+    await expect(nueva.rally.moveCommentPost(nueva.marta, { id: 'US1', text: 'Hola', cc: [{ name: 'x', ref: 'http://x' }] })).rejects.toThrow(/copia/);
     await expect(nueva.rally.moveCommentPost(nueva.marta, { id: 'US1', text: '  ' })).rejects.toThrow(/no válido/);
     await expect(nueva.rally.moveCommentPost(nueva.marta, { id: 'US1', text: MOVE_COMMENTS.done, analyst: { ref: 'http://x', name: 'a' } })).rejects.toThrow(/Analista/);
 
@@ -372,14 +379,15 @@ describe('Rally: mover', () => {
     expect(posts).toEqual([]);
   });
 
-  it('lleva un TS a Need Review con Blocked, motivo y comentario a la vez; todo obligatorio', async () => {
+  it('lleva un TS a Need Review con Blocked, motivo y comentario a la vez; las personas no son obligatorias', async () => {
     const owner = { _ref: `${ws}/user/55`, _refObjectName: 'Pepa PO', _refObjectUUID: '2a75bf52-cfd9-4550-97ec-fc6383373083' };
     const ts = { FormattedID: 'TS9', ObjectID: 999, Name: 'Pruebas login', ScheduleState: 'In-Progress', FlowState: { _refObjectName: 'In-Progress' },
       Blocked: false, Owner: owner, Project: { _ref: `${ws}/project/7` } };
     const { rally, marta, posts } = await setup(ts);
-    const analyst = { ref: '/user/77', name: 'Luis QA' };
-    const ok = { id: 'TS9', defectId: 'DE12', text: 'se abre defect https://eu1.rallydev.com/#/detail/defect/5 por errores', analyst, reason: 'Esperando\nal DE12' };
-    for (const bad of [{ id: 'US1' }, { defectId: '' }, { text: ' ' }, { analyst: null }, { reason: '' }]) {
+    const poIt = { ref: '/user/88', name: 'Eva PO IT' };
+    const ok = { id: 'TS9', defectId: 'DE12', text: 'se abre defect https://eu1.rallydev.com/#/detail/defect/5 por errores', owner: poIt,
+      cc: [{ ref: '/user/77', name: 'Luis QA' }], reason: 'Esperando\nal DE12' };
+    for (const bad of [{ id: 'US1' }, { defectId: '' }, { text: ' ' }, { reason: '' }, { cc: [{ name: 'x' }] }]) {
       await expect(rally.needReview(marta, { ...ok, ...bad })).rejects.toThrow();
     }
     expect(posts).toEqual([]);
@@ -387,10 +395,45 @@ describe('Rally: mover', () => {
     expect(posts[0]).toEqual({ path: '/testset/999', body: { TestSet: { FlowState: `${ws}/flowstate/6`, Blocked: true, BlockedReason: 'Esperando al DE12' } } });
     expect(r.item).toMatchObject({ state: 'Need Review', category: 'doing', blocked: true });
     const text = (posts[1].body as { ConversationPost: { Text: string } }).ConversationPost.Text;
-    expect(text).toContain('data-mention="2a75bf52-cfd9-4550-97ec-fc6383373083">@Pepa PO</span> se abre defect <a href="https://eu1.rallydev.com/#/detail/defect/5"');
-    expect(text).toContain('Analista: <span class="mention"');
+    // El primero es el PO IT elegido a mano (no el Owner); el analista va en el CC.
+    expect(text).toContain('>@Eva PO IT</span> se abre defect <a href="https://eu1.rallydev.com/#/detail/defect/5"');
+    expect(text).not.toContain('Pepa PO');
+    expect(text).toContain('<br />CC: <span class="mention"');
     expect(text).not.toContain('Esperando'); // el motivo no va a la discusión
-    expect(r).toMatchObject({ owner: 'Pepa PO', analyst: 'Luis QA' });
+    expect(r).toMatchObject({ owner: 'Eva PO IT', cc: ['Luis QA'] });
+    // Sin PO IT ni analista también se puede (la app avisa, pero no bloquea).
+    const sin = await rally.needReview(marta, { ...ok, owner: null, noOwner: true, cc: [] });
+    expect(sin).toMatchObject({ owner: null, cc: [] });
+    expect((posts[3].body as { ConversationPost: { Text: string } }).ConversationPost.Text).toBe('<p>se abre defect <a href="https://eu1.rallydev.com/#/detail/defect/5" target="_blank" rel="noopener noreferrer">https://eu1.rallydev.com/#/detail/defect/5</a> por errores</p>');
+  });
+
+  it('los TS tienen sus textos; a Accepted propone en el CC a quien ya se mencionó', async () => {
+    const at = (state: string, category: RallyItem['category']) => ({ state, category, kind: 'TS' as const });
+    expect(moveComment(at('New', 'todo'), at('Defined', 'todo'))).toBe('TS definida correctamente');
+    expect(moveComment(at('Defined', 'todo'), at('In-Progress', 'doing'))).toBe('Se comienza a trabajar en la validación solicitada');
+    expect(moveComment(at('In-Progress', 'doing'), at('Blocked', 'blocked'))).toBe('TS bloqueada');
+    expect(moveComment(at('In-Progress', 'doing'), at('Completed', 'done'))).toBe(TS_MOVE_COMMENTS.done);
+    expect(moveComment(at('Completed', 'done'), at('Accepted', 'accepted'))).toBe('Tras la revisión con analista y validación, se entrega la validación y se da por Accepted la TS. Gracias!');
+    expect(moveComment(at('Completed', 'done'), at('In-Progress', 'doing'))).toBe(TS_MOVE_COMMENTS.doing);
+
+    const owner = { _ref: `${ws}/user/55`, _refObjectName: 'Pepa PO', _refObjectUUID: '2a75bf52-cfd9-4550-97ec-fc6383373083' };
+    const ts = { FormattedID: 'TS9', ObjectID: 999, Name: 'Pruebas', ScheduleState: 'Completed', FlowState: { _refObjectName: 'Completed' },
+      Blocked: false, Owner: owner, Project: { _ref: `${ws}/project/7` } };
+    const mention = (uuid: string, name: string) => `<span class="mention" data-mention="${uuid}">@${name}</span>`;
+    const { rally, marta, posts } = await setup(ts, { discussion: [
+      `<p>${mention('2a75bf52-cfd9-4550-97ec-fc6383373083', 'Pepa PO')} hola<br />CC: ${mention('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'Luis QA')}</p>`,
+      `<p>${mention('cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'Eva PO IT')} y ${mention('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'Luis QA')}</p>`,
+    ] });
+    const preview = await rally.move(marta, { id: 'TS9', category: 'accepted', dryRun: true });
+    expect(preview).toMatchObject({ comment: TS_MOVE_COMMENTS.accepted, commentStep: 'accepted', mentioned: [
+      { name: 'Luis QA', uuid: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' }, { name: 'Eva PO IT', uuid: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' },
+    ] });
+    expect(posts).toEqual([]);
+    // Una US no propone a nadie.
+    const us2 = await setup({ ...us, ScheduleState: 'Completed', FlowState: { _refObjectName: 'Completed' }, Blocked: false }, { discussion: [`<p>${mention('cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'Eva')}</p>`] });
+    const p2 = await us2.rally.move(us2.marta, { id: 'US1', category: 'accepted', dryRun: true });
+    expect(p2.mentioned).toBeUndefined();
+    expect(p2.comment).toBe(MOVE_COMMENTS.accepted);
   });
 
   it('coloca cada tarjeta en su columna de Rally o en la de su grupo', () => {

@@ -1,4 +1,4 @@
-import type { RallyCategory, RallyCreatableKind, RallyCreateInput, RallyDetail, RallyFormOptions, RallyItem, RallyKind, RallyPick, RallyProject, RallyRef, RallyStatus } from '../../domain/rally';
+import type { RallyCategory, RallyCc, RallyCreatableKind, RallyCreateInput, RallyDetail, RallyFormOptions, RallyItem, RallyKind, RallyPick, RallyProject, RallyRef, RallyStatus } from '../../domain/rally';
 import { LOCAL_SERVER, serverCall as call } from '../../data/serverApi';
 import { sync } from '../../data/sync';
 import { artifactHash, type RallyActivity, type ToolEventKind } from '../../domain/rallyActivity';
@@ -48,14 +48,16 @@ export const rallyApi = {
   /** Mensaje en la discusión; las personas de `mentions` que salgan como «@Nombre» se mencionan (avisa por correo). */
   message: (id: string, text: string, mentions: RallyRef[]) =>
     call<{ mentioned: string[] }>('POST', '/api/rally/message', { id, text, mentions }).then(done('rally-comment', 'message')).then((r) => { mark(id, 'comment'); return r; }),
-  /** TS a Need Review a la vez: columna, Blocked con motivo y comentario con PO, defecto y analista. */
-  needReview: (input: { id: string; defectId: string; text: string; analyst: RallyRef; reason: string; owner?: RallyRef | null }) =>
-    call<{ item: RallyItem; owner: string | null; analyst: string; commentError?: string }>('POST', '/api/rally/need-review', input).then(done('rally-comment', 'need-review'))
+  /** TS a Need Review a la vez: columna, Blocked con motivo y comentario con PO IT, defecto y CC (analista y más). */
+  needReview: (input: { id: string; defectId: string; text: string; reason: string; owner: RallyRef | null; noOwner: boolean; cc: RallyCc[] }) =>
+    call<{ item: RallyItem; owner: string | null; analyst: string | null; cc: string[]; commentError?: string }>('POST', '/api/rally/need-review', input).then(done('rally-comment', 'need-review'))
       .then((r) => { if (r.commentError) mark(input.id, 'change'); else mark(input.id, 'change', 'comment'); return r; }),
-  /** Comentario de un movimiento con el Owner (PO) y, si se elige, el analista. */
-  /** `owner`: otra persona a mencionar en lugar del Owner (null = el Owner). */
-  moveComment: (id: string, text: string, analyst: RallyRef | null, owner: RallyRef | null = null) =>
-    call<{ text: string; owner: string | null; analyst: string | null; people?: { name: string; email: string | null }[] }>('POST', '/api/rally/move-comment', { id, text, analyst, owner }).then(done('rally-comment', 'move')).then((r) => { mark(id, 'comment'); return r; }),
+  /**
+   * Comentario de un movimiento (o de Blocked / quitar Ready): «@Persona texto» + «CC: …». `owner`: otra persona en lugar
+   * del Owner; `noOwner`: no mencionar a nadie primero; `cc`: analista y demás.
+   */
+  moveComment: (id: string, text: string, people: { owner: RallyRef | null; noOwner: boolean; cc: RallyCc[] }) =>
+    call<{ text: string; owner: string | null; cc: string[]; people?: { name: string; email: string | null }[] }>('POST', '/api/rally/move-comment', { id, text, ...people }).then(done('rally-comment', 'move')).then((r) => { mark(id, 'comment'); return r; }),
   comment: (item: RallyItem, text: string, mentions: RallyRef[] = []) =>
     call<{ post: RallyDetail['discussion'][number] }>('POST', '/api/rally/comment', { kind: item.kind, objectId: item.objectId, text, mentions }).then(done('rally-comment', 'free')).then((r) => { mark(item.id, 'comment'); return r.post; }),
   /** Cambia el texto de un comentario propio (las menciones que tenía se conservan). */

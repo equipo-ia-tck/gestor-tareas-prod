@@ -1,44 +1,56 @@
 import { track } from '../usage/track';
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { Check, Pencil, Search, UserRound } from 'lucide-react';
-import type { RallyRef } from '../../domain/rally';
-import { rallyApi } from './rallyApi';
+import { Check, Pencil } from 'lucide-react';
+import type { RallyCc, RallyRef } from '../../domain/rally';
+import type { CommentShape } from '../../domain/rallyComments';
 import { Dialog } from './RallyPickers';
-import { OwnerMention } from './UserSearch';
+import { AddresseeRow, CcRow, MissingPeople, addresseeName, ccOf, initialPeople, missingPeople, type CommentPeopleValue } from './CommentPeople';
 
-/** Respuesta de la ventana: con o sin analista, o `cancel` (la cruz, Esc o clic fuera) para no mover. */
-/** `owner`: persona mencionada en lugar del Owner (null = el Owner del elemento). */
-export type AnalystAnswer = { analyst: RallyRef | null; text: string; owner: RallyRef | null } | 'cancel';
+/**
+ * Respuesta de la ventana: el texto y las personas (`to` en lugar del Owner, `noOwner` para no mencionar a nadie
+ * primero, y el CC), `skip` (comentario opcional: seguir sin comentar) o `cancel` (la cruz, Esc o clic fuera).
+ */
+export type CommentAnswer = { text: string; owner: RallyRef | null; noOwner: boolean; cc: RallyCc[]; analyst: RallyRef | null } | 'skip' | 'cancel';
+/** @deprecated nombre anterior. */
+export type AnalystAnswer = CommentAnswer;
 
-/** Movimiento a la espera de saber si se marca analista (todavía no se ha hecho en Rally). */
+/** Comentario a la espera de saber a quién se menciona (todavía no se ha hecho nada en Rally). */
 export interface PendingComment {
   /** FormattedID: "US1764574". */
   id: string;
   name: string;
   text: string;
-  /** Owner en Rally (el PO), que se menciona siempre. */
+  /** Owner en Rally (el PO). */
   owner: string | null;
+  /** Cómo es este paso: a quién va, si es opcional, si se espera analista y si se propone a todos en el CC. */
+  shape?: CommentShape;
+  /** Personas propuestas en el CC (TS a Accepted: las ya mencionadas en el elemento). */
+  cc?: RallyCc[];
   /** Qué pasa si se cierra la ventana (por defecto, que no se mueve). */
   closeHint?: string;
+  /** Qué pasa con «Sin comentario» (solo si el comentario es opcional). */
+  skipLabel?: string;
 }
 
-type Queued = PendingComment & { resolve: (a: AnalystAnswer) => void };
+type Queued = PendingComment & { resolve: (a: CommentAnswer) => void };
 
 // Cola en memoria: si se mueven varias a la vez, se pregunta de una en una.
 let queue: Queued[] = [];
 const listeners = new Set<() => void>();
 const emit = () => { for (const l of listeners) l(); };
 
-export function askAnalyst(c: PendingComment): Promise<AnalystAnswer> {
-  return new Promise<AnalystAnswer>((resolve) => {
+/** Abre la ventana del comentario (antes «¿Quieres marcar analista?»). */
+export function askComment(c: PendingComment): Promise<CommentAnswer> {
+  return new Promise<CommentAnswer>((resolve) => {
     queue = [...queue, { ...c, resolve }];
     emit();
-  }).then((a) => { track('analyst', a === 'cancel' ? 'cancel' : a.analyst ? 'yes' : 'no'); return a; });
+  }).then((a) => { track('analyst', typeof a === 'string' ? a : a.analyst ? 'yes' : 'no'); return a; });
 }
+export const askAnalyst = askComment;
 
 const subscribe = (l: () => void) => { listeners.add(l); return () => { listeners.delete(l); }; };
 const current = () => queue[0] ?? null;
-function answer(a: AnalystAnswer) {
+function answer(a: CommentAnswer) {
   const [head, ...rest] = queue;
   if (!head) return;
   queue = rest;
@@ -54,35 +66,47 @@ export function rememberAnalyst(u: RallyRef) {
   try { localStorage.setItem(LAST_KEY, JSON.stringify(u)); } catch { /* sin almacenamiento */ }
 }
 
+const OWNER_SHAPE: CommentShape = { addressee: 'owner', optional: false, analystExpected: false, ccEveryone: false };
+
 /**
- * Antes de mover un elemento en Rally: «¿Quieres marcar analista?». Con «Sí» se busca a la persona en Rally y «Aceptar»
- * mueve y publica el comentario con el PO y el analista; «No quiero marcar analista» mueve y lo publica solo con el PO.
- * Cerrar (la cruz, Esc o clic fuera) cancela: no se mueve en Rally y la tarea vuelve a su estado en el gestor.
+ * Antes de publicar un comentario en Rally (al mover, al bloquear o al quitar Ready): «Para» (el Owner, con el lápiz
+ * para cambiarlo, o el analista / PO IT según el paso), el texto (lápiz) y «CC» con el analista (marcar o no) y
+ * «+ Mencionar a alguien más». Las personas que se esperan se marcan en ámbar, pero no impiden publicar. Si el
+ * comentario es opcional, «Sin comentario» sigue sin comentar. Cerrar (la cruz, Esc o clic fuera) cancela.
  */
 export function AnalystPrompt() {
   const pending = useSyncExternalStore(subscribe, current);
-  const [step, setStep] = useState<'ask' | 'pick'>('ask');
+  const shape = pending?.shape ?? OWNER_SHAPE;
   const [text, setText] = useState('');
   const [editing, setEditing] = useState(false);
-  const [owner, setOwner] = useState<RallyRef | null>(null);
-  useEffect(() => { setStep('ask'); setText(pending?.text ?? ''); setEditing(false); setOwner(null); }, [pending]);
+  const [people, setPeople] = useState<CommentPeopleValue>({ to: null, analyst: null, others: [] });
+  useEffect(() => {
+    setText(pending?.text ?? '');
+    setEditing(false);
+    const s = pending?.shape ?? OWNER_SHAPE;
+    setPeople(initialPeople(s.addressee, s.analystExpected, pending?.cc ?? []));
+  }, [pending]);
   if (!pending) return null;
 
   const finalText = text.trim() || pending.text;
-  const publish = (analyst: RallyRef | null) => {
+  const to = addresseeName(shape.addressee, pending.owner, people);
+  const cc = ccOf(people);
+  const missing = missingPeople(shape.addressee, shape.analystExpected, pending.owner, people);
+  const publish = () => {
+    const analyst = shape.addressee === 'analyst' ? people.to : people.analyst;
     if (analyst) rememberAnalyst(analyst);
-    answer({ analyst, text: finalText, owner });
+    answer({ text: finalText, owner: people.to, noOwner: shape.addressee !== 'owner' && !people.to, cc, analyst });
   };
   const stopEditing = () => { setText(finalText); setEditing(false); };
 
   return (
-    <Dialog title={step === 'ask' ? '¿Quieres marcar analista?' : 'Analista'} width="max-w-md" onClose={() => answer('cancel')}
+    <Dialog title={shape.optional ? 'Comentario en Rally (opcional)' : 'Comentario en Rally'} width="max-w-lg" onClose={() => answer('cancel')}
       onEscape={editing ? stopEditing : undefined}>
-      <div className="mb-3 rounded-md bg-zinc-50 p-2 text-sm dark:bg-zinc-800">
-        <p className="text-xs text-zinc-500">{pending.id} · {pending.name}</p>
+      <p className="mb-2 text-xs text-zinc-500">{pending.id} · {pending.name}</p>
+      <div className="space-y-2 rounded-md bg-zinc-50 p-2 text-sm dark:bg-zinc-800">
+        <AddresseeRow addressee={shape.addressee} owner={pending.owner} value={people} onChange={setPeople} />
         {editing ? (
-          <div className="mt-1">
-            <OwnerMention owner={pending.owner} value={owner} onChange={setOwner} />
+          <div>
             <div className="flex items-start gap-1">
               <textarea autoFocus value={text} onChange={(e) => setText(e.target.value)} rows={3} aria-label="Comentario"
                 onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); stopEditing(); } }}
@@ -94,78 +118,29 @@ export function AnalystPrompt() {
             <p className="mt-0.5 text-[11px] text-zinc-400">Enter para terminar · Mayús+Enter salto de línea · Esc deja el texto así</p>
           </div>
         ) : (
-          <div className="mt-1 flex items-start gap-1">
+          <div className="flex items-start gap-1 rounded border border-zinc-200 bg-white p-2 dark:border-zinc-700 dark:bg-zinc-900">
             <p className="flex-1 whitespace-pre-line">
-              {(owner?.name ?? pending.owner) && <span className="font-medium text-indigo-700 dark:text-indigo-300">@{owner?.name ?? pending.owner} </span>}
+              {to && <span className="font-medium text-indigo-700 dark:text-indigo-300">@{to} </span>}
               {finalText}
+              {cc.length > 0 && <><br /><span className="text-zinc-500">CC: </span><span className="font-medium text-indigo-700 dark:text-indigo-300">{cc.map((p) => `@${p.name}`).join(' ')}</span></>}
             </p>
             <button type="button" onClick={() => setEditing(true)} title="Modificar el comentario" aria-label="Modificar el comentario"
               className="rounded p-1 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"><Pencil className="size-3.5" /></button>
           </div>
         )}
-        {!pending.owner && !owner && <p className="mt-1 text-xs text-amber-600">No tiene Owner en Rally: no se etiqueta a nadie como PO (con el lápiz puedes mencionar a alguien).</p>}
+        <CcRow addressee={shape.addressee} analystExpected={shape.analystExpected} value={people} onChange={setPeople} />
+        <MissingPeople items={missing} />
       </div>
-      {step === 'ask' ? (
-        <div className="flex justify-end gap-2">
-          <button type="button" onClick={() => publish(null)}
-            className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 dark:border-zinc-600 dark:hover:bg-zinc-800">No quiero marcar analista</button>
-          <button type="button" autoFocus onClick={() => setStep('pick')}
-            className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Sí, marcar analista</button>
-        </div>
-      ) : (
-        <PickAnalyst busy={false} onAccept={publish} onSkip={() => publish(null)} />
-      )}
+      <div className="mt-3 flex justify-end gap-2">
+        {shape.optional && (
+          <button type="button" onClick={() => answer('skip')}
+            className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 dark:border-zinc-600 dark:hover:bg-zinc-800">{pending.skipLabel ?? 'Sin comentario'}</button>
+        )}
+        <button type="button" autoFocus onClick={publish}
+          className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">Publicar</button>
+      </div>
       <p className="mt-3 text-xs text-zinc-400">{pending.closeHint ?? 'Si cierras esta ventana, la tarea no se mueve (ni aquí ni en Rally).'}</p>
     </Dialog>
   );
 }
 
-function PickAnalyst({ busy, onAccept, onSkip }: { busy: boolean; onAccept: (u: RallyRef) => void; onSkip: () => void }) {
-  const last = lastAnalyst();
-  const [q, setQ] = useState('');
-  const [chosen, setChosen] = useState<RallyRef | null>(last);
-  const [found, setFound] = useState<RallyRef[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const text = q.trim();
-    if (text.length < 2) { setFound(null); return; }
-    let live = true;
-    setError(null);
-    const t = setTimeout(() => {
-      rallyApi.searchUsers(text).then((u) => live && setFound(u), (e: Error) => live && setError(e.message));
-    }, 300);
-    return () => { live = false; clearTimeout(t); };
-  }, [q]);
-
-  const options = found ?? (last ? [last] : []);
-  return (
-    <>
-      <div className="flex items-center gap-1.5 rounded-md border border-indigo-500 bg-white px-2 ring-1 ring-indigo-500 dark:bg-zinc-800">
-        <Search className="size-4 text-indigo-600" />
-        <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar en Rally por nombre, usuario o email"
-          className="w-full bg-transparent py-1.5 text-sm outline-none" />
-      </div>
-      <div className="mt-2 max-h-64 min-h-16 overflow-y-auto">
-        {!found && last && <p className="px-2 pb-1 text-xs font-bold tracking-wide text-zinc-500 uppercase">Última vez</p>}
-        {options.map((u) => (
-          <button key={u.ref} type="button" onClick={() => setChosen(u)} onDoubleClick={() => onAccept(u)}
-            className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-zinc-100 dark:hover:bg-zinc-800 ${chosen?.ref === u.ref ? 'bg-indigo-50 font-medium dark:bg-indigo-950' : ''}`}>
-            <UserRound className="size-4 text-zinc-400" /><span className="flex-1">{u.name}</span>
-            {chosen?.ref === u.ref && <Check className="size-4 text-indigo-600" />}
-          </button>
-        ))}
-        {q.trim().length < 2 && !last && <p className="px-2 py-1 text-xs text-zinc-400">Escribe al menos 2 letras para buscar en Rally.</p>}
-        {q.trim().length >= 2 && found === null && !error && <p className="px-2 py-1 text-xs text-zinc-400">Buscando en Rally…</p>}
-        {found && !found.length && <p className="px-2 py-1 text-xs text-zinc-400">Nadie con ese nombre.</p>}
-        {error && <p className="px-2 py-1 text-xs text-red-600">{error}</p>}
-      </div>
-      <div className="mt-3 flex items-center justify-end gap-2">
-        <button type="button" disabled={busy} onClick={onSkip}
-          className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:hover:bg-zinc-800">No quiero marcar analista</button>
-        <button type="button" disabled={!chosen || busy} onClick={() => chosen && onAccept(chosen)}
-          className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-40">Aceptar</button>
-      </div>
-    </>
-  );
-}

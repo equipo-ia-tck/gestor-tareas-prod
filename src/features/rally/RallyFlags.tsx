@@ -2,21 +2,20 @@ import { useState } from 'react';
 import { Ban, Check } from 'lucide-react';
 import type { RallyItem } from '../../domain/rally';
 import type { Task } from '../../domain/types';
-import { askAnalyst } from './AnalystPrompt';
+import { askComment } from './AnalystPrompt';
+import { blockedText, commentShape, unreadyText } from '../../domain/rallyComments';
 import { rallyApi } from './rallyApi';
 import { rememberRally } from './rallyStore';
 import { RallyMessage } from './RallyMessage';
 
-const BLOCK_COMMENT = 'Guía bloqueada';
-/** Comentario que se propone al quitar Ready (con el PO y el analista, como al mover). */
-export const UNREADY_TEXT = 'Tengo la lista validada por si la quieres revisar antes de la reunión con PO y PO IT';
 
 /**
  * Botones Ready y Blocked de la ficha, como en Rally. No cambian el elemento de columna (ni la tarea de bloque en el
  * gestor). Blocked abre la misma ventana que mover a Bloqueado: comentario con el PO (editable con el lápiz) y analista;
  * al aceptar marca Blocked con ese texto como motivo y lo publica en la discusión. Cerrar la ventana no cambia nada.
  * Marcar Ready abre antes «Mensaje» (`RallyMessage`: plantillas y personas de Rally etiquetadas); Ready se marca al publicar o con «Sin mensaje», y cerrar con la cruz no lo marca
- * (Esc o clic fuera tampoco). Quitar Ready abre la ventana de los movimientos (`askAnalyst`) con «Tengo la lista validada…».
+ * (Esc o clic fuera tampoco). Quitar Ready abre la ventana de los movimientos (`askComment`): en una US, «Tengo la guía
+ * validada…» para el Owner; en un TS, el mismo comentario opcional que al pasar a Completed, para el analista.
  */
 export function RallyFlags({ item, task, reason, onChanged }: {
   item: RallyItem;
@@ -54,12 +53,13 @@ export function RallyFlags({ item, task, reason, onChanged }: {
       // Ready ya está quitado: ahora la misma ventana que al mover (lápiz, mención del PO cambiable y analista).
       rememberRally([updated]);
       onChanged(updated);
-      const answer = await askAnalyst({ id: item.id, name: item.name, text: UNREADY_TEXT, owner: item.owner,
+      const answer = await askComment({ id: item.id, name: item.name, text: unreadyText(item.kind), owner: item.owner,
+        shape: commentShape(item.kind, 'unready'), skipLabel: 'Sin comentario',
         closeHint: 'Ready ya está quitado. Si cierras esta ventana no se comenta nada.' });
-      if (answer !== 'cancel') {
+      if (answer !== 'cancel' && answer !== 'skip') {
         try {
-          const r = await rallyApi.moveComment(item.id, answer.text, answer.analyst, answer.owner);
-          setNote(`Comentado en ${item.id}${r.owner ? ` para ${r.owner}` : ''}${r.analyst ? ` · analista ${r.analyst}` : ''}`);
+          const r = await rallyApi.moveComment(item.id, answer.text, answer);
+          setNote(`Comentado en ${item.id}${r.owner ? ` para ${r.owner}` : ''}${r.cc.length ? ` · CC ${r.cc.join(', ')}` : ''}`);
         } catch (e) {
           setNote(`Ready quitado, pero no se ha podido comentar: ${(e as Error).message}`);
         }
@@ -69,12 +69,12 @@ export function RallyFlags({ item, task, reason, onChanged }: {
   });
   const toggleBlocked = () => run(async () => {
     if (item.blocked) return rallyApi.flag(item.id, { blocked: false });
-    const answer = await askAnalyst({ id: item.id, name: item.name, text: BLOCK_COMMENT, owner: item.owner,
-      closeHint: 'Si cierras esta ventana, no se marca Blocked ni se comenta.' });
-    if (answer === 'cancel') return null;
+    const answer = await askComment({ id: item.id, name: item.name, text: blockedText(item.kind), owner: item.owner,
+      shape: commentShape(item.kind, 'blocked'), closeHint: 'Si cierras esta ventana, no se marca Blocked ni se comenta.' });
+    if (answer === 'cancel' || answer === 'skip') return null;
     const updated = await rallyApi.flag(item.id, { blocked: true, reason: answer.text });
     try {
-      await rallyApi.moveComment(item.id, answer.text, answer.analyst, answer.owner);
+      await rallyApi.moveComment(item.id, answer.text, answer);
     } catch (e) {
       setNote(`Bloqueada, pero no se ha podido comentar: ${(e as Error).message}`);
     }

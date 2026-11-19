@@ -124,7 +124,14 @@ export interface RallyItem {
   url: string;
   /** Solo al mover: comentario que toca dejar en la discusión (lo publica la app tras preguntar por el analista). */
   comment?: string;
+  /** Solo al mover: paso del comentario (defined, doing, blocked, done, accepted), que dice cómo es la ventana. */
+  commentStep?: 'defined' | 'doing' | 'blocked' | 'done' | 'accepted';
+  /** Solo al mover un TS a Accepted: personas ya mencionadas en su discusión, que se proponen en el CC. */
+  mentioned?: { name: string; uuid: string }[];
 }
+
+/** Persona del CC de un comentario: elegida en Rally (`ref`) o ya mencionada antes (`uuid`). */
+export interface RallyCc { name: string; ref?: string; uuid?: string }
 
 export interface RallyProject { id: string; name: string; parentId?: string }
 
