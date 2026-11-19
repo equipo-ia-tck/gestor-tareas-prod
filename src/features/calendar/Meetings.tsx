@@ -94,9 +94,12 @@ export function MeetingDetails({ event, close }: { event: CalendarEvent; close: 
       {description && <p className="mt-2 line-clamp-6 text-xs whitespace-pre-wrap text-zinc-600 dark:text-zinc-400">{description}</p>}
       <div className="mt-3 flex flex-wrap gap-2">
         {event.url && (
-          <a {...teamsLinkProps(event.url, teamsApp)} onClick={() => { track('meeting-join', 'calendar'); close(); }}
+          // Las del otro calendario (La Caixa…), siempre en el navegador: la app de Teams va con la cuenta de WPP y no deja
+          // entrar; en Chrome o Edge se puede unir con la cuenta de esa empresa o como invitado.
+          <a {...teamsLinkProps(event.url, teamsApp && !event.calendar)} onClick={() => { track('meeting-join', event.calendar ? 'calendar-extra' : 'calendar'); close(); }}
+            title={event.calendar ? 'Se abre en el navegador (Teams web)' : undefined}
             className="inline-flex items-center gap-1 rounded-md bg-[#5b5fc7] px-2.5 py-1 text-xs font-medium text-white hover:bg-[#4b4fb7]">
-            <Video className="size-3.5" />Unirse
+            <Video className="size-3.5" />{event.calendar ? 'Unirse en el navegador' : 'Unirse'}
           </a>
         )}
         <button type="button" onClick={() => void openNote()}
