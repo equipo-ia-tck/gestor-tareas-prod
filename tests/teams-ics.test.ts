@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseIcs } from '../src/domain/ics';
 import { notesByTask, notesForTask } from '../src/domain/notes';
-import { findTeamsLink, meetingContacts, meetingSummary, teamsAppUrl, teamsChatUrl, teamsMeetingUrl } from '../src/domain/teams';
+import { findTeamsLink, meetingContacts, meetingSummary, teamsAppUrl, teamsChatUrl, teamsMeetingUrl, teamsWebUrl } from '../src/domain/teams';
 import type { Note } from '../src/domain/types';
 import { makeTask } from './factories';
 
@@ -140,4 +140,16 @@ describe('reunión nueva en Teams', () => {
 it('los enlaces de teams.microsoft.com se abren en la app (msteams:)', () => {
   expect(teamsAppUrl('https://teams.microsoft.com/l/meetup-join/19%3ameeting_x%40thread.v2/0?context=%7b%7d')).toBe('msteams:/l/meetup-join/19%3ameeting_x%40thread.v2/0?context=%7b%7d');
   expect(teamsAppUrl('https://teams.live.com/meet/123')).toBe('https://teams.live.com/meet/123');
+});
+
+it('teamsWebUrl: abre la reunión en Teams web sin lanzar la app', () => {
+  const join = 'https://teams.microsoft.com/l/meetup-join/19%3ameeting_x%40thread.v2/0?context=%7b%22Tid%22%3a%22t%22%7d';
+  const web = new URL(teamsWebUrl(join));
+  expect(web.origin + web.pathname).toBe('https://teams.microsoft.com/dl/launcher/launcher.html');
+  expect(web.searchParams.get('url')).toBe('/_#/l/meetup-join/19%3ameeting_x%40thread.v2/0?context=%7b%22Tid%22%3a%22t%22%7d');
+  expect(web.searchParams.get('msLaunch')).toBe('false');
+  expect(web.searchParams.get('suppressPrompt')).toBe('true');
+  expect(web.searchParams.get('type')).toBe('meetup-join');
+  expect(teamsWebUrl('https://teams.live.com/meet/123')).toBe('https://teams.live.com/meet/123');
+  expect(teamsWebUrl('https://zoom.us/j/1')).toBe('https://zoom.us/j/1');
 });

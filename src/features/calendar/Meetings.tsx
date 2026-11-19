@@ -6,6 +6,7 @@ import { navigate, routeHref } from '../../app/router';
 import { Popover } from '../../components/ui/Popover';
 import { repo } from '../../data/services';
 import type { CalendarEvent } from '../../domain/ics';
+import { teamsWebUrl } from '../../domain/teams';
 import { teamsLinkProps, useTeamsApp } from '../../hooks/useTeamsApp';
 import { createMeetingNote, meetingNoteFor } from '../notes/IcsImport';
 import { connectExtra, connectOutlook, disconnectExtra, disconnectOutlook, EXTRA_COLOR, hasCalendar, hasExtra, isPendingMeeting, removePendingMeeting, linkOutlookFile, loadOutlook, unlinkOutlookFile, uploadTokenApi, useOutlook } from './outlook';
@@ -96,7 +97,7 @@ export function MeetingDetails({ event, close }: { event: CalendarEvent; close: 
         {event.url && (
           // Las del otro calendario (La Caixa…), siempre en el navegador: la app de Teams va con la cuenta de WPP y no deja
           // entrar; en Chrome o Edge se puede unir con la cuenta de esa empresa o como invitado.
-          <a {...teamsLinkProps(event.url, teamsApp && !event.calendar)} onClick={() => { track('meeting-join', event.calendar ? 'calendar-extra' : 'calendar'); close(); }}
+          <a {...(event.calendar ? teamsLinkProps(teamsWebUrl(event.url), false) : teamsLinkProps(event.url, teamsApp))} onClick={() => { track('meeting-join', event.calendar ? 'calendar-extra' : 'calendar'); close(); }}
             title={event.calendar ? 'Se abre en el navegador (Teams web)' : undefined}
             className="inline-flex items-center gap-1 rounded-md bg-[#5b5fc7] px-2.5 py-1 text-xs font-medium text-white hover:bg-[#4b4fb7]">
             <Video className="size-3.5" />{event.calendar ? 'Unirse en el navegador' : 'Unirse'}

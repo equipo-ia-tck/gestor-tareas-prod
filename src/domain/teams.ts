@@ -108,3 +108,23 @@ export function meetingContacts(meetings: { attendees: { name: string; email: st
 export function teamsAppUrl(url: string): string {
   return url.replace(/^https:\/\/teams\.microsoft\.com\//i, 'msteams:/');
 }
+
+/**
+ * Enlace que abre la reunión en Teams web sin lanzar la app de escritorio. El enlace normal pasa por la página
+ * «launcher» de Teams, que abre la app si está instalada (con la cuenta de WPP, que no deja entrar en las reuniones de
+ * otra empresa). Con `msLaunch=false` y `suppressPrompt=true` esa página va directa a «Continuar en este navegador».
+ * Solo para reuniones de teams.microsoft.com (`/l/meetup-join/…`); los demás enlaces se devuelven tal cual.
+ */
+export function teamsWebUrl(url: string): string {
+  const m = /^https:\/\/teams\.microsoft\.com(\/l\/meetup-join\/.+)$/i.exec(url);
+  if (!m) return url;
+  const params = new URLSearchParams({
+    url: `/_#${m[1]}`,
+    type: 'meetup-join',
+    directDl: 'true',
+    msLaunch: 'false',
+    enableMobilePage: 'true',
+    suppressPrompt: 'true',
+  });
+  return `https://teams.microsoft.com/dl/launcher/launcher.html?${params.toString()}`;
+}
