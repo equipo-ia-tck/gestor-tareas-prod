@@ -94,6 +94,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!user || !pulled || routinesChecked.current === user.id) return;
     routinesChecked.current = user.id;
     void (async () => {
+      // Colores de proyectos, grupos y etiquetas a la paleta de Marea (una vez por cuenta; las etiquetas, solo un admin).
+      await repo.applyBrandColors(isAdmin).catch(() => {});
       const [list, current] = await Promise.all([repo.listTasks(), repo.getSettings()]);
       const missing = pendingRoutines(TEAM_ROUTINES, list, current.routines_added);
       if (!missing.length) return;
@@ -102,7 +104,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       });
       await repo.updateSettings({ routines_added: [...current.routines_added, ...missing.map((r) => r.id)] });
     })();
-  }, [user, pulled, today]);
+  }, [user, pulled, today]); // eslint-disable-line react-hooks/exhaustive-deps -- isAdmin llega con el usuario
   const [detailId, setDetailId] = useState<string | null>(null);
 
   const value = useMemo<AppData>(() => {

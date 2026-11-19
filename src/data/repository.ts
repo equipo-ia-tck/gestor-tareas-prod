@@ -17,6 +17,7 @@ import {
 import { isRallyId } from '../domain/rally';
 import { doneState, equivalentState, findType, initialState, isDoneCategory, missingRallyTypes, patchForState, rallyPrefix, stateOf, typeForPrefix, withAcceptedState } from '../domain/workflows';
 import { nameKey } from '../domain/text';
+import { brandColorFor } from '../domain/colors';
 import { withDescendants } from '../domain/projects';
 import { extractMentions } from '../domain/markdown';
 import { activityFor } from '../domain/activity';
@@ -79,6 +80,8 @@ export interface Repository {
    * actualización de los tipos comunes, así que solo la lanza un administrador (se sincroniza al resto del equipo).
    */
   ensureAcceptedStates(): Promise<void>;
+  /** Pasa los colores de proyectos, grupos y etiquetas de las paletas de antes a los de Marea (una vez por cuenta). */
+  applyBrandColors(isAdmin: boolean): Promise<void>;
   /**
    * Tipos de Rally (Feature, Defect, Defect Suite, Task…): con `addTypes` (administradora) añade los que falten y, para
    * cualquiera, pasa a su tipo las tareas que siguen como Tarea con un ID de Rally de ese prefijo. Sin historial.
@@ -511,6 +514,22 @@ export class DexieRepository implements Repository {
     this.record({ table: 'item_types', key: id, before: undefined, after: type }, `Tipo ${type.name} creado`);
     this.emit();
     return type;
+  }
+
+  async applyBrandColors(isAdmin: boolean) {
+    const settings = await this.getSettings();
+    if (settings.brand_colors_done) return;
+    const projects = (await this.listProjects(true)).filter((p) => brandColorFor(p.color));
+    const labels = isAdmin ? (await this.listLabels()).filter((l) => brandColorFor(l.color)) : [];
+    if (projects.length || labels.length) {
+      // En el historial (se puede deshacer con Ctrl+Z) pero sin aviso.
+      await this.batch('Colores de Marea', async () => {
+        for (const p of projects) await this.updateProject(p.id, { color: brandColorFor(p.color)! });
+        for (const l of labels) await this.setLabelColor(l.name, brandColorFor(l.color)!);
+      }, { silent: true });
+    }
+    const groups = settings.groups.map((g) => ({ ...g, color: brandColorFor(g.color) ?? g.color }));
+    await this.updateSettings({ groups, brand_colors_done: true });
   }
 
   async ensureAcceptedStates() {

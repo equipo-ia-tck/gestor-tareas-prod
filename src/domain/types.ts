@@ -204,6 +204,8 @@ export interface Settings {
   analytics_people: string[] | null;
   /** Analítica → Rally: personas de Rally (por su nombre en Rally) cuyos cambios se cuentan; null = todas. */
   analytics_rally_people: string[] | null;
+  /** Ya se han pasado los colores de proyectos, grupos y etiquetas a los de Marea en esta cuenta. */
+  brand_colors_done: boolean;
 }
 
 /** Plantilla de «Crear con petición»: un nombre y la frase. */
@@ -248,6 +250,7 @@ export const DEFAULT_SETTINGS: Settings = {
   routines_added: [],
   analytics_people: null,
   analytics_rally_people: null,
+  brand_colors_done: false,
 };
 
 export type NewTask = Partial<Omit<Task, 'id' | 'created_at' | 'updated_at' | 'last_touched_at'>> & {
@@ -260,7 +263,7 @@ export const DEFAULT_TYPE_ID = 'task';
 /** Tipo para los temas pendientes de hablar con alguien. */
 export const TOPIC_TYPE_ID = 'topic';
 
+/** Colores de proyectos y grupos: la paleta de Marea (`domain/colors.ts`, `BRAND_COLORS`). */
 export const PROJECT_COLORS = [
-  '#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444',
-  '#ec4899', '#8b5cf6', '#14b8a6', '#84cc16', '#f97316',
+  '#2E6BE6', '#D9543A', '#5CC9A0', '#7A3F42', '#8FB3FF', '#1F7A5C', '#F08A6E', '#244B98', '#A9B3C7', '#5A6478',
 ];

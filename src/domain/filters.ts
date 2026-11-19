@@ -96,7 +96,7 @@ export function groupTasks(tasks: Task[], by: GroupBy, ctx: Ctx): TaskGroup[] {
         const d = t.due_date;
         if (!d) add('none', 'Sin fecha', t);
         else if (d < ctx.today) add('overdue', 'Atrasadas', t, '#f59e0b');
-        else if (d === ctx.today) add('today', 'Hoy', t, '#6366f1');
+        else if (d === ctx.today) add('today', 'Hoy', t, '#2E6BE6');
         else if (d <= addDays(ctx.today, 6)) add('week', 'Esta semana', t);
         else add('later', `Más adelante (desde ${formatDay(addDays(ctx.today, 7), ctx.today).toLowerCase()})`, t);
         break;

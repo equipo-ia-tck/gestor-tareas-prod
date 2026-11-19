@@ -29,9 +29,9 @@ function NavItem({ href, active, children, count, dot, icon: Icon, lead, onDropT
       href={href}
       {...dropProps}
       style={indent ? { paddingLeft: `${0.5 + indent * 0.9}rem` } : undefined}
-      className={`flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm ${over ? dropHighlight : active ? 'bg-white font-medium text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-100' : 'text-zinc-600 hover:bg-zinc-200/60 dark:text-zinc-300 dark:hover:bg-zinc-800/60'}`}
+      className={`flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm ${over ? dropHighlight : active ? 'mr-nav-active font-semibold' : 'mr-nav-item'}`}
     >
-      {Icon && <Icon className={`size-4 shrink-0 ${active ? 'text-indigo-600 dark:text-indigo-400' : 'text-zinc-400'}`} />}
+      {Icon && <Icon className={`size-4 shrink-0 ${active ? 'text-[var(--marc)]' : 'text-[var(--ink-muted)]'}`} />}
       {dot && <span className="ml-1 size-2.5 shrink-0 rounded-sm" style={{ background: dot }} />}
       {lead}
       <span className="flex-1 truncate">{children}</span>
@@ -41,10 +41,10 @@ function NavItem({ href, active, children, count, dot, icon: Icon, lead, onDropT
 }
 
 const Heading = ({ href, children, action }: { href?: string; children: ReactNode; action?: ReactNode }) => (
-  <div className="mt-5 mb-1 flex items-center px-2">
+  <div className="mb-1 flex items-center px-2 pt-0.5">
     {href
-      ? <a href={href} className="flex-1 text-xs font-semibold tracking-wide text-zinc-400 uppercase hover:text-zinc-600 dark:hover:text-zinc-200">{children}</a>
-      : <span className="flex-1 text-xs font-semibold tracking-wide text-zinc-400 uppercase">{children}</span>}
+      ? <a href={href} className="mr-side-label flex-1 hover:underline">{children}</a>
+      : <span className="mr-side-label flex-1">{children}</span>}
     {action}
   </div>
 );
@@ -113,7 +113,7 @@ function MoreSection({ route }: { route: Route }) {
   return (
     <>
       <button type="button" onClick={() => setOpen(!open)}
-        className="mt-5 mb-1 flex items-center gap-1 px-2 text-left text-xs font-semibold tracking-wide text-zinc-400 uppercase hover:text-zinc-600 dark:hover:text-zinc-200">
+        className="mr-side-label flex w-full items-center gap-1 px-2 py-0.5 text-left hover:underline">
         {show ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}Más
       </button>
       {show && (
@@ -134,10 +134,11 @@ export function Sidebar({ route }: { route: Route }) {
   const is = (v: Route['view']) => route.view === v;
   const { moveIds } = useTaskActions();
   return (
-    <nav className="flex h-full flex-col overflow-y-auto border-r border-zinc-200 bg-zinc-100/70 p-3 dark:border-zinc-800 dark:bg-zinc-900/60">
-      <div className="mb-4 flex items-center gap-2 px-2">
+    <nav className="mr-sidebar flex h-full flex-col overflow-y-auto p-3">
+      <div className="mb-3 flex items-center gap-2 px-2 pt-1">
         <MareaLogo width={124} />
       </div>
+      <section className="mr-side-section" aria-label="Vistas">
       <NavItem icon={Sun} href={routeHref({ view: 'today' })} active={is('today')} count={new Set([...tasksDueOn(tasks, today), ...overdueTasks(tasks, today), ...myDayTasks(tasks, today)].map((t) => t.id)).size}
         onDropTasks={(ids) => void moveIds(ids, { due_date: today }, 'Movida a hoy')}>Hoy</NavItem>
       <NavItem icon={Inbox} href={routeHref({ view: 'inbox' })} active={is('inbox')} count={inboxTasks(tasks).length}
@@ -146,6 +147,9 @@ export function Sidebar({ route }: { route: Route }) {
       <NavItem icon={Calendar} href={routeHref({ view: 'calendar' })} active={is('calendar') || is('week')}>Calendario</NavItem>
       <NavItem icon={NotebookPen} href={routeHref({ view: 'notes' })} active={is('notes')}>Notas</NavItem>
       <NavItem icon={Layers} href={routeHref({ view: 'rally' })} active={is('rally')}>Rally</NavItem>
+      </section>
+
+      <section className="mr-side-section" aria-label="Proyectos">
 
       <Heading href={routeHref({ view: 'projects' })} action={
         <button type="button" onClick={() => setAddingProject(true)} title="Nuevo proyecto" className="rounded p-0.5 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-700">
@@ -156,10 +160,15 @@ export function Sidebar({ route }: { route: Route }) {
       {projectTree(projects).map((node) => <ProjectNav key={node.project.id} node={node} route={route} />)}
       {projects.length === 0 && <p className="px-2 text-xs text-zinc-400">Crea uno con el +</p>}
       {projects.length === 0 && <a href={routeHref({ view: 'projects' })} className="px-2 text-xs text-zinc-400 hover:underline">+ Crear proyecto</a>}
+      </section>
 
-      <PeopleGroups route={route} />
+      <section className="mr-side-section" aria-label="Grupos">
+        <PeopleGroups route={route} />
+      </section>
 
-      <MoreSection route={route} />
+      <section className="mr-side-section" aria-label="Más">
+        <MoreSection route={route} />
+      </section>
 
       <div className="mt-auto pt-4">
         <SyncBadge />

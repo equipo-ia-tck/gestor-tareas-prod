@@ -891,6 +891,15 @@ Marca en `~/Downloads/marea-brand` (manual, `marea.css`, `tokens.json`, logos). 
 - `index.html`: título «Marea», `theme-color` #1B2B4B, favicon de la marca. PWA: nombre «Marea», iconos PNG sacados de
   `marea-app-icon.svg` (192, 512, `pwa-maskable-512.png` a sangre y `apple-touch-icon.png` de 180). Logos en `public/logos/`.
 - Foco de teclado: anillo de 2 px `--focus` separado 2 px en botones, enlaces, selects, casillas y similares.
+- **Barra lateral** (`.mr-sidebar` en `index.css`): azul claro de la marca (en oscuro, `navy-900`) para separarla de la
+  zona de trabajo; cada sección (vistas, Proyectos, Grupos, Más) en su bloque (`.mr-side-section`) con su título en estilo
+  `label`; lo activo con fondo azul suave y la barra `marc` a la izquierda (`.mr-nav-active`).
+- **Paleta de Marea** (`domain/colors.ts`, `BRAND_COLORS`): proyectos, grupos, etiquetas y avatares solo con colores de la
+  marca y dos mezclas suyas, en un orden comprobado con el validador de paletas. Avatares con texto blanco o azul marino
+  según el fondo (`textOn`). Los colores ya guardados de las paletas de antes se pasan una vez por cuenta al entrar
+  (`repo.applyBrandColors`, en el historial sin aviso, `settings.brand_colors_done`; las etiquetas, solo en sesión de admin;
+  los colores elegidos a mano fuera de esas paletas no se tocan). Reuniones del calendario y «Hoy» en el azul de la marca.
+  Se mantienen a propósito: columnas del Tablero, colores de los tipos (US, TS…), prioridades, estados y la analítica.
 
 ## Fase 32: analítica de uso (rama `dev`, nov 2026)
 

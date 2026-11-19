@@ -2,7 +2,7 @@ import { AlarmClock, CheckSquare, Flag, Rocket, Undo2 } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
 import { externalUrl } from '../../domain/releases';
 import type { Task } from '../../domain/types';
-import { colorFor, initials, labelColor, tint } from '../../domain/colors';
+import { colorFor, initials, labelColor, textOn, tint } from '../../domain/colors';
 import type { ChecklistItem, ItemType, Priority, WorkflowState } from '../../domain/types';
 
 export const PRIORITY_COLOR: Record<Priority, string> = { 1: '#ef4444', 2: '#f97316', 3: '#3b82f6', 4: '#a1a1aa' };
@@ -14,8 +14,8 @@ export function Avatar({ name, size = 20 }: { name: string; size?: number }) {
   return (
     <span
       title={name}
-      className="inline-flex shrink-0 items-center justify-center rounded-full font-semibold text-white ring-2 ring-white dark:ring-zinc-900"
-      style={{ width: size, height: size, background: color, fontSize: size * 0.42 }}
+      className="inline-flex shrink-0 items-center justify-center rounded-full font-semibold ring-2 ring-white dark:ring-zinc-900"
+      style={{ width: size, height: size, background: color, color: textOn(color), fontSize: size * 0.42 }}
     >
       {initials(name)}
     </span>

@@ -103,13 +103,13 @@ export function CalendarView({ initial }: { initial?: 'week' | 'month' }) {
           <section>
             <h2 className="mb-1 px-1 text-sm font-semibold">Mis calendarios</h2>
             {connected ? (
-              <Toggle checked={showMeetings} onChange={setShowMeetings} color="#8b5cf6" label="Reuniones (Outlook)" />
+              <Toggle checked={showMeetings} onChange={setShowMeetings} color="#2E6BE6" label="Reuniones (Outlook)" />
             ) : (
               <a href={routeHref({ view: 'settings' })} className="flex items-center gap-2 rounded px-1 py-1 text-sm text-violet-600 hover:bg-zinc-100 dark:text-violet-400 dark:hover:bg-zinc-800">
                 <Plus className="size-4" />Conectar Outlook
               </a>
             )}
-            <Toggle checked={showTasks} onChange={setShowTasks} color="#4f46e5" label="Tareas" />
+            <Toggle checked={showTasks} onChange={setShowTasks} color="#244B98" label="Tareas" />
             {showTasks && <Toggle checked={showDone} onChange={setShowDone} color="#a1a1aa" label="Completadas" indent />}
           </section>
         </aside>
