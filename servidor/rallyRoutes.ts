@@ -41,6 +41,12 @@ export async function rallyRoute(rally: Rally, user: TeamUser, method: string, p
         throw e;
       }
     }
+    case 'POST /api/rally/update': {
+      const body = await readBody();
+      const done = await rally.update(user, body);
+      log(`${done.item.id} editado en Rally (${Object.keys((body.changes ?? {}) as object).join(', ')})`);
+      return done;
+    }
     case 'POST /api/rally/flag': {
       const body = await readBody();
       const item = await rally.flag(user, body);

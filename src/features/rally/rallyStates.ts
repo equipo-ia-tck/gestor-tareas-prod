@@ -127,55 +127,76 @@ async function moveInRally(id: string, category: RallyCategory, flow: string | u
   }
 }
 
-/**
- * Tablero «Como en Rally»: soltar una tarjeta enlazada en una columna (Need Review, Defined…) la mueve primero en Rally
- * (con la misma ventana de comentario y analista) y después, si cambia de grupo, la tarea del gestor, sin volver a
- * mandarlo a Rally. Cerrar la ventana no cambia nada.
- */
-export async function moveToRallyColumn(task: Task, flow: string, category: RallyCategory, notify: (message: string) => void) {
-  const id = task.external_id!.replace(/-/g, '').toUpperCase();
-  const item = await moveInRally(id, category, flow, notify);
-  if (item === 'cancel') { notify(`Movimiento de ${id} cancelado`); return; }
-  if (!item) return;
-  const types = await repo.listItemTypes();
-  const [move] = rallyMoves([task], [item], types);
+/** Tarea del gestor enlazada a un ID de Rally (la primera que no esté borrada), para moverla de grupo con Rally. */
+async function linkedTask(id: string): Promise<Task | undefined> {
+  const key = id.replace(/-/g, '').toUpperCase();
+  return (await repo.listTasks()).find((t) => t.external_id?.replace(/-/g, '').toUpperCase() === key);
+}
+
+/** Pasa la tarea del gestor al grupo que tiene `item` en Rally, sin volver a mandarlo a Rally. */
+async function followRally(task: Task | undefined, item: RallyItem, label: string) {
+  if (!task) return;
+  const [move] = rallyMoves([task], [item], await repo.listItemTypes());
   if (!move) return;
   applying = true;
   try {
-    await repo.batch(`${id} movida a ${item.state}`, () => repo.setState(task.id, move.stateId));
+    await repo.batch(label, () => repo.setState(task.id, move.stateId));
   } finally {
     applying = false;
   }
 }
 
 /**
- * TS a Need Review (Tablero «Como en Rally»): ventana con defecto, comentario, analista y motivo del bloqueo, todo
- * obligatorio. Al aceptar, el servidor lo hace a la vez (columna, Blocked con motivo y comentario) y la tarea del gestor
+ * Tablero «Como en Rally»: soltar una tarjeta enlazada en una columna (Need Review, Defined…) la mueve primero en Rally
+ * (con la misma ventana de comentario) y después, si cambia de grupo, la tarea del gestor, sin volver a mandarlo a
+ * Rally. Cerrar la ventana no cambia nada.
+ */
+export async function moveToRallyColumn(task: Task, flow: string, category: RallyCategory, notify: (message: string) => void) {
+  await moveRallyItem(task.external_id!, flow, category, notify, task);
+}
+
+/**
+ * Mueve un elemento de Rally a una columna (o, sin `flow`, a una categoría) desde cualquier sitio: el Tablero o la
+ * ficha de Rally. Abre la misma ventana de comentario y, si hay tarea enlazada, la cambia de grupo. Need Review solo
+ * vale para los TS (con su ventana de defecto). Devuelve el elemento movido, `cancel` o `null`.
+ */
+export async function moveRallyItem(rawId: string, flow: string | undefined, category: RallyCategory, notify: (message: string) => void,
+  task?: Task, name?: string): Promise<RallyItem | 'cancel' | null> {
+  const id = rawId.replace(/-/g, '').toUpperCase();
+  if (flow && flow.toLowerCase().replace(/[^a-z]/g, '') === 'needreview') {
+    if (!id.startsWith('TS')) { notify('En Rally, solo los TS pueden ir a Need Review'); return null; }
+    return moveToNeedReview(task ?? (await linkedTask(id)), notify, id, name);
+  }
+  const item = await moveInRally(id, category, flow, notify);
+  if (item === 'cancel') { notify(`Movimiento de ${id} cancelado`); return item; }
+  if (!item) return null;
+  await followRally(task ?? (await linkedTask(id)), item, `${id} movida a ${item.state}`);
+  return item;
+}
+
+/**
+ * TS a Need Review (Tablero «Como en Rally» o ficha): ventana con defecto, comentario, PO IT, CC y motivo del bloqueo.
+ * Al aceptar, el servidor lo hace a la vez (columna, Blocked con motivo y comentario) y la tarea del gestor, si la hay,
  * pasa a su grupo sin reenviarse. Cerrar no cambia nada.
  */
-export async function moveToNeedReview(task: Task, notify: (message: string) => void) {
-  const id = task.external_id!.replace(/-/g, '').toUpperCase();
-  if (pending.has(id)) return;
+export async function moveToNeedReview(task: Task | undefined, notify: (message: string) => void, rawId?: string, name?: string): Promise<RallyItem | 'cancel' | null> {
+  const id = (rawId ?? task?.external_id ?? '').replace(/-/g, '').toUpperCase();
+  if (!id || pending.has(id)) return null;
   const known = rallyItem(id);
   pending.add(id);
   try {
-    const answer = await askNeedReview({ id, name: known?.name ?? task.title, owner: known?.owner ?? null });
-    if (answer === 'cancel') { notify(`Movimiento de ${id} cancelado`); return; }
+    const answer = await askNeedReview({ id, name: known?.name ?? name ?? task?.title ?? id, owner: known?.owner ?? null });
+    if (answer === 'cancel') { notify(`Movimiento de ${id} cancelado`); return 'cancel'; }
     const r = await rallyApi.needReview({ id, defectId: answer.defect.id, text: answer.text, reason: answer.reason, owner: answer.owner, noOwner: answer.noOwner, cc: answer.cc });
     rememberRally([r.item]);
     notify(r.commentError
       ? `${id} en Need Review y bloqueada, pero no se ha podido comentar: ${r.commentError}`
       : `${id} en Need Review · bloqueada · comentado${r.owner ? ` para ${r.owner}` : ''}${r.cc.length ? ` · CC ${r.cc.join(', ')}` : ''}`);
-    const [move] = rallyMoves([task], [r.item], await repo.listItemTypes());
-    if (!move) return;
-    applying = true;
-    try {
-      await repo.batch(`${id} movida a Need Review`, () => repo.setState(task.id, move.stateId));
-    } finally {
-      applying = false;
-    }
+    await followRally(task, r.item, `${id} movida a Need Review`);
+    return r.item;
   } catch (e) {
     notify(`No se ha podido llevar ${id} a Need Review: ${(e as Error).message}`);
+    return null;
   } finally {
     pending.delete(id);
   }

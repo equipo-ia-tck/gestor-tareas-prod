@@ -1,4 +1,4 @@
-import type { RallyCategory, RallyCc, RallyCreatableKind, RallyCreateInput, RallyDetail, RallyFormOptions, RallyItem, RallyKind, RallyPick, RallyProject, RallyRef, RallyStatus } from '../../domain/rally';
+import type { RallyCategory, RallyCc, RallyCreatableKind, RallyCreateInput, RallyDetail, RallyFormOptions, RallyItem, RallyKind, RallyPick, RallyProject, RallyRef, RallyStatus, RallyUpdateInput } from '../../domain/rally';
 import { LOCAL_SERVER, serverCall as call } from '../../data/serverApi';
 import { sync } from '../../data/sync';
 import { artifactHash, type RallyActivity, type ToolEventKind } from '../../domain/rallyActivity';
@@ -42,6 +42,9 @@ export const rallyApi = {
   /** `ruleFields`: campos que piden las reglas de trabajo del proyecto (se recuerdan tras un error al crear). */
   formOptions: (kind: RallyCreatableKind, projectId: string, ruleFields: string[] = []) =>
     call<RallyFormOptions>('GET', `/api/rally/form?${new URLSearchParams([['kind', kind], ['project', projectId], ...ruleFields.map((f) => ['rule', f])])}`),
+  /** Guarda los campos cambiados en la ficha (sin los estados) y devuelve la ficha nueva. */
+  update: (item: RallyItem, changes: RallyUpdateInput) =>
+    call<RallyDetail>('POST', '/api/rally/update', { kind: item.kind, objectId: item.objectId, changes }).then(done('rally-edit')).then((d) => { mark(item.id, 'change'); return d; }),
   /** Botones Ready y Blocked (sin cambiar de columna). `reason`: motivo al bloquear (el texto del comentario). */
   flag: (id: string, change: { ready?: boolean; blocked?: boolean; reason?: string }) =>
     call<{ item: RallyItem }>('POST', '/api/rally/flag', { id, ...change }).then((r) => { mark(id, 'change'); return r.item; }),

@@ -231,6 +231,8 @@ describe('Rally: mover', () => {
         return new Response(JSON.stringify({ OperationResult: { Errors: [], Object: { ...row, ...patch, ...(flow ? { FlowState: { _refObjectName: flow.Name } } : {}) } } }));
       }
       // Buscar un usuario por ObjectID (para su ObjectUUID); sin consulta, es la comprobación de la clave.
+      // Un elemento por su ObjectID (la ficha): { HierarchicalRequirement: {...} }.
+      if (path === `/hierarchicalrequirement/${String(row.ObjectID)}`) return new Response(JSON.stringify({ HierarchicalRequirement: row }));
       const results = path === '/user'
         ? (u.searchParams.has('query') ? [{ _refObjectUUID: 'BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB', EmailAddress: `u${u.searchParams.get('query')!.replace(/\D/g, '')}@wpp.com` }] : null)
         : path === '/flowstate' ? flows : path === '/conversationpost' && opts.discussion ? opts.discussion.map((Text) => ({ Text })) : [row];
@@ -434,6 +436,31 @@ describe('Rally: mover', () => {
     const p2 = await us2.rally.move(us2.marta, { id: 'US1', category: 'accepted', dryRun: true });
     expect(p2.mentioned).toBeUndefined();
     expect(p2.comment).toBe(MOVE_COMMENTS.accepted);
+  });
+
+  it('edita desde la ficha: solo manda lo cambiado, vacío quita el valor y devuelve la ficha nueva', async () => {
+    const owner = { _ref: `${ws}/user/55`, _refObjectName: 'Pepa PO' };
+    const row = { ...us, Name: 'Login', Owner: owner, Description: '<p>Hola <b>equipo</b></p>', Notes: 'nota', PlanEstimate: 3, DisplayColor: '#21a2e0',
+      Release: { _ref: `${ws}/release/9`, _refObjectName: '2026-Q4' }, c_Canal: 'App', Expedite: false, ScheduleState: 'Defined' };
+    const { rally, marta, posts } = await setup(row);
+    const detail = await rally.detail(marta, 'US', '111');
+    expect(detail.edit).toMatchObject({
+      name: 'Login', owner: { ref: '/user/55', name: 'Pepa PO' }, planEstimate: 3, color: '#21a2e0', releaseRef: '/release/9',
+      description: 'Hola equipo', richDescription: true, notes: 'nota', richNotes: false, custom: { c_Canal: 'App' }, scheduleState: 'Defined',
+    });
+    const after = await rally.update(marta, { kind: 'US', objectId: '111', changes: {
+      name: '  Login   nuevo ', releaseRef: '', planEstimate: 5, assigneeRef: '/user/77', tagRefs: ['/tag/1'], custom: { c_Canal: 'Web' }, color: '',
+    } });
+    expect(posts[0]).toEqual({ path: '/hierarchicalrequirement/111', body: { HierarchicalRequirement: {
+      Name: 'Login nuevo', Release: null, PlanEstimate: 5, c_Assignee: '/user/77', Tags: [{ _ref: '/tag/1' }], c_Canal: 'Web', DisplayColor: null,
+    } } });
+    expect(after.item.id).toBe('US1');
+    // Los estados no se cambian por aquí, y lo que no es válido se rechaza sin escribir.
+    for (const changes of [{}, { name: ' ' }, { releaseRef: 'http://x' }, { planEstimate: -1 }, { custom: { Canal: 'x' } }, { custom: { c_Assignee: '/user/1' } }]) {
+      await expect(rally.update(marta, { kind: 'US', objectId: '111', changes })).rejects.toThrow();
+    }
+    expect(posts).toHaveLength(1);
+    await expect(rally.update(marta, { kind: 'TC', objectId: '111', changes: { name: 'x' } })).rejects.toThrow(/no válido/);
   });
 
   it('coloca cada tarjeta en su columna de Rally o en la de su grupo', () => {

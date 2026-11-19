@@ -535,6 +535,16 @@ Petición de la usuaria (oct 2026): traer Rally al gestor sin tocar el resto (en
   personas que faltan se avisan en ámbar, pero nunca impiden publicar (en Need Review siguen siendo obligatorios defecto,
   comentario y motivo). `move-comment` y `need-review` aceptan `cc` (`{ ref }` o `{ uuid }`), `owner` y `noOwner`; `analyst`
   de la versión anterior se suma al CC.
+- **Editar desde la ficha** (rama `editar-rally`, nov 2026; `RallyEditForm.tsx`): en la ficha de la pantalla Rally y en la del
+  panel de una tarea enlazada, «Detalles» es el formulario de «Nuevo elemento» con los valores actuales (`RallyDetail.edit`,
+  `editValues` en el servidor; todos los tipos menos los TC). Los campos tocados se marcan en ámbar y se guardan juntos con
+  «Guardar cambios» (`POST /api/rally/update`, `Rally.update`: solo lo cambiado, vacío quita el valor; «Descartar» vuelve a lo
+  de Rally). Los **estados no se guardan así**: Schedule State, Flow State y el State de una tarea se mueven al momento con
+  `moveRallyItem` (la misma ventana de comentario que al arrastrar en el Tablero; cerrarla = no cambia; Need Review solo TS,
+  con su ventana). Si hay tarea del gestor enlazada, al guardar recibe el nombre y las etiquetas (`syncedTags`: quita las de
+  Rally de antes y deja las demás). La descripción y las notas se editan como texto: si en Rally tienen formato (negritas,
+  listas, imágenes…, `richDescription`) se avisa de que al cambiarlas se pierde. Los demás campos se ven en «Todos los campos
+  de Rally» (solo lectura); Ready, Blocked, discusión y adjuntos siguen igual.
 - **Ready y Blocked** (`RallyFlags`, `POST /api/rally/flag`): botones en la ficha de Rally (pantalla Rally y panel de la tarea)
   que solo cambian esas marcas, nunca la columna. Blocked abre la misma ventana que mover a Bloqueado (comentario con el PO,
   lápiz y analista; cerrar no cambia nada) y su texto va a BlockedReason; desbloquear borra el motivo. Para que la marca no

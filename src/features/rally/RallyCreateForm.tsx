@@ -15,7 +15,7 @@ import { fold } from '../../domain/text';
  * se aprenden del error al crear y se recuerdan por tipo y proyecto en este navegador.
  */
 const ruleKey = (kind: string, projectId: string) => `gestor-tareas:rally-rule-fields:${kind}:${projectId}`;
-function ruleFieldsFor(kind: string, projectId: string): string[] {
+export function ruleFieldsFor(kind: string, projectId: string): string[] {
   try {
     const v = JSON.parse(localStorage.getItem(ruleKey(kind, projectId)) ?? '[]') as unknown;
     return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
@@ -89,11 +89,11 @@ export const PARENT: Partial<Record<RallyCreatableKind, { label: string; types: 
   DE: { label: 'User Story', types: [US] },
   TA: { label: 'Work Product', types: [US, { key: 'DE', label: 'Defect' }], required: true },
 };
-const FEATURE = [{ key: 'F', label: 'Feature' }];
+export const FEATURE = [{ key: 'F', label: 'Feature' }];
 
 const labelClass = 'mb-1 block text-sm font-semibold text-zinc-600 dark:text-zinc-300';
 
-function Field({ label, required, children }: { label: string; required?: boolean; children: ReactNode }) {
+export function Field({ label, required, children }: { label: string; required?: boolean; children: ReactNode }) {
   return (
     <div>
       <span className={labelClass}>{label}{required && <span className="text-red-600"> *</span>}</span>
@@ -103,7 +103,7 @@ function Field({ label, required, children }: { label: string; required?: boolea
 }
 
 /** Interruptor como el «Expedite» de Rally. */
-function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
+export function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
     <button type="button" role="switch" aria-checked={checked} aria-label={label} onClick={() => onChange(!checked)}
       className={`relative h-6 w-11 rounded-full transition-colors ${checked ? 'bg-indigo-600' : 'bg-zinc-300 dark:bg-zinc-600'}`}>
