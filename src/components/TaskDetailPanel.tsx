@@ -23,6 +23,7 @@ import { LABEL_COLORS, labelColor } from '../domain/colors';
 import { formatDay } from '../domain/dates';
 import { describeRule } from '../domain/recurrence';
 import { fuzzyScore, nameKey } from '../domain/text';
+import { isRallyId } from '../domain/rally';
 import { TOPIC_TYPE_ID, type ChecklistItem, type Priority, type Task } from '../domain/types';
 import { findType, stateOf } from '../domain/workflows';
 import { isEditable } from '../features/command/CommandCenter';
@@ -68,6 +69,8 @@ function PanelBody({ task, onClose }: { task: Task; onClose: () => void }) {
   const type = findType(itemTypes, task.type_id);
   const state = stateOf(itemTypes, task);
   const update = (patch: Partial<Task>, label: string) => repo.batch(label, () => repo.updateTask(task.id, patch));
+  /** Enlazada a Rally (por su ID externo): el ID y las etiquetas se ven y se editan en la ficha de Rally de abajo. */
+  const inRally = isRallyId(task.external_id);
 
   return (
     <aside
@@ -133,10 +136,11 @@ function PanelBody({ task, onClose }: { task: Task; onClose: () => void }) {
           <Prop icon={<Calendar className="size-4" />} label="Fecha"><DateField task={task} /></Prop>
           <Prop icon={<AlarmClock className="size-4" />} label="Recordatorio"><ReminderField task={task} /></Prop>
           {/* Para hablar, sin Outlook, Mensaje ni ID externo. La release se quitó del panel en todos los tipos (nov 2026). */}
-          {task.type_id !== TOPIC_TYPE_ID && <Prop icon={<CalendarPlus className="size-4" />} label="Outlook"><OutlookButton task={task} /></Prop>}
+          {/* Enlazadas a Rally: sin Outlook, ID externo ni Etiquetas (el ID y las etiquetas ya salen, editables, en la ficha de Rally). */}
+          {task.type_id !== TOPIC_TYPE_ID && !inRally && <Prop icon={<CalendarPlus className="size-4" />} label="Outlook"><OutlookButton task={task} /></Prop>}
           {task.type_id !== TOPIC_TYPE_ID && <Prop icon={<MessageSquare className="size-4" />} label="Mensaje"><MessageButton task={task} className={fieldBox} /></Prop>}
           <Prop icon={<Folder className="size-4" />} label="Proyecto"><ProjectField task={task} /></Prop>
-          {task.type_id !== TOPIC_TYPE_ID && <Prop icon={<Hash className="size-4" />} label="ID externo"><ExternalIdField task={task} /></Prop>}
+          {task.type_id !== TOPIC_TYPE_ID && !inRally && <Prop icon={<Hash className="size-4" />} label="ID externo"><ExternalIdField task={task} /></Prop>}
           <Prop icon={<Link2 className="size-4" />} label="Enlace"><UrlField task={task} /></Prop>
           <Prop icon={<Flag className="size-4" />} label="Prioridad">
             <div className="flex gap-1">
@@ -150,7 +154,7 @@ function PanelBody({ task, onClose }: { task: Task; onClose: () => void }) {
             </div>
           </Prop>
           <Prop icon={<User className="size-4" />} label="Personas"><PeopleField task={task} /></Prop>
-          <Prop icon={<Tag className="size-4" />} label="Etiquetas"><LabelsField task={task} /></Prop>
+          {!inRally && <Prop icon={<Tag className="size-4" />} label="Etiquetas"><LabelsField task={task} /></Prop>}
           {task.recurrence_rule && (
             <Prop icon={<Repeat className="size-4" />} label="Se repite">
               <span className="flex items-center gap-2 px-2">

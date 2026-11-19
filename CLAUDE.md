@@ -545,6 +545,8 @@ Petición de la usuaria (oct 2026): traer Rally al gestor sin tocar el resto (en
   Rally de antes y deja las demás). La descripción y las notas se editan como texto: si en Rally tienen formato (negritas,
   listas, imágenes…, `richDescription`) se avisa de que al cambiarlas se pierde. Los demás campos se ven en «Todos los campos
   de Rally» (solo lectura); Ready, Blocked, discusión y adjuntos siguen igual.
+- **Panel de una tarea enlazada a Rally** (`isRallyId(external_id)`): sin Outlook, ID externo ni Etiquetas, que ya salen (y se
+  editan) en la ficha de Rally de debajo.
 - **Nuevo defecto desde una US** (`NewDefect.tsx`, misma rama): en la ficha de una US (Tablero y pantalla Rally), «Nuevo
   defecto» abre «Nuevo elemento» rellenado con la guía del equipo (`defectPrefill`): «Error found in TS», proyecto y User
   Story de la US, State Open, New, Owner quien lo crea y Assignee vacío (`noAssignee`), el APPGAR de la US, PRE, Minor
