@@ -42,3 +42,19 @@ describe('analítica de uso', () => {
     expect(usedScreens(team)).toEqual(['today', 'board', 'rally']);
   });
 });
+
+describe('personas analizadas', async () => {
+  const { restrictReport } = await import('../src/domain/usage');
+  it('deja solo las cuentas elegidas (null = todas)', () => {
+    const report = {
+      users: [{ id: 'a', name: 'Ana', login: 'a', disabled: false }, { id: 'b', name: 'Bea', login: 'b', disabled: false }],
+      rows: [{ user: 'a', day: '2026-11-16', kind: 'session', screen: '', count: 1, last: '' }, { user: 'b', day: '2026-11-16', kind: 'session', screen: '', count: 2, last: '' }],
+      states: [{ user: 'b', name: 'x', detail: 'y', value: null, at: '' }],
+    } as Parameters<typeof restrictReport>[0];
+    expect(restrictReport(report, null)).toBe(report);
+    const r = restrictReport(report, ['a']);
+    expect(r.users.map((u) => u.id)).toEqual(['a']);
+    expect(r.rows.map((x) => x.user)).toEqual(['a']);
+    expect(r.states).toEqual([]);
+  });
+});

@@ -1,5 +1,7 @@
 import { addDays, diffDays, nextWorkdays, weekdayOf } from './dates';
 import { nextDueAfterCompletion } from './recurrence';
+import { atLocal } from './reminders';
+import { isRoutine, ROUTINE_REMIND_HOUR } from './routines';
 import { isActive, overdueTasks, tasksDueOn } from './selectors';
 import type { ISODate, NewTask, Settings, Task } from './types';
 
@@ -21,6 +23,7 @@ export function nextMonday(today: ISODate): ISODate {
 /** Copia de una recurrente completada para su siguiente ocurrencia. */
 export function nextOccurrenceTask(task: Task, today: ISODate): NewTask | null {
   if (!task.recurrence_rule) return null;
+  const due = nextDueAfterCompletion(task.recurrence_rule, task.due_date, today);
   return {
     title: task.title,
     notes: task.notes,
@@ -35,7 +38,9 @@ export function nextOccurrenceTask(task: Task, today: ISODate): NewTask | null {
     checklist: task.checklist.map((c) => ({ ...c, id: crypto.randomUUID(), done: false })),
     series_id: task.series_id ?? task.id,
     raw_input: task.raw_input,
-    due_date: nextDueAfterCompletion(task.recurrence_rule, task.due_date, today),
+    due_date: due,
+    // Rutinas del equipo: aviso a las 9:00 del día en que vuelven a salir.
+    ...(isRoutine(task) && due ? { remind_at: atLocal(due, ROUTINE_REMIND_HOUR) } : {}),
   };
 }
 

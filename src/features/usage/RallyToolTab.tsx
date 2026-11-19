@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, ChevronDown, Info, RefreshCw, Wrench } from 'lucide-react';
+import { AlertTriangle, ChevronDown, Info, RefreshCw, Users, Wrench } from 'lucide-react';
+import { useApp } from '../../app/AppContext';
+import { repo } from '../../data/services';
+import { Popover } from '../../components/ui/Popover';
 import { sync } from '../../data/sync';
 import { addDays } from '../../domain/dates';
 import type { RallyProject } from '../../domain/rally';
-import { artifactHash, beforeTracking, CHANGE_KINDS, matchTool, summarizeActivity, type ActivitySummary, type RallyActivity, type Split } from '../../domain/rallyActivity';
-import { fold } from '../../domain/text';
+import { artifactHash, beforeTracking, CHANGE_KINDS, changesBy, matchTool, personKey, rallyPeople, summarizeActivity, type ActivitySummary, type RallyActivity, type Split } from '../../domain/rallyActivity';
 import type { UsageUser } from '../../domain/usage';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { rallyApi } from '../rally/rallyApi';
@@ -24,7 +26,13 @@ const shortDay = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString
  * cuántos salen de la herramienta y cuántos se hacen directamente en Rally, por tipo, por semana y por persona.
  * Se lee Rally con la clave de quien mira (tiene que tenerlo conectado) y se cruza con lo que apunta la herramienta.
  */
+/**
+ * Pestaña «Rally: herramienta o Rally». «Personas de Rally» elige de quién se cuentan los cambios, por su nombre en Rally
+ * (tengan o no cuenta en la herramienta); se guarda en los ajustes de quien mira (`settings.analytics_rally_people`).
+ */
 export function RallyToolTab({ from, to, users }: { from: string; to: string; users: UsageUser[] }) {
+  const { settings } = useApp();
+  const chosenPeople = settings.analytics_rally_people;
   const [projects, setProjects] = useState<RallyProject[] | null>(null);
   const [stored, setStored] = usePersistentState<string[] | null>('analytics-rally-projects', null);
   const [scope, setScope] = usePersistentState('analytics-rally-scope', { down: true, up: false });
@@ -76,13 +84,14 @@ export function RallyToolTab({ from, to, users }: { from: string; to: string; us
     return () => { live = false; };
   }, [connected, key, scope.down, scope.up, from, to, reload]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const accounts = useMemo(() => new Set(users.flatMap((u) => [fold(u.name), fold(u.login.split('@')[0].replace(/[._]/g, ' '))])), [users]);
-
-  if (connected === false) {
-    return <div className={card}><p className="text-sm text-zinc-500">Para ver esto, conecta Rally en la pantalla <b>Rally</b>: los cambios se leen con tu clave.</p></div>;
-  }
-
-  const summary = useMemo(() => (result ? summarizeActivity(result.activity.changes, result.fromTool, result.since, onlySince) : null), [result, onlySince]);
+  const accounts = useMemo(() => new Set(users.flatMap((u) => [personKey(u.name), personKey(u.login.split('@')[0])])), [users]);
+  // Solo los cambios de las personas de Rally elegidas.
+  const shown = useMemo<Loaded | null>(() => {
+    if (!result) return null;
+    const picked = changesBy(result.activity.changes, result.fromTool, chosenPeople);
+    return { ...result, activity: { ...result.activity, changes: picked.changes }, fromTool: picked.fromTool };
+  }, [result, chosenPeople]);
+  const summary = useMemo(() => (shown ? summarizeActivity(shown.activity.changes, shown.fromTool, shown.since, onlySince) : null), [shown, onlySince]);
   const s = summary;
   const total = s ? s.total.tool + s.total.rally : 0;
 
@@ -95,6 +104,8 @@ export function RallyToolTab({ from, to, users }: { from: string; to: string; us
           className="flex items-center gap-1 rounded-md border border-zinc-300 px-2.5 py-1 text-sm hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:hover:bg-zinc-800">
           <RefreshCw className={`size-3.5 ${loading ? 'animate-spin' : ''}`} />Leer Rally
         </button>
+        {result && <RallyPeoplePicker people={rallyPeople(result.activity.changes)} chosen={chosenPeople}
+          onChange={(names) => void repo.updateSettings({ analytics_rally_people: names })} />}
         {loading && <span className="text-xs text-zinc-400">Leyendo los cambios de Rally… puede tardar un poco.</span>}
       </div>
 
@@ -103,7 +114,7 @@ export function RallyToolTab({ from, to, users }: { from: string; to: string; us
 
       {result && s && (
         <>
-          <Notices result={result} summary={s} onlySince={onlySince} onOnlySince={setOnlySince} />
+          <Notices result={shown!} summary={s} onlySince={onlySince} onOnlySince={setOnlySince} />
 
           <div className="grid grid-cols-3 gap-3 max-lg:grid-cols-1">
             <div className={`${card} border-t-4 border-t-[#2a78d6] dark:border-t-[#3987e5]`}>
@@ -119,7 +130,7 @@ export function RallyToolTab({ from, to, users }: { from: string; to: string; us
                     <Figure cls={TOOL} label="Desde la herramienta" n={s.total.tool} total={total} />
                     <Figure cls={RALLY} label="Directamente en Rally" n={s.total.rally} total={total} />
                   </div>
-                  <p className="mt-3 text-xs text-zinc-400">{total} cambios en el periodo en los proyectos elegidos. La herramienta ha apuntado {result.toolCount} escrituras en Rally en el periodo (de cualquier proyecto).</p>
+                  <p className="mt-3 text-xs text-zinc-400">{total} cambios en el periodo en los proyectos elegidos{chosenPeople ? `, de las ${chosenPeople.length} personas elegidas` : ''}. La herramienta ha apuntado {result.toolCount} escrituras en Rally en el periodo (de cualquier proyecto).</p>
                 </>
               ) : <p className="py-6 text-center text-sm text-zinc-400">Ningún cambio en este periodo. La herramienta ha apuntado {result.toolCount} escrituras en Rally.</p>}
             </div>
@@ -175,7 +186,7 @@ export function RallyToolTab({ from, to, users }: { from: string; to: string; us
                   <tbody>
                     {s.byPerson.map((p) => {
                       const n = p.tool + p.rally;
-                      const hasAccount = accounts.has(fold(p.user));
+                      const hasAccount = accounts.has(personKey(p.user));
                       return (
                         <tr key={p.user} className="border-t border-zinc-100 dark:border-zinc-800">
                           <td className="px-4 py-2 font-medium whitespace-nowrap">{p.user}</td>
@@ -196,7 +207,7 @@ export function RallyToolTab({ from, to, users }: { from: string; to: string; us
             )}
           </div>
 
-          <ChangeList result={result} onlySince={onlySince} />
+          <ChangeList result={shown!} onlySince={onlySince} />
 
           <p className="flex gap-2 text-xs text-zinc-400">
             <Info className="mt-0.5 size-3.5 shrink-0" />
@@ -358,5 +369,53 @@ function WeekBars({ weeks }: { weeks: ActivitySummary['byWeek'] }) {
         {weeks.map((w) => <span key={w.week} className="flex-1 text-center whitespace-nowrap">{shortDay(w.week)}</span>)}
       </div>
     </div>
+  );
+}
+
+/** «Personas de Rally»: de quién se cuentan los cambios. Lista las que han hecho cambios en el periodo (y las ya elegidas). */
+function RallyPeoplePicker({ people, chosen, onChange }: { people: { name: string; count: number }[]; chosen: string[] | null; onChange: (names: string[] | null) => void }) {
+  const [q, setQ] = useState('');
+  const keys = new Set((chosen ?? []).map(personKey));
+  // Las elegidas que no han hecho cambios en este periodo también salen (con 0), para poder quitarlas.
+  const all = [...people, ...(chosen ?? []).filter((n) => !people.some((p) => personKey(p.name) === personKey(n))).map((name) => ({ name, count: 0 }))];
+  const shown = all.filter((p) => !q.trim() || personKey(p.name).includes(personKey(q)));
+  const isOn = (name: string) => !chosen || keys.has(personKey(name));
+  const toggle = (name: string) => {
+    const current = chosen ?? all.map((p) => p.name);
+    const next = isOn(name) ? current.filter((n) => personKey(n) !== personKey(name)) : [...current, name];
+    onChange(next);
+  };
+  return (
+    <Popover width="w-80" trigger={(open) => (
+      <button type="button" onClick={open} title="De quién se cuentan los cambios"
+        className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-sm ${chosen ? 'border-indigo-400 bg-indigo-50 text-indigo-700 dark:border-indigo-700 dark:bg-indigo-950 dark:text-indigo-300' : 'border-zinc-300 hover:bg-zinc-100 dark:border-zinc-600 dark:hover:bg-zinc-800'}`}>
+        <Users className="size-4" />{chosen ? `${chosen.length} personas de Rally` : 'Todas las personas de Rally'}
+      </button>
+    )}>
+      {() => (
+        <div className="p-2 text-sm">
+          <p className="mb-2 text-xs text-zinc-500">Solo cuentan los cambios hechos por las personas marcadas (por su nombre en Rally).</p>
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar persona…" aria-label="Buscar persona de Rally" autoFocus
+            className="mb-2 w-full rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm outline-none focus:border-indigo-500 dark:border-zinc-600 dark:bg-zinc-900" />
+          <div className="mb-2 flex gap-2 text-xs">
+            <button type="button" onClick={() => onChange(null)} className="text-indigo-600 hover:underline">Todas</button>
+            <button type="button" onClick={() => onChange([])} className="text-indigo-600 hover:underline">Ninguna</button>
+            <span className="ml-auto text-zinc-400">{chosen ? chosen.length : all.length} de {all.length}</span>
+          </div>
+          <ul className="max-h-72 overflow-y-auto">
+            {shown.map((p) => (
+              <li key={personKey(p.name)}>
+                <label className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 hover:bg-zinc-100 dark:hover:bg-zinc-800">
+                  <input type="checkbox" checked={isOn(p.name)} onChange={() => toggle(p.name)} />
+                  <span className="min-w-0 flex-1 truncate">{p.name}</span>
+                  <span className="text-xs text-zinc-400 tabular-nums">{p.count}</span>
+                </label>
+              </li>
+            ))}
+            {!shown.length && <li className="px-1.5 py-1 text-xs text-zinc-400">Nadie con ese nombre.</li>}
+          </ul>
+        </div>
+      )}
+    </Popover>
   );
 }

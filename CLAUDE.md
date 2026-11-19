@@ -828,6 +828,9 @@ En Vercel no hay servidor que lea la carpeta de OneDrive del Mac, así que el Ma
   «Rellenar la gestión de la demanda», recurrentes semanales (serie `rutina:<id>`, etiqueta `rutina`, prioridad 2, `url`
   opcional). `AppContext` las crea una vez por cuenta tras la primera sincronización (`SyncState.pulled`) y las apunta en
   `settings.routines_added` (sin migración): si alguien las borra, no vuelven. Para añadir otra, se añade a la lista.
+  **No se ven hasta su día** (rama `arreglos-noviembre`): la siguiente ocurrencia de una rutina (`isHiddenRoutine`: serie
+  `rutina:`, pendiente y con fecha futura) se quita de `AppContext.tasks`, así al completar la del lunes no vuelve a salir hasta
+  el lunes siguiente; lleva aviso a las 9:00 de ese día (`nextOccurrenceTask`, `ROUTINE_REMIND_HOUR`). Las atrasadas sí se ven.
 - **Panel del feedback** (`FeedbackDashboard`, `feedbackStats`), hoy vista «Panel»: recibidos, abiertos, sin mirar, % resuelto, días hasta Hecho,
   barra de estados, recibidos y cerrados por semana, por parte de la web, por tipo (con fallos abiertos por impacto) y quién
   envía. Pulsar una cifra lleva a la Lista con ese filtro.
@@ -856,8 +859,21 @@ ya usa.
   lista. «Pasar a mis tareas del gestor, en [proyecto] · Crear N tareas» (antes «Añadir al gestor en») en una sola fila.
 - **Orden por Rank** (`DragAndDropRank`, `RallyItem.rank`, `byRank`: como texto; sin Rank, al final).
 - **Vistas guardadas** (`domain/rallyViews.ts`, `RALLY_VIEWS`, `rally-view`): las 15 de Rally con sus nombres. Condiciones
-  sobre etiquetas, Flow State, nombre y Ready; mismo campo = o, campos distintos = y (`inRallyView`). Se aplican sobre lo
+  sobre etiquetas, Flow State, nombre y Ready; mismo campo = o, campos distintos = y (`inRallyView`); con `all: true` (la 05,
+  Onboarding y ANA_etiquetado) el mismo campo también es y. Se aplican sobre lo
   cargado, antes del filtro por tipo y el buscador. Para cambiar una, se edita ese archivo.
+
+## Arreglos de noviembre (rama `arreglos-noviembre`)
+
+- **Pantalla Proyectos** (`#/projects`, `features/views/ProjectsView.tsx`): el título «Proyectos» de la barra lateral la abre,
+  igual que «Grupos» abre la suya. Alta de proyectos y un bloque por proyecto con pendientes, atrasadas y notas (con sus
+  subproyectos) y una tarjeta por subproyecto.
+- **Personas analizadas** (Más → Analítica, botón «Personas»): `settings.analytics_people` (ids de cuenta; null = todas, sin
+  migración) se guarda en los ajustes de quien mira, no en el código (el repositorio es público). `restrictReport` deja solo
+  esas cuentas en las pestañas de uso. **«Rally: herramienta o Rally»** tiene su propio botón «Personas de Rally»
+  (`settings.analytics_rally_people`, nombres de Rally; null = todas): lista quien ha hecho cambios en el periodo y cuenta solo
+  los suyos (`changesBy`), tengan o no cuenta. Los nombres se comparan con `personKey` (sin tildes, guiones ni espacios), también
+  en «Tiene cuenta».
 
 ## Fase 32: analítica de uso (rama `dev`, nov 2026)
 

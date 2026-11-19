@@ -15,7 +15,8 @@ export type RallyViewCondition =
   | { field: 'name'; op: 'contains'; values: string[] }
   | { field: 'ready'; op: '='; value: boolean };
 
-export interface RallyView { id: string; name: string; conditions: RallyViewCondition[] }
+/** `all`: las condiciones sobre el mismo campo se tienen que cumplir todas (como las filas del filtro de Rally en esa vista). */
+export interface RallyView { id: string; name: string; conditions: RallyViewCondition[]; all?: boolean }
 
 /** Las once etiquetas de VS (la vista 12 enseña lo que no tiene ninguna). */
 const VS_TAGS = [
@@ -31,7 +32,8 @@ export const RALLY_VIEWS: RallyView[] = [
   { id: '02', name: '02. VS Pagos Transaccionales', conditions: [tags('Pagos Transaccionales')] },
   { id: '03', name: '03. VS Plataforma Transversal', conditions: [tags('Plataforma Transversal')] },
   { id: '04', name: '04. VS Cuentas y Tarjetas', conditions: [tags('Cuentas y Tarjetas')] },
-  { id: '05', name: '05. VS Onboarding', conditions: [tags('Onboarding'), tags('ANA_etiquetado')] },
+  // Onboarding y ANA_etiquetado a la vez (dos filas en el filtro de Rally).
+  { id: '05', name: '05. VS Onboarding', conditions: [tags('Onboarding'), tags('ANA_etiquetado')], all: true },
   { id: '06', name: '06. VS Préstamos e Hipotecas', conditions: [tags('Prestamos e Hipotecas')] },
   { id: '07', name: '07. VS Seguros', conditions: [tags('Seguros')] },
   { id: '08', name: '08. VS Ahorro e Inversiones', conditions: [tags('Ahorro e Inversiones')] },
@@ -77,9 +79,9 @@ function holds(c: RallyViewCondition, it: RallyItem): boolean {
   }
 }
 
-/** ¿Sale el elemento en la vista? Mismo campo: basta una condición; campos distintos: todas. */
+/** ¿Sale el elemento en la vista? Mismo campo: basta una condición (todas si la vista es `all`); campos distintos: todas. */
 export function inRallyView(view: RallyView, it: RallyItem): boolean {
   const byField = new Map<string, RallyViewCondition[]>();
   for (const c of view.conditions) byField.set(c.field, [...(byField.get(c.field) ?? []), c]);
-  return [...byField.values()].every((group) => group.some((c) => holds(c, it)));
+  return [...byField.values()].every((group) => (view.all ? group.every((c) => holds(c, it)) : group.some((c) => holds(c, it))));
 }

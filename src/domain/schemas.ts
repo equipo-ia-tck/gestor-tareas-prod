@@ -86,6 +86,8 @@ export const settingsSchema = z.object({
   groups: z.array(z.object({ id: z.string().min(1), name: z.string().min(1), color: z.string() })).default([]),
   routines_added: z.array(z.string()).default([]),
   rally_templates: z.array(z.object({ id: z.string().min(1), label: z.string(), text: z.string() })).nullable().default(null),
+  analytics_people: z.array(z.string()).nullable().default(null),
+  analytics_rally_people: z.array(z.string()).nullable().default(null),
 });
 
 const stateSchema = z.object({
