@@ -83,6 +83,23 @@ export function teamsMeetingUrl(m: { title: string; date: string; time: string; 
 }
 
 /**
+ * La misma reunión nueva en **Outlook web** (`outlook.office.com/calendar/deeplink/compose`), para crearla con otra cuenta
+ * de Microsoft 365 (p. ej. la de La Caixa) en el navegador. Teams web no acepta crear reuniones por enlace (lleva a «Teams
+ * clásico ya no está disponible»), y el enlace de Teams lanzaría la app con la cuenta de WPP. `online=true` propone que
+ * sea reunión de Teams.
+ */
+export function outlookWebMeetingUrl(m: { title: string; date: string; time: string; minutes: number; attendees: string[]; content?: string }): string {
+  const start = new Date(`${m.date}T${m.time}:00`);
+  const end = new Date(start.getTime() + m.minutes * 60_000);
+  const params = new URLSearchParams({ subject: m.title.trim() || 'Reunión', startdt: localIsoWithOffset(start), enddt: localIsoWithOffset(end) });
+  const emails = m.attendees.map((e) => e.trim()).filter((e) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e));
+  if (emails.length) params.set('to', emails.join(','));
+  if (m.content?.trim()) params.set('body', m.content.length > 1200 ? `${m.content.slice(0, 1190)}…` : m.content);
+  params.set('online', 'true');
+  return `https://outlook.office.com/calendar/deeplink/compose?${params.toString()}`;
+}
+
+/**
  * Personas con email para invitar: las de las reuniones del calendario y las fichas con email, sin repetir email y
  * ordenadas por las veces que aparecen en reuniones.
  */

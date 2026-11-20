@@ -167,6 +167,7 @@ async function loadExtra() {
   try {
     const r = await extraApi.ics();
     set({ extra: { ...extra, name: r.name }, extraIcs: r.ics, extraError: null, at: Date.now() });
+    prunePending();
   } catch (e) {
     set({ extra, extraError: (e as Error).message });
   }
@@ -231,13 +232,16 @@ function savePending(list: Pending[]) {
 
 const sameMeeting = (a: CalendarEvent, b: CalendarEvent) => a.date === b.date && a.time === b.time && nameKey(a.title) === nameKey(b.title);
 
-/** Reuniones reales de los días con pendientes (del archivo del flujo o del .ics). */
+/** Reuniones reales de los días con pendientes (del archivo del flujo o del .ics, y del otro calendario). */
 function realMeetings(from: ISODate, to: ISODate): CalendarEvent[] {
+  let list: CalendarEvent[] = [];
   try {
-    return state.events ? outlookToCalendar(state.events, from, to) : state.ics ? parseIcs(state.ics, from, to) : [];
-  } catch {
-    return [];
-  }
+    list = state.events ? outlookToCalendar(state.events, from, to) : state.ics ? parseIcs(state.ics, from, to) : [];
+  } catch { /* un .ics raro no rompe nada */ }
+  try {
+    if (state.extraIcs) list = [...list, ...parseIcs(state.extraIcs, from, to)];
+  } catch { /* igual con el otro calendario */ }
+  return list;
 }
 
 /**
@@ -305,7 +309,7 @@ export function useMeetings(from: ISODate, to: ISODate): Map<ISODate, CalendarEv
       // Igual con el otro calendario.
     }
     // Las pendientes, mientras no llegue la de verdad (al llegar, `prunePending` las borra).
-    const waiting = pending.filter((p) => Date.now() - p.createdAt < PENDING_MS && p.date >= from && p.date <= to && !list.some((e) => sameMeeting(e, p)));
+    const waiting = pending.filter((p) => Date.now() - p.createdAt < PENDING_MS && p.date >= from && p.date <= to && ![...list, ...others].some((e) => sameMeeting(e, p)));
     for (const e of [...list, ...others, ...waiting]) byDay.set(e.date, [...(byDay.get(e.date) ?? []), e]);
     return byDay;
   }, [snapshot, from, to]);

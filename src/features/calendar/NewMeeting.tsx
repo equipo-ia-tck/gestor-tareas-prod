@@ -5,12 +5,14 @@ import { useApp } from '../../app/AppContext';
 import { Modal } from '../../components/Modal';
 import { Avatar } from '../../components/ui/Badges';
 import { addDays } from '../../domain/dates';
+import { parseIcs } from '../../domain/ics';
 import { outlookToCalendar } from '../../domain/outlookEvents';
-import { meetingContacts, teamsMeetingUrl } from '../../domain/teams';
+import { meetingContacts, outlookWebMeetingUrl, teamsMeetingUrl } from '../../domain/teams';
 import { fold } from '../../domain/text';
 import type { ISODate } from '../../domain/types';
 import { openTeams, useTeamsApp } from '../../hooks/useTeamsApp';
-import { addPendingMeeting, useOutlook } from './outlook';
+import { usePersistentState } from '../../hooks/usePersistentState';
+import { EXTRA_COLOR, addPendingMeeting, useOutlook } from './outlook';
 
 const DURATIONS = [15, 30, 45, 60, 90, 120];
 
@@ -27,6 +29,8 @@ const isEmail = (s: string) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s.trim());
  * formulario de reunión ya rellenado y, al enviarlo allí, queda en el calendario real. Mientras llega del calendario,
  * el gestor la muestra como pendiente. También se abre desde la ficha de una persona («Nueva reunión»): `title` y `invite`
  * vienen ya puestos, y a quien no trae email se le busca entre los contactos por su nombre.
+ * Entorno: **WPP** abre la app de Teams (o el navegador, según Ajustes) como siempre; **La Caixa** (el otro calendario)
+ * abre la reunión rellenada en Outlook web, en el navegador, sin lanzar la app de Teams (que va con la cuenta de WPP).
  */
 export function NewMeeting({ date: initialDate, time: initialTime, title: initialTitle = '', invite = [], source, onClose }: {
   /** Desde dónde se abre (analítica): doble clic en la agenda, ficha de una persona o entrega en Rally. */
@@ -38,7 +42,10 @@ export function NewMeeting({ date: initialDate, time: initialTime, title: initia
   onClose: () => void;
 }) {
   const { peopleCards, today } = useApp();
-  const { events } = useOutlook();
+  const { events, extraIcs, extra } = useOutlook();
+  const otherName = extra?.connected && extra.name ? extra.name : 'La Caixa';
+  const [env, setEnv] = usePersistentState<'wpp' | 'other'>('meeting-env', 'wpp');
+  const other = env === 'other';
   const [title, setTitle] = useState(initialTitle);
   const [date, setDate] = useState(initialDate);
   const [time, setTime] = useState(initialTime);
@@ -51,10 +58,13 @@ export function NewMeeting({ date: initialDate, time: initialTime, title: initia
   const [teamsApp] = useTeamsApp();
 
   // A quién se puede invitar: quien sale en tus reuniones (de los últimos y próximos días) y las fichas con email.
-  const contacts = useMemo(
-    () => meetingContacts(events ? outlookToCalendar(events, addDays(today, -60), addDays(today, 60)) : [], peopleCards),
-    [events, peopleCards, today],
-  );
+  const contacts = useMemo(() => {
+    const from = addDays(today, -60);
+    const to = addDays(today, 60);
+    let meetings = events ? outlookToCalendar(events, from, to) : [];
+    try { if (extraIcs) meetings = [...meetings, ...parseIcs(extraIcs, from, to)]; } catch { /* .ics raro */ }
+    return meetingContacts(meetings, peopleCards);
+  }, [events, extraIcs, peopleCards, today]);
   // Invitados sin email en su ficha: el de sus reuniones, si sale con el mismo nombre.
   const [missing, setMissing] = useState(() => invite.filter((p) => !p.email || !isEmail(p.email)).map((p) => p.name));
   useEffect(() => {
@@ -89,14 +99,16 @@ export function NewMeeting({ date: initialDate, time: initialTime, title: initia
   function create() {
     if (!title.trim()) { setError('Ponle un título.'); return; }
     if (!date || !/^\d{2}:\d{2}$/.test(time)) { setError('Revisa el día y la hora.'); return; }
-    const url = teamsMeetingUrl({ title, date, time, minutes, attendees: attendees.map((a) => a.email), content });
-    openTeams(url, teamsApp);
-    track('meeting-create', source);
+    const meeting = { title, date, time, minutes, attendees: attendees.map((a) => a.email), content };
+    if (other) window.open(outlookWebMeetingUrl(meeting), '_blank', 'noopener,noreferrer');
+    else openTeams(teamsMeetingUrl(meeting), teamsApp);
+    track('meeting-create', other ? `${source}-extra` : source);
     const end = new Date(new Date(`${date}T${time}:00`).getTime() + minutes * 60_000);
     addPendingMeeting({
       title: title.trim(), date, time,
       end: `${String(end.getHours()).padStart(2, '0')}:${String(end.getMinutes()).padStart(2, '0')}`,
       attendees, organizer: null, description: content, location: '', url: null, showAs: 'tentative',
+      ...(other ? { calendar: otherName } : {}),
     });
     onClose();
   }
@@ -106,6 +118,17 @@ export function NewMeeting({ date: initialDate, time: initialTime, title: initia
   return (
     <Modal title="Nueva reunión de Teams" onClose={onClose}>
       <form onSubmit={(e) => { e.preventDefault(); create(); }} className="space-y-3 text-sm">
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-zinc-500">Entorno</span>
+          <div role="radiogroup" aria-label="Entorno" className="inline-flex rounded-md border border-zinc-300 p-0.5 dark:border-zinc-600">
+            {([['wpp', 'WPP', '#5b5fc7'], ['other', otherName, EXTRA_COLOR]] as const).map(([k, label, color]) => (
+              <button key={k} type="button" role="radio" aria-checked={env === k} onClick={() => setEnv(k)}
+                className={`inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium ${env === k ? 'bg-zinc-100 dark:bg-zinc-800' : 'text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800/60'}`}>
+                <span className="size-2 rounded-full" style={{ background: color }} />{label}
+              </button>
+            ))}
+          </div>
+        </div>
         <input autoFocus value={title} onChange={(e) => { setTitle(e.target.value); setError(null); }} placeholder="Título de la reunión" className={`${field} text-base font-medium`} />
         <div className="flex flex-wrap gap-2">
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={`${field} w-auto`} />
@@ -150,13 +173,16 @@ export function NewMeeting({ date: initialDate, time: initialTime, title: initia
 
         {error && <p className="rounded-md bg-red-50 px-2 py-1 text-xs text-red-700 dark:bg-red-950 dark:text-red-300">{error}</p>}
         <p className="text-xs text-zinc-500">
-          Se abre Teams con la reunión rellenada: revísala y pulsa <b>Enviar</b> allí para que quede en tu calendario e invite a la gente.
-          Aquí se verá como pendiente hasta que llegue de Outlook.
+          {other
+            ? <>Se abre <b>Outlook en el navegador</b> (no la app de Teams) con la reunión rellenada: entra con tu cuenta de {otherName} si te lo pide, comprueba que está marcada «Reunión de Teams» y pulsa <b>Enviar</b>.
+              Aquí se verá como pendiente hasta que llegue del calendario de {otherName}.</>
+            : <>Se abre Teams con la reunión rellenada: revísala y pulsa <b>Enviar</b> allí para que quede en tu calendario e invite a la gente.
+              Aquí se verá como pendiente hasta que llegue de Outlook.</>}
         </p>
         <div className="flex justify-end gap-2">
           <button type="button" onClick={onClose} className="rounded-md px-3 py-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800">Cancelar</button>
           <button type="submit" className="inline-flex items-center gap-1.5 rounded-md bg-[#5b5fc7] px-3 py-1.5 font-medium text-white hover:bg-[#4b4fb7]">
-            <Video className="size-4" />Crear en Teams
+            <Video className="size-4" />{other ? 'Crear en el navegador' : 'Crear en Teams'}
           </button>
         </div>
       </form>

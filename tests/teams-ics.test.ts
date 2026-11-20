@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseIcs } from '../src/domain/ics';
 import { notesByTask, notesForTask } from '../src/domain/notes';
-import { findTeamsLink, meetingContacts, meetingSummary, teamsAppUrl, teamsChatUrl, teamsMeetingUrl, teamsWebUrl } from '../src/domain/teams';
+import { findTeamsLink, meetingContacts, meetingSummary, outlookWebMeetingUrl, teamsAppUrl, teamsChatUrl, teamsMeetingUrl, teamsWebUrl } from '../src/domain/teams';
 import type { Note } from '../src/domain/types';
 import { makeTask } from './factories';
 
@@ -156,4 +156,15 @@ it('teamsWebUrl: abre la reunión en Teams web sin lanzar la app', () => {
   expect(short.searchParams.get('msLaunch')).toBe('false');
   expect(teamsWebUrl('https://teams.live.com/meet/123')).toBe('https://teams.live.com/meet/123');
   expect(teamsWebUrl('https://zoom.us/j/1')).toBe('https://zoom.us/j/1');
+});
+
+it('outlookWebMeetingUrl: la reunión rellenada en Outlook web (otra cuenta, en el navegador)', () => {
+  const u = new URL(outlookWebMeetingUrl({ title: ' Sync ', date: '2026-11-21', time: '10:00', minutes: 30, attendees: ['a@b.com', 'no-email'], content: 'Agenda' }));
+  expect(u.origin + u.pathname).toBe('https://outlook.office.com/calendar/deeplink/compose');
+  expect(u.searchParams.get('subject')).toBe('Sync');
+  expect(u.searchParams.get('startdt')).toBe('2026-11-21T10:00:00+01:00');
+  expect(u.searchParams.get('enddt')).toBe('2026-11-21T10:30:00+01:00');
+  expect(u.searchParams.get('to')).toBe('a@b.com');
+  expect(u.searchParams.get('body')).toBe('Agenda');
+  expect(u.searchParams.get('online')).toBe('true');
 });

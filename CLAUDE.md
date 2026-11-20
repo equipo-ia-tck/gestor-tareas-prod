@@ -963,6 +963,11 @@ de Outlook de WPP, también en la app publicada.
   verde (`EXTRA_COLOR`) en la agenda, la lista y el mes, con su interruptor en «Mis calendarios» (`calendar-extra`) y
   «Calendario X» en la ficha; su «Unirse en el navegador» abre siempre Teams web con `teamsWebUrl` (launcher con `msLaunch=false`, para enlaces `/l/meetup-join/` y los cortos `/meet/`, que traen casi todas; para que la página de Teams no lance la app, que va con la cuenta de WPP). Ajustes → Calendario de Outlook → «Otro calendario» (`ExtraSettings`): nombre y enlace.
   Un solo calendario extra por persona.
+- **Reunión nueva con entorno** (`NewMeeting`, `meeting-env` en localStorage): WPP abre Teams como siempre
+  (`teamsMeetingUrl`, app o navegador según Ajustes); La Caixa (el nombre del otro calendario) abre la reunión rellenada en
+  **Outlook web** (`outlookWebMeetingUrl`, `outlook.office.com/calendar/deeplink/compose` con `online=true`) en una pestaña,
+  para crearla con esa cuenta. Teams web no admite crear reuniones por enlace (sale «Teams clásico ya no está disponible»).
+  La pendiente lleva `calendar` y se quita al llegar del otro calendario (`realMeetings` lo incluye).
 
 ### Más adelante
 
