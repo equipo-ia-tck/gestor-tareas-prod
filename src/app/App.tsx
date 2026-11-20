@@ -10,6 +10,8 @@ import { NeedReviewPrompt } from '../features/rally/NeedReviewPrompt';
 import { MeetingPrompt } from '../features/rally/MeetingPrompt';
 import { AnalystPrompt } from '../features/rally/AnalystPrompt';
 import { RallySync } from '../features/rally/RallySync';
+import { ListaBridge } from '../features/mslist/ListaBridge';
+import { ListaView } from '../features/mslist/ListaView';
 import { LogView } from '../features/log/LogView';
 import { ReviewView } from '../features/review/ReviewView';
 import { FeedbackButton } from '../features/feedback/FeedbackButton';
@@ -46,6 +48,7 @@ function View({ route }: { route: Route }) {
     case 'analytics': return <UsageView />;
     case 'calendar': return <CalendarView />;
     case 'rally': return <RallyView />;
+    case 'lista': return <ListaView />;
     case 'projects': return <ProjectsView />; // el título «Proyectos» de la barra lateral, como el de Grupos
     case 'inbox': return <InboxView />;
     case 'project': return <ProjectView key={route.id} id={route.id} />;
@@ -70,6 +73,7 @@ function Main({ route }: { route: Route }) {
         <BackupReminder />
         <ReminderCenter />
         <RallySync />
+        <ListaBridge />
         <AnalystPrompt />
         <NeedReviewPrompt />
         <MeetingPrompt />

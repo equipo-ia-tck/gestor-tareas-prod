@@ -972,6 +972,30 @@ de Outlook de WPP, también en la app publicada.
   en su ficha, «Chat en el navegador» abre Teams web sin la app (`teamsWebUrl` admite también `/l/chat/…`, tipo `chat`) y
   «Nueva reunión» abre con el entorno La Caixa ya elegido (`NewMeeting` `env`), aunque Ajustes diga abrir Teams en la app.
 
+## Fase 34: Microsoft List con un marcador, sin Power Automate (rama `dev`, prueba, nov 2026)
+
+Petición de la usuaria: volver a traer la Lista (quitada en la fase 26) sin flujos. Sin app en Entra ID no hay Graph, y la
+API de SharePoint no admite CORS, así que lo hace un **marcador del navegador** que se pulsa en la página de la lista.
+
+- **Marcador** (`features/mslist/bookmarklet.ts`, `bridge` convertido en texto con `toString()`: no puede usar nada de fuera
+  de la función; un test lo ejecuta suelto y se ha comprobado minificado). En la página `…/Lists/<nombre>/…` usa la API REST
+  de SharePoint con la sesión de la persona (`GetList(@u)`, `odata=nometadata`): columnas visibles (`/fields`), elementos
+  de 1000 en 1000 (`odata.nextLink`, personas y búsquedas con `$expand`) y escribe con MERGE (`X-RequestDigest` de
+  `/_api/contextinfo`). Abre Marea (`#/lista`, ventana `marea-lista`) y hablan por `postMessage`: «hello» cada 700 ms hasta
+  que Marea contesta `ready` con los cambios pendientes; los aplica, relee la lista y la manda (`data`, con el resultado de
+  cada cambio). Editables: texto, nota, opción, varias opciones, número, moneda, fecha y sí/no (personas y búsquedas, solo
+  lectura). Si la página no deja ejecutar marcadores, «Copiar el código» para pegarlo en la consola.
+- **Marea** (`ListaBridge` en `Shell`): solo acepta mensajes de `https://<x>.sharepoint.com` (`isSharePointOrigin`) y valida
+  lo recibido (`parseSnapshot`, `domain/msListParse.ts`). Columnas por su **nombre visible** («Título» para el título).
+- **Prueba sin servidor**: lista, cambios pendientes, errores y configuración en localStorage de ese navegador
+  (`listaStore.ts`: `lista-snapshot`, `lista-pending`, `lista-errors`, `lista-config`). `addPending` deja un cambio por
+  elemento y columna; `remainingPending` quita los aplicados y los que la lista ya refleja; `withPending` enseña los valores
+  pendientes ya puestos (y con ellos se mueven las tareas enlazadas, así no se deshace un cambio).
+- **En el gestor** (`#/lista`, «Lista» debajo de Rally; lógica de la fase 23 en `domain/msList.ts`): columna de estado y su
+  correspondencia con las columnas del Tablero, «Pasar a mis tareas» (`LS-<id>`), estado en la tabla y ficha lateral con todos
+  los campos (los cambiados en ámbar, «deshacer» un pendiente). Mover una tarea enlazada apunta el cambio (`pushToList`).
+  Los cambios llegan a SharePoint solo al pulsar el marcador.
+
 ### Más adelante
 
 - **Electron**: la app es web estática con rutas por hash y datos en IndexedDB, así que se puede empaquetar sin cambios
