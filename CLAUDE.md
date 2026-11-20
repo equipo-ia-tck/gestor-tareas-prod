@@ -968,6 +968,9 @@ de Outlook de WPP, también en la app publicada.
   **Outlook web** (`outlookWebMeetingUrl`, `outlook.office.com/calendar/deeplink/compose` con `online=true`) en una pestaña,
   para crearla con esa cuenta. Teams web no admite crear reuniones por enlace (sale «Teams clásico ya no está disponible»).
   La pendiente lleva `calendar` y se quita al llegar del otro calendario (`realMeetings` lo incluye).
+- **Personas de La Caixa** (`isCaixaEmail`: `@caixabank.com`, `@proveedorexterno.com` y sus subdominios, `CAIXA_DOMAINS`):
+  en su ficha, «Chat en el navegador» abre Teams web sin la app (`teamsWebUrl` admite también `/l/chat/…`, tipo `chat`) y
+  «Nueva reunión» abre con el entorno La Caixa ya elegido (`NewMeeting` `env`), aunque Ajustes diga abrir Teams en la app.
 
 ### Más adelante
 

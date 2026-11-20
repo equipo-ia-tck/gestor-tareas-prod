@@ -82,6 +82,15 @@ export function teamsMeetingUrl(m: { title: string; date: string; time: string; 
   return `https://teams.microsoft.com/l/meeting/new?${params.toString()}`;
 }
 
+/** Dominios de La Caixa: con estas personas, el chat y las reuniones van en el navegador, con la cuenta de La Caixa. */
+export const CAIXA_DOMAINS = ['caixabank.com', 'proveedorexterno.com'];
+
+/** ¿Es un email de La Caixa (`@caixabank.com`, `@proveedorexterno.com` o un subdominio suyo)? */
+export function isCaixaEmail(email: string | null | undefined): boolean {
+  const domain = /@([^@\s]+)$/.exec(email?.trim().toLowerCase() ?? '')?.[1];
+  return !!domain && CAIXA_DOMAINS.some((d) => domain === d || domain.endsWith(`.${d}`));
+}
+
 /**
  * La misma reunión nueva en **Outlook web** (`outlook.office.com/calendar/deeplink/compose`), para crearla con otra cuenta
  * de Microsoft 365 (p. ej. la de La Caixa) en el navegador. Teams web no acepta crear reuniones por enlace (lleva a «Teams
@@ -130,15 +139,17 @@ export function teamsAppUrl(url: string): string {
  * Enlace que abre la reunión en Teams web sin lanzar la app de escritorio. El enlace normal pasa por la página
  * «launcher» de Teams, que abre la app si está instalada (con la cuenta de WPP, que no deja entrar en las reuniones de
  * otra empresa). Con `msLaunch=false` y `suppressPrompt=true` esa página va directa a «Continuar en este navegador».
- * Solo para reuniones de teams.microsoft.com (`/l/meetup-join/…` o `/meet/…`); los demás enlaces se devuelven tal cual.
+ * Solo para enlaces de teams.microsoft.com (`/l/meetup-join/…`, `/meet/…` o `/l/chat/…`); los demás, tal cual.
  */
 export function teamsWebUrl(url: string): string {
   // Formato antiguo (/l/meetup-join/…) y nuevo y corto (/meet/<id>?p=<código>), que es el que traen ya casi todas.
-  const m = /^https:\/\/teams\.microsoft\.com(\/(l\/meetup-join|meet)\/.+)$/i.exec(url);
+  // También los chats (/l/chat/0/0?users=…), para chatear con alguien de La Caixa con esa cuenta.
+  const m = /^https:\/\/teams\.microsoft\.com(\/(l\/meetup-join|meet|l\/chat)\/.+)$/i.exec(url);
   if (!m) return url;
+  const kind = m[2].toLowerCase();
   const params = new URLSearchParams({
     url: `/_#${m[1]}`,
-    type: m[2].toLowerCase() === 'meet' ? 'meet' : 'meetup-join',
+    type: kind === 'meet' ? 'meet' : kind === 'l/chat' ? 'chat' : 'meetup-join',
     directDl: 'true',
     msLaunch: 'false',
     enableMobilePage: 'true',

@@ -32,19 +32,23 @@ const isEmail = (s: string) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s.trim());
  * Entorno: **WPP** abre la app de Teams (o el navegador, según Ajustes) como siempre; **La Caixa** (el otro calendario)
  * abre la reunión rellenada en Outlook web, en el navegador, sin lanzar la app de Teams (que va con la cuenta de WPP).
  */
-export function NewMeeting({ date: initialDate, time: initialTime, title: initialTitle = '', invite = [], source, onClose }: {
+export function NewMeeting({ date: initialDate, time: initialTime, title: initialTitle = '', invite = [], env: forcedEnv, source, onClose }: {
   /** Desde dónde se abre (analítica): doble clic en la agenda, ficha de una persona o entrega en Rally. */
   source: 'dblclick' | 'person' | 'rally';
   date: ISODate;
   time: string;
   title?: string;
   invite?: { name: string; email?: string | null }[];
+  /** Entorno con el que abrir (p. ej. La Caixa si se invita a alguien de La Caixa); si no, el último elegido. */
+  env?: 'wpp' | 'other';
   onClose: () => void;
 }) {
   const { peopleCards, today } = useApp();
   const { events, extraIcs, extra } = useOutlook();
   const otherName = extra?.connected && extra.name ? extra.name : 'La Caixa';
-  const [env, setEnv] = usePersistentState<'wpp' | 'other'>('meeting-env', 'wpp');
+  const [savedEnv, saveEnv] = usePersistentState<'wpp' | 'other'>('meeting-env', 'wpp');
+  const [env, setEnvState] = useState(forcedEnv ?? savedEnv);
+  const setEnv = (k: 'wpp' | 'other') => { setEnvState(k); saveEnv(k); };
   const other = env === 'other';
   const [title, setTitle] = useState(initialTitle);
   const [date, setDate] = useState(initialDate);

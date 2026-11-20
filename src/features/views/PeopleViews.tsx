@@ -4,7 +4,7 @@ import { ArrowDown, ArrowUp, CheckSquare, FileText, FolderPlus, Layers, MessageC
 import { MenuItem, Popover } from '../../components/ui/Popover';
 import { fuzzyScore } from '../../domain/text';
 import { navigate } from '../../app/router';
-import { teamsChatUrl } from '../../domain/teams';
+import { isCaixaEmail, teamsChatUrl, teamsWebUrl } from '../../domain/teams';
 import { useApp } from '../../app/AppContext';
 import { Section, TaskList } from '../../components/TaskList';
 import { Avatar } from '../../components/ui/Badges';
@@ -149,6 +149,9 @@ export function PersonView({ name }: { name: string }) {
   const meetings = meetingsWith(name, notes);
   const list = { today, projects: projectMap, onEdit: editTask };
   const [meeting, setMeeting] = useState(false);
+  // Con alguien de La Caixa, el chat y la reunión van en el navegador (con esa cuenta); la app de Teams es la de WPP.
+  const caixa = isCaixaEmail(card?.email);
+  const chatUrl = card?.email ? teamsChatUrl([card.email]) : null;
 
   return (
     <>
@@ -161,10 +164,12 @@ export function PersonView({ name }: { name: string }) {
           </div>
           <RoleField name={name} value={card?.role ?? ''} notes={card?.notes ?? ''} email={card?.email} />
         </div>
-        {card?.email && teamsChatUrl([card.email]) && (
-          <a {...teamsLinkProps(teamsChatUrl([card.email])!, teamsApp)} onClick={() => track('person-chat')}
+        {chatUrl && (
+          <a {...(caixa ? teamsLinkProps(teamsWebUrl(chatUrl), false) : teamsLinkProps(chatUrl, teamsApp))}
+            onClick={() => track('person-chat', caixa ? 'caixa' : '')}
+            title={caixa ? 'Se abre en el navegador (Teams web), con la cuenta de La Caixa' : undefined}
             className="flex items-center gap-1 rounded-md bg-[#5b5fc7] px-2.5 py-1 text-sm font-medium text-white hover:bg-[#4b4fb7]">
-            <MessageCircle className="size-4" />Chat en Teams
+            <MessageCircle className="size-4" />{caixa ? 'Chat en el navegador' : 'Chat en Teams'}
           </a>
         )}
         <RenamePerson name={name} />
@@ -175,7 +180,7 @@ export function PersonView({ name }: { name: string }) {
         </button>
       </header>
       {meeting && <NewMeeting source="person" date={today} time={nextSlot()} title={`Reunión con ${name}`} invite={[{ name, email: card?.email }]}
-        onClose={() => setMeeting(false)} />}
+        env={caixa ? 'other' : undefined} onClose={() => setMeeting(false)} />}
 
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
         <div className="min-w-0">

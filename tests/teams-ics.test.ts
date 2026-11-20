@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseIcs } from '../src/domain/ics';
 import { notesByTask, notesForTask } from '../src/domain/notes';
-import { findTeamsLink, meetingContacts, meetingSummary, outlookWebMeetingUrl, teamsAppUrl, teamsChatUrl, teamsMeetingUrl, teamsWebUrl } from '../src/domain/teams';
+import { findTeamsLink, meetingContacts, isCaixaEmail, meetingSummary, outlookWebMeetingUrl, teamsAppUrl, teamsChatUrl, teamsMeetingUrl, teamsWebUrl } from '../src/domain/teams';
 import type { Note } from '../src/domain/types';
 import { makeTask } from './factories';
 
@@ -154,6 +154,10 @@ it('teamsWebUrl: abre la reunión en Teams web sin lanzar la app', () => {
   expect(short.searchParams.get('url')).toBe('/_#/meet/3477372698?p=AbCdEf');
   expect(short.searchParams.get('type')).toBe('meet');
   expect(short.searchParams.get('msLaunch')).toBe('false');
+  const chat = new URL(teamsWebUrl('https://teams.microsoft.com/l/chat/0/0?users=ana%40caixabank.com'));
+  expect(chat.searchParams.get('url')).toBe('/_#/l/chat/0/0?users=ana%40caixabank.com');
+  expect(chat.searchParams.get('type')).toBe('chat');
+  expect(chat.searchParams.get('msLaunch')).toBe('false');
   expect(teamsWebUrl('https://teams.live.com/meet/123')).toBe('https://teams.live.com/meet/123');
   expect(teamsWebUrl('https://zoom.us/j/1')).toBe('https://zoom.us/j/1');
 });
@@ -167,4 +171,14 @@ it('outlookWebMeetingUrl: la reunión rellenada en Outlook web (otra cuenta, en 
   expect(u.searchParams.get('to')).toBe('a@b.com');
   expect(u.searchParams.get('body')).toBe('Agenda');
   expect(u.searchParams.get('online')).toBe('true');
+});
+
+it('isCaixaEmail: los emails de La Caixa van por el navegador', () => {
+  expect(isCaixaEmail('Ana.Lopez@CaixaBank.com')).toBe(true);
+  expect(isCaixaEmail('x@proveedorexterno.com')).toBe(true);
+  expect(isCaixaEmail('x@ext.caixabank.com')).toBe(true);
+  expect(isCaixaEmail('x@vml.com')).toBe(false);
+  expect(isCaixaEmail('x@caixabank.com.evil.es')).toBe(false);
+  expect(isCaixaEmail('')).toBe(false);
+  expect(isCaixaEmail(null)).toBe(false);
 });
