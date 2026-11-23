@@ -994,7 +994,14 @@ API de SharePoint no admite CORS, así que lo hace un **marcador del navegador**
 - **En el gestor** (`#/lista`, «Lista» debajo de Rally; lógica de la fase 23 en `domain/msList.ts`): columna de estado y su
   correspondencia con las columnas del Tablero, «Pasar a mis tareas» (`LS-<id>`), estado en la tabla y ficha lateral con todos
   los campos (los cambiados en ámbar, «deshacer» un pendiente). Mover una tarea enlazada apunta el cambio (`pushToList`).
-  Los cambios llegan a SharePoint solo al pulsar el marcador.
+- **Conexión que se queda** (sin servidor no se puede quitar el clic del todo: solo el código de una página de SharePoint
+  puede escribir en la lista): tras pulsar el marcador una vez, mientras su pestaña siga abierta, pregunta cada 4 s
+  (`marea-lista:hello`; recuadro abajo a la derecha, clic para encoger) y Marea contesta con los pendientes y `wantList`
+  (lista entera cada 2 min, `LIST_EVERY_MS`). Además Marea **manda el cambio al momento** a la pestaña conectada
+  (`subscribeLista` en `ListaBridge`), porque Chrome espacia hasta un minuto los temporizadores de las pestañas ocultas. Los
+  que fallaron solo se reintentan con la relectura de cada 2 min. Volver a pulsar el marcador para el anterior
+  (`__mareaListaStop`); si se cierra la pestaña de Marea, se para y lo dice. Varias pestañas de Marea comparten lista y
+  cambios por localStorage (evento `storage`); «Conectado» = «hola» de hace menos de 20 s (`lista-contact`, `isConnected`).
 
 ### Más adelante
 

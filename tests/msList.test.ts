@@ -95,6 +95,7 @@ describe('Microsoft List: en el gestor', () => {
 /** SharePoint de mentira: lo justo de la API REST que usa el marcador. */
 function fakeSharePoint() {
   const merges: { url: string; body: unknown; headers: Record<string, string> }[] = [];
+  const calls: string[] = [];
   const fields = [
     { InternalName: 'Title', Title: 'Title', TypeAsString: 'Text', ReadOnlyField: false },
     { InternalName: 'Estado', Title: 'Estado', TypeAsString: 'Choice', Choices: ['Pendiente', 'En curso', 'Hecho'], ReadOnlyField: false },
@@ -104,6 +105,7 @@ function fakeSharePoint() {
     { InternalName: 'ContentType', Title: 'Tipo de contenido', TypeAsString: 'Computed', ReadOnlyField: true },
   ];
   const fetch = async (url: string, init: { method?: string; headers?: Record<string, string>; body?: string } = {}) => {
+    calls.push(url);
     const json = (v: unknown) => new Response(JSON.stringify(v), { status: 200 });
     if (url.endsWith('/_api/contextinfo')) return json({ FormDigestValue: 'digest-1' });
     if (init.method === 'POST' && /\/items\(\d+\)/.test(url)) {
@@ -121,24 +123,25 @@ function fakeSharePoint() {
     if (url.includes('GetList(@u)?$select=Title')) return json({ Title: 'Contratos' });
     return new Response('no', { status: 404 });
   };
-  return { fetch, merges };
+  return { fetch, merges, calls };
 }
 
 describe('Microsoft List: el marcador', () => {
-  it('abre Marea, aplica los cambios pendientes, lee la lista entera y se la manda', async () => {
+  it('abre Marea, aplica los cambios pendientes, lee la lista entera, se la manda y se queda conectado', async () => {
     const app = 'https://marea.example';
     const sp = fakeSharePoint();
     const posted: { data: Record<string, unknown>; origin: string }[] = [];
     const popup = { postMessage: (data: Record<string, unknown>, origin: string) => posted.push({ data, origin }) };
     const listeners: ((e: unknown) => void)[] = [];
     const box = { style: {}, textContent: '', id: '', remove() {} };
-    const win = {
+    const win: Record<string, unknown> = {
       open: (url: string, name: string) => { expect([url, name]).toEqual([`${app}/#/lista`, 'marea-lista']); return popup; },
       addEventListener: (_: string, l: (e: unknown) => void) => listeners.push(l),
       removeEventListener: () => {},
     };
     const doc = { getElementById: () => null, createElement: () => box, body: { appendChild: () => {} } };
     const loc = { origin: 'https://wpp.sharepoint.com', pathname: '/sites/equipo/Lists/Contratos/AllItems.aspx' };
+    const reads = () => sp.calls.filter((u) => u.includes('/items?')).length;
     // El código tal cual se pega en el marcador: sin nada de fuera.
     new Function('window', 'document', 'location', 'fetch', 'DOMParser', bookmarkletCode(app))(win, doc, loc, sp.fetch, class {});
     expect(listeners).toHaveLength(1);
@@ -152,10 +155,20 @@ describe('Microsoft List: el marcador', () => {
       ] },
     });
     await vi.waitFor(() => expect(posted.some((p) => p.data.type === 'marea-lista:data')).toBe(true));
-    expect(sp.merges.map((m) => m.body)).toEqual([{ Estado: 'Hecho' }, { Title: 'Revisar contrato v2' }, { Horas: 2.5 }]);
+    // Sigue conectado: si Marea no tiene nada que pedir, no lee; con cambios o al tocar la relectura, sí.
+    const readsAfterFirst = reads();
+    listeners[0]({ origin: app, source: popup, data: { type: 'marea-lista:ready', changes: [], wantList: false } });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(reads()).toBe(readsAfterFirst);
+    listeners[0]({ origin: app, source: popup, data: { type: 'marea-lista:ready', changes: [{ id: '8', field: 'Estado', value: 'En curso' }] } });
+    await vi.waitFor(() => expect(posted.filter((p) => p.data.type === 'marea-lista:data')).toHaveLength(2));
+    expect(sp.merges.at(-1)!.body).toEqual({ Estado: 'En curso' });
+    (win.__mareaListaStop as () => void)();
+    expect(sp.merges.slice(0, 3).map((m) => m.body)).toEqual([{ Estado: 'Hecho' }, { Title: 'Revisar contrato v2' }, { Horas: 2.5 }]);
     expect(sp.merges[0].headers).toMatchObject({ 'X-HTTP-Method': 'MERGE', 'X-RequestDigest': 'digest-1', 'IF-MATCH': '*' });
     expect(sp.merges[0].url).toContain("/sites/equipo/_api/web/GetList(@u)/items(7)?@u='%2Fsites%2Fequipo%2FLists%2FContratos'");
     const sent = posted.find((p) => p.data.type === 'marea-lista:data')!;
+    expect((posted.filter((p) => p.data.type === 'marea-lista:data')[1].data.results as unknown[])).toHaveLength(1);
     expect(sent.origin).toBe(app);
     expect((sent.data.results as { ok: boolean }[]).map((r) => r.ok)).toEqual([true, true, true, false]);
     const snapshot = parseSnapshot(sent.data.list)!;
@@ -180,5 +193,18 @@ describe('Microsoft List: el marcador', () => {
       { origin: 'https://wpp.sharepoint.com', pathname: '/sites/equipo/SitePages/Inicio.aspx' }, fetch, class {});
     expect(open).not.toHaveBeenCalled();
     expect(box.textContent).toMatch(/Abre la lista/);
+  });
+});
+
+describe('Microsoft List: conexión con el marcador', () => {
+  it('conectado si ha preguntado hace poco; la lista entera, cada 2 minutos', async () => {
+    const { isConnected, wantsList, CONTACT_MS, LIST_EVERY_MS } = await import('../src/features/mslist/listaStore');
+    const now = Date.parse('2026-11-23T10:00:00Z');
+    const snapshot = { title: 'L', url: LIST, fields: [], items: [], at: new Date(now - 60_000).toISOString() };
+    expect(isConnected({ snapshot, pending: [], errors: {}, contactAt: now - 5000 }, now)).toBe(true);
+    expect(isConnected({ snapshot, pending: [], errors: {}, contactAt: now - CONTACT_MS - 1 }, now)).toBe(false);
+    expect(wantsList({ snapshot, pending: [], errors: {}, contactAt: 0 }, now)).toBe(false);
+    expect(wantsList({ snapshot, pending: [], errors: {}, contactAt: 0 }, now + LIST_EVERY_MS)).toBe(true);
+    expect(wantsList({ snapshot: null, pending: [], errors: {}, contactAt: 0 }, now)).toBe(true);
   });
 });

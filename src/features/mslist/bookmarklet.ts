@@ -4,8 +4,9 @@
  * de su propia web, sin CORS) y se comunica con Marea por `postMessage`:
  *
  * 1. Abre Marea (`#/lista`) en otra pestaña y le dice «hola» hasta que contesta (Marea tiene que tener la sesión iniciada).
- * 2. Marea responde con los cambios pendientes (estados y campos cambiados en el gestor).
- * 3. El marcador los aplica en la lista (MERGE), la vuelve a leer entera y se la manda a Marea con el resultado.
+ * 2. Se queda conectado mientras la pestaña de SharePoint siga abierta: cada 4 s vuelve a decir «hola» y Marea responde
+ *    con los cambios pendientes (estados y campos cambiados en el gestor) y si quiere la lista entera.
+ * 3. Si hay cambios, los aplica en la lista (MERGE); después la vuelve a leer y se la manda a Marea con el resultado.
  *
  * `bridge` se convierte en texto con `toString()`, así que no puede usar NADA de fuera de la función (ni imports ni
  * constantes del módulo).
@@ -20,17 +21,29 @@ function bridge(app: string) {
   const EDIT = ['Text', 'Note', 'Choice', 'MultiChoice', 'Number', 'Currency', 'DateTime', 'Boolean'];
   const SKIP = /^(_|ContentType|Attachments|Edit$|LinkTitle|DocIcon|ItemChildCount|FolderChildCount|AppAuthor|AppEditor|ComplianceAssetId)/;
 
+  // Si ya estaba conectado (se ha vuelto a pulsar), se para el anterior.
+  const w: Any = window;
+  if (typeof w.__mareaListaStop === 'function') w.__mareaListaStop();
   const old = document.getElementById('marea-lista-box');
   if (old) old.remove();
   const box = document.createElement('div');
   box.id = 'marea-lista-box';
-  box.style.cssText = 'position:fixed;z-index:2147483647;right:16px;bottom:16px;max-width:360px;padding:12px 14px;border-radius:10px;'
+  box.title = 'Marea · Lista: deja esta pestaña abierta y los cambios de Marea se aplican solos. Clic para encoger.';
+  box.style.cssText = 'position:fixed;z-index:2147483647;right:16px;bottom:16px;max-width:360px;padding:10px 14px;border-radius:10px;cursor:pointer;'
     + 'background:#1B2B4B;color:#fff;font:13px/1.45 system-ui,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.3)';
+  let small = false;
+  let lastText = '';
+  const paint = () => { box.textContent = small ? 'Marea ●' : 'Marea · ' + lastText; };
+  box.onclick = () => { small = !small; paint(); };
   document.body.appendChild(box);
+  /** `end`: se ha parado del todo (el aviso se quita a los 15 s). */
   const say = (t: string, end?: boolean) => {
-    box.textContent = 'Marea · ' + t;
-    if (end) setTimeout(() => box.remove(), 10000);
+    lastText = t;
+    if (end) small = false;
+    paint();
+    if (end) setTimeout(() => box.remove(), 15000);
   };
+  const clock = () => { const d = new Date(); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
 
   const m = /^(.*?)\/Lists\/([^/]+)/i.exec(decodeURIComponent(location.pathname));
   if (!m) { say('Abre la lista en SharePoint (una dirección con /Lists/…) y vuelve a pulsar el marcador.', true); return; }
@@ -155,36 +168,65 @@ function bridge(app: string) {
   const win = window.open(app + '/#/lista', 'marea-lista');
   if (!win) { say('El navegador ha bloqueado la ventana de Marea: permite las ventanas emergentes de esta página y vuelve a pulsar.', true); return; }
   say('Abriendo Marea… (inicia sesión si te lo pide)');
-  let started = false;
-  const hello = setInterval(() => { try { win.postMessage({ type: 'marea-lista:hello' }, app); } catch { /* aún cargando */ } }, 700);
+
+  /*
+   * Se queda conectado mientras esta pestaña siga abierta: cada pocos segundos le pregunta a Marea si hay cambios. Marea
+   * contesta con los pendientes y si quiere la lista entera (cada 2 minutos); si hay cambios, se aplican y se manda la
+   * lista con el resultado.
+   */
+  let connected = false;
+  let busy = false;
+  let fields: Any[] | null = null;
+  let stopped = false;
+  const hello = () => {
+    if (win.closed) { stop(); say('La pestaña de Marea se ha cerrado. Vuelve a pulsar el marcador para seguir sincronizando.', true); return; }
+    try { win.postMessage({ type: 'marea-lista:hello' }, app); } catch { /* aún cargando */ }
+  };
+  let timer = setInterval(hello, 700);
   const giveUp = setTimeout(() => {
-    clearInterval(hello);
-    window.removeEventListener('message', onMessage);
-    if (!started) say('Marea no ha contestado. ¿Has iniciado sesión? Vuelve a pulsar el marcador.', true);
+    if (connected) return;
+    stop();
+    say('Marea no ha contestado. ¿Has iniciado sesión? Vuelve a pulsar el marcador.', true);
   }, 120000);
+  function stop() {
+    stopped = true;
+    clearInterval(timer);
+    clearTimeout(giveUp);
+    window.removeEventListener('message', onMessage);
+    if (w.__mareaListaStop === stop) w.__mareaListaStop = null;
+  }
+  w.__mareaListaStop = stop;
 
   async function onMessage(e: MessageEvent) {
     const data: Any = e.data;
-    if (started || e.origin !== app || e.source !== win || !data || data.type !== 'marea-lista:ready') return;
-    started = true;
-    clearInterval(hello);
-    clearTimeout(giveUp);
-    window.removeEventListener('message', onMessage);
+    if (stopped || busy || e.origin !== app || e.source !== win || !data || data.type !== 'marea-lista:ready') return;
+    if (!connected) {
+      connected = true;
+      clearTimeout(giveUp);
+      clearInterval(timer);
+      timer = setInterval(hello, 4000);
+    }
+    const changes: Any[] = Array.isArray(data.changes) ? data.changes : [];
+    if (!changes.length && !data.wantList) return;
+    busy = true;
     try {
-      say('Leyendo la lista…');
-      const fields = await columns();
-      const changes: Any[] = Array.isArray(data.changes) ? data.changes : [];
+      // Las columnas, una vez (y otra vez si la lectura falla, por si se han cambiado en SharePoint).
+      if (!fields) { say('Leyendo la lista…'); fields = await columns(); }
       if (changes.length) say('Aplicando ' + changes.length + (changes.length === 1 ? ' cambio…' : ' cambios…'));
       const results = await apply(changes, fields);
       const list = await read(fields);
       win!.postMessage({ type: 'marea-lista:data', list, results }, app);
       const bad = results.filter((r: Any) => !r.ok).length;
-      say(list.items.length + ' elementos enviados a Marea'
-        + (results.length ? ' · ' + (results.length - bad) + ' cambios aplicados' + (bad ? ', ' + bad + ' con error' : '') : '') + '.', true);
+      say('Conectado · ' + list.items.length + ' elementos · ' + clock()
+        + (results.length ? ' · ' + (results.length - bad) + ' cambios aplicados' + (bad ? ', ' + bad + ' con error' : '') : '')
+        + '. Deja esta pestaña abierta.');
     } catch (err: Any) {
+      fields = null;
       const message = String(err?.message ?? err);
       win!.postMessage({ type: 'marea-lista:error', message }, app);
-      say('Error: ' + message, true);
+      say('Error (se reintenta solo): ' + message);
+    } finally {
+      busy = false;
     }
   }
   window.addEventListener('message', onMessage);

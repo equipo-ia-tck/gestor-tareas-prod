@@ -17,7 +17,7 @@ import { usePersistentState } from '../../hooks/usePersistentState';
 import { track } from '../usage/track';
 import { ViewHeader } from '../views/ViewHeader';
 import { bookmarkletCode, bookmarkletHref } from './bookmarklet';
-import { currentItems, dropChange, forgetLista, loadListaConfig, queueChange, saveListaConfig, useLista } from './listaStore';
+import { currentItems, dropChange, forgetLista, isConnected, loadListaConfig, queueChange, saveListaConfig, useLista } from './listaStore';
 import { applyListStates } from './listaStates';
 
 const STALE_MS = 24 * 60 * 60_000;
@@ -46,17 +46,29 @@ export function ListaView() {
   const [setup, setSetup] = useState(false);
   useWideLayout(true);
   const pending = lista.pending.length;
+  // Se vuelve a pintar cada 5 s para que «Conectado» se apague solo si la pestaña de SharePoint se cierra.
+  const [, setTick] = useState(0);
+  useEffect(() => { const t = setInterval(() => setTick((n) => n + 1), 5000); return () => clearInterval(t); }, []);
+  const connected = isConnected(lista);
 
   return (
     <>
       <ViewHeader
         title={<span className="inline-flex items-center gap-2"><ListChecks className="size-5 text-teal-600" />{lista.snapshot?.title ?? 'Lista'}</span>}
-        subtitle={lista.snapshot ? 'Microsoft List · se actualiza al pulsar el marcador «Marea · Lista» en SharePoint' : 'Trae una Microsoft List con un marcador del navegador'}
+        subtitle={lista.snapshot
+          ? <span className="inline-flex items-center gap-1.5">
+              <span className={`size-2 rounded-full ${connected ? 'bg-emerald-500' : 'bg-zinc-400'}`} />
+              {connected
+                ? 'Conectado con SharePoint: los cambios se aplican solos en unos segundos y la lista se relee cada 2 minutos'
+                : 'Sin conectar: abre la lista en SharePoint y pulsa el marcador una vez; después, mientras esa pestaña siga abierta, todo va solo'}
+            </span>
+          : 'Trae una Microsoft List con un marcador del navegador'}
         actions={lista.snapshot && (
           <>
-            <a href={lista.snapshot.url} target="_blank" rel="noreferrer"
+            {/* Ventana con nombre: si la pestaña de SharePoint ya está abierta, se vuelve a ella en vez de abrir otra. */}
+            <a href={lista.snapshot.url} target="marea-sharepoint" rel="opener"
               className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 px-2.5 py-1 text-sm hover:bg-zinc-100 dark:border-zinc-600 dark:hover:bg-zinc-800">
-              <ExternalLink className="size-4" />Abrir en SharePoint
+              <ExternalLink className="size-4" />{connected ? 'Ir a SharePoint' : 'Abrir en SharePoint'}
             </a>
             <ActionButton icon={<Bookmark className="size-4" />} onClick={() => setSetup(!setup)}>Marcador</ActionButton>
             <ActionButton icon={<Trash2 className="size-4" />} title="Borra la lista de este navegador (las tareas ya añadidas se quedan)"
@@ -66,10 +78,15 @@ export function ListaView() {
           </>
         )}
       />
-      {lista.snapshot && pending > 0 && (
+      {lista.snapshot && pending > 0 && !connected && (
         <p className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-200">
-          {pending === 1 ? '1 cambio esperando' : `${pending} cambios esperando`} para la lista: abre la lista en SharePoint y pulsa el marcador
-          {' '}<b>Marea · Lista</b> para aplicarlos.
+          {pending === 1 ? '1 cambio esperando' : `${pending} cambios esperando`} para la lista: pulsa <b>Abrir en SharePoint</b> y, allí, el marcador
+          {' '}<b>Marea · Lista</b>. Se aplicarán solos y, mientras dejes esa pestaña abierta, los siguientes también.
+        </p>
+      )}
+      {lista.snapshot && pending > 0 && connected && (
+        <p className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-200">
+          Aplicando {pending === 1 ? '1 cambio' : `${pending} cambios`} en SharePoint…
         </p>
       )}
       {(!lista.snapshot || setup) && <Setup />}
@@ -99,7 +116,9 @@ function Setup() {
         <li><span className={step}>Abre tu lista en SharePoint</span> (la dirección tiene <code>/Lists/…</code>) con tu cuenta de siempre.</li>
         <li><span className={step}>Pulsa el marcador.</span> Se abre Marea en otra pestaña, recibe la lista y, si hay cambios hechos aquí, el marcador los
           aplica antes en la lista. Abajo a la derecha de SharePoint verás cómo va.</li>
-        <li>Cada vez que quieras traer lo último o enviar tus cambios, vuelve a pulsarlo. Con la lista abierta en una pestaña basta un clic.</li>
+        <li><span className={step}>Deja abierta esa pestaña de SharePoint.</span> Mientras siga abierta, Marea le manda tus cambios (estados y campos)
+          y se aplican solos en unos segundos, y la lista se relee cada 2 minutos. Si cierras el navegador, al volver basta con abrir la lista y
+          pulsar el marcador otra vez.</li>
       </ol>
       <p className="text-xs text-zinc-500">
         Usa tu sesión de SharePoint: no se guarda ninguna contraseña ni se piden permisos. La lista y los cambios pendientes se guardan en
@@ -193,7 +212,7 @@ function ListaItems() {
         </label>
         <span className="ml-auto inline-flex items-center gap-2">
           <span className={`text-xs ${stale ? 'font-medium text-amber-600' : 'text-zinc-400'}`} title="Cuándo se pulsó el marcador por última vez">
-            Leída {ago(snapshot.at)} · {items.length} elementos{stale ? ' · pulsa el marcador para traer lo último' : ''}
+            Leída {ago(snapshot.at)} · {items.length} elementos{stale ? ' · abre SharePoint y pulsa el marcador para traer lo último' : ''}
           </span>
           <ActionButton icon={<Settings2 className="size-4" />} onClick={() => setShowConfig(!showConfig)}>Estados</ActionButton>
         </span>
@@ -265,7 +284,7 @@ function ListaItems() {
                       <button type="button" onClick={() => setOpenId(it.id)} className="text-left hover:text-indigo-600 hover:underline">{it.title}</button>
                       {pendingIds.has(it.id) && (
                         <span className={`ml-2 text-[11px] ${errors.length ? 'text-red-600' : 'text-amber-600'}`}
-                          title={errors.length ? errors.join('\n') : 'Se aplicará en la lista al pulsar el marcador'}>
+                          title={errors.length ? errors.join('\n') : 'Se aplicará en la lista (solo si la pestaña de SharePoint está conectada)'}>
                           {errors.length ? 'error al aplicar' : 'pendiente'}
                         </span>
                       )}
@@ -367,7 +386,7 @@ function ItemPanel({ item, original, fields, pendingKeys, errors, onClose }: {
         })}
       </div>
       <footer className="flex items-center justify-end gap-2 border-t border-zinc-200 px-4 py-3 dark:border-zinc-700">
-        <span className="mr-auto text-xs text-zinc-500">Se aplica en la lista al pulsar el marcador.</span>
+        <span className="mr-auto text-xs text-zinc-500">Se aplica en la lista en unos segundos si la pestaña de SharePoint está conectada.</span>
         <button type="button" onClick={onClose} className="rounded-md px-3 py-1.5 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800">Cancelar</button>
         <button type="button" disabled={!changed.length} onClick={save}
           className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40">
