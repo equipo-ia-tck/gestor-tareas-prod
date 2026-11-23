@@ -1,3 +1,4 @@
+import { ProjectFolders } from '../sharepoint/ProjectFolders';
 import { useState, type FormEvent, type MouseEvent, type ReactNode } from 'react';
 import { track } from '../usage/track';
 import { AlertTriangle, Users, CheckCircle2, Clock, FileText, List, KanbanSquare, Pencil, Plus, Trash2, X } from 'lucide-react';
@@ -108,6 +109,7 @@ export function ProjectView({ id }: { id: string }) {
       />
       <Stats tasks={mine} notes={notes.filter((n) => !n.deleted_at && ((n.project_id && scope.has(n.project_id)) || (n.task_id && mine.some((t) => t.id === n.task_id))))} today={today} />
       <ProjectPeople people={people} selected={chosen} onSelect={pickPerson} />
+      <ProjectFolders project={project} />
       {mode === 'list' && <ProjectList project={project} tasks={shown} />}
       {mode === 'board' && <ProjectBoard project={project} tasks={shown} scope={scope} />}
       <div className="mt-6">

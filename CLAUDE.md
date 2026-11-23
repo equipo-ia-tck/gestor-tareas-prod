@@ -972,6 +972,26 @@ de Outlook de WPP, también en la app publicada.
   en su ficha, «Chat en el navegador» abre Teams web sin la app (`teamsWebUrl` admite también `/l/chat/…`, tipo `chat`) y
   «Nueva reunión» abre con el entorno La Caixa ya elegido (`NewMeeting` `env`), aunque Ajustes diga abrir Teams en la app.
 
+## Fase 34: carpetas de SharePoint de CaixaBank (rama `sharepoint-carpetas`, nov 2026)
+
+Petición de la usuaria: tener a mano las carpetas del SharePoint de CaixaBank (se abre en el navegador del Mac con la cuenta
+de proveedor externo). Son documentos del cliente, así que **nada de su contenido sale de SharePoint**: sin Power Automate
+(copiaría de su tenant a uno de WPP) ni Graph (no hay app en Entra ID).
+
+- **Paso 1, accesos** (`domain/sharepoint.ts`, `features/sharepoint/folders.ts`): nombre y enlace (solo https de
+  `*.sharepoint.com`, `isSharePointUrl`; nombre propuesto con `folderNameFromUrl`). Personales en
+  `settings.sharepoint_folders` y de proyecto en `Project.folders` (los ve quien ve el proyecto, con «Deshacer»); sin
+  migración (zod los deja opcionales o vacíos). Pantalla `#/sharepoint` («SharePoint» debajo de Rally) y fila «Carpetas» en la
+  página del proyecto (`ProjectFolders`). Se abren en SharePoint con la sesión de la persona.
+- **Paso 2, ver el contenido** (`features/sharepoint/bookmarklet.ts`, como el de la Lista de Marc en `dev`): marcador «Marea ·
+  Carpeta» que, en una carpeta de una biblioteca (`?id=` de la vista o la ruta), **solo lee** nombre, enlace, tamaño y fecha de
+  sus subcarpetas y archivos (`GetFolderByServerRelativePath`, máx. 2.000; sin la carpeta interna `Forms`; nombres codificados
+  por tramo y `?web=1` para abrir Office en el navegador) y se los pasa a Marea por `postMessage`. Marea solo contesta a orígenes
+  https de `*.sharepoint.com` (`isSharePointOrigin`) y valida todo con `parseSnapshot`. Lo recibido se queda **solo en memoria
+  de esa pestaña** (`sharepointStore.ts`): ni Supabase, ni IndexedDB, ni localStorage. «Guardar en mis carpetas» guarda solo
+  el enlace. Si la página no deja usar marcadores, «Copiar el código» para la consola. Tests en `tests/sharepoint.test.ts`
+  (el marcador se ejecuta suelto; comprobado también minificado).
+
 ### Más adelante
 
 - **Electron**: la app es web estática con rutas por hash y datos en IndexedDB, así que se puede empaquetar sin cambios
