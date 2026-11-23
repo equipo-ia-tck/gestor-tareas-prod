@@ -3,7 +3,7 @@ import {
   guessCategory, guessStatusColumn, listMoves, listPushes, statusValues, taskFromListItem, valueForCategory, type MsListConfig,
 } from '../src/domain/msList';
 import {
-  addPending, isSharePointOrigin, parseSnapshot, remainingPending, withPending, type MsListChange, type MsListItem,
+  addPending, isSharePointOrigin, normalizeListUrl, parseSnapshot, remainingPending, withPending, type MsListChange, type MsListItem,
 } from '../src/domain/msListParse';
 import { DEFAULT_ITEM_TYPES } from '../src/domain/workflows';
 import { bookmarkletCode } from '../src/features/mslist/bookmarklet';
@@ -106,7 +106,7 @@ function fakeSharePoint() {
   ];
   const fetch = async (url: string, init: { method?: string; headers?: Record<string, string>; body?: string } = {}) => {
     calls.push(url);
-    const json = (v: unknown) => new Response(JSON.stringify(v), { status: 200 });
+    const json = (v: unknown) => new Response(JSON.stringify(v), { status: 200, headers: { 'content-type': 'application/json;odata=nometadata' } });
     if (url.endsWith('/_api/contextinfo')) return json({ FormDigestValue: 'digest-1' });
     if (init.method === 'POST' && /\/items\(\d+\)/.test(url)) {
       merges.push({ url, body: JSON.parse(init.body!), headers: init.headers! });
@@ -201,10 +201,83 @@ describe('Microsoft List: conexión con el marcador', () => {
     const { isConnected, wantsList, CONTACT_MS, LIST_EVERY_MS } = await import('../src/features/mslist/listaStore');
     const now = Date.parse('2026-11-23T10:00:00Z');
     const snapshot = { title: 'L', url: LIST, fields: [], items: [], at: new Date(now - 60_000).toISOString() };
-    expect(isConnected({ snapshot, pending: [], errors: {}, contactAt: now - 5000 }, now)).toBe(true);
-    expect(isConnected({ snapshot, pending: [], errors: {}, contactAt: now - CONTACT_MS - 1 }, now)).toBe(false);
-    expect(wantsList({ snapshot, pending: [], errors: {}, contactAt: 0 }, now)).toBe(false);
-    expect(wantsList({ snapshot, pending: [], errors: {}, contactAt: 0 }, now + LIST_EVERY_MS)).toBe(true);
-    expect(wantsList({ snapshot: null, pending: [], errors: {}, contactAt: 0 }, now)).toBe(true);
+    expect(isConnected({ snapshot, pending: [], errors: {}, contactAt: now - 5000, listUrl: null, ext: { okAt: 0, error: null } }, now)).toBe(true);
+    expect(isConnected({ snapshot, pending: [], errors: {}, contactAt: now - CONTACT_MS - 1, listUrl: null, ext: { okAt: 0, error: null } }, now)).toBe(false);
+    expect(wantsList({ snapshot, pending: [], errors: {}, contactAt: 0, listUrl: null, ext: { okAt: 0, error: null } }, now)).toBe(false);
+    expect(wantsList({ snapshot, pending: [], errors: {}, contactAt: 0, listUrl: null, ext: { okAt: 0, error: null } }, now + LIST_EVERY_MS)).toBe(true);
+    expect(wantsList({ snapshot: null, pending: [], errors: {}, contactAt: 0, listUrl: null, ext: { okAt: 0, error: null } }, now)).toBe(true);
+  });
+});
+
+describe('Microsoft List: la extensión', () => {
+  it('normaliza la dirección que se pega', () => {
+    expect(normalizeListUrl(`${LIST}/AllItems.aspx?viewid=1&FilterField1=x`)).toBe(LIST);
+    expect(normalizeListUrl('https://wpp.sharepoint.com/sites/equipo/Lists/Mi%20lista/DispForm.aspx?ID=3')).toBe('https://wpp.sharepoint.com/sites/equipo/Lists/Mi lista');
+    expect(normalizeListUrl('https://evil.es/sites/x/Lists/Y')).toBeNull();
+    expect(normalizeListUrl('https://wpp.sharepoint.com/sites/equipo/SitePages/Inicio.aspx')).toBeNull();
+    expect(normalizeListUrl('no es una dirección')).toBeNull();
+  });
+
+  /** El background.js tal cual lo empaqueta scripts/build-extension.mjs, con un Chrome de mentira. */
+  async function background(fetch: unknown) {
+    const { readFileSync } = await import('node:fs');
+    const { spWork } = await import('../src/features/mslist/spWork');
+    const code = readFileSync('extension/background.template.js', 'utf8').replaceAll('/*SPWORK*/', spWork.toString());
+    let onMessage: ((msg: unknown, sender: unknown, reply: (r: unknown) => void) => boolean) | null = null;
+    const injected: unknown[][] = [];
+    const created: unknown[] = [];
+    const chrome = {
+      runtime: { id: 'ext', onMessage: { addListener: (l: typeof onMessage) => { onMessage = l; } } },
+      tabs: {
+        query: async () => [],
+        create: async (o: unknown) => { created.push(o); return { id: 9, status: 'complete' }; },
+        onUpdated: { addListener: (l: (id: number, info: { status: string }) => void) => setTimeout(() => l(9, { status: 'complete' }), 0), removeListener() {} },
+      },
+      scripting: {
+        // En la pestaña de SharePoint la sesión sí vale: se ejecuta con el SharePoint de mentira «bueno».
+        executeScript: async ({ func, args }: { func: (...a: unknown[]) => Promise<unknown>; args: unknown[] }) => {
+          injected.push(args);
+          const real = globalThis.fetch;
+          globalThis.fetch = fakeSharePoint().fetch as unknown as typeof globalThis.fetch;
+          // Como Chrome: la función viaja como texto, así que no puede depender de nada de fuera.
+          const inPage = new Function(`return (${func.toString()})`)() as typeof func;
+          try { return [{ result: await inPage(...args) }]; } finally { globalThis.fetch = real; }
+        },
+      },
+    };
+    new Function('chrome', 'fetch', code)(chrome, fetch);
+    const ask = (msg: unknown, sender: unknown = { id: 'ext', tab: { id: 1 } }) => new Promise<Record<string, unknown> | undefined>((resolve) => {
+      const async = onMessage!(msg, sender, (r) => resolve(r as Record<string, unknown>));
+      if (!async) resolve(undefined);
+    });
+    return { ask, injected, created };
+  }
+
+  it('en segundo plano con la sesión de SharePoint', async () => {
+    const sp = fakeSharePoint();
+    const ext = await background(sp.fetch);
+    const r = (await ext.ask({ type: 'marea-ext:sync', listUrl: LIST, changes: [{ id: '7', field: 'Estado', value: 'Hecho' }], wantList: false }))!;
+    expect(r.via).toBe('background');
+    expect(r.results).toEqual([{ key: '7|Estado', ok: true }]);
+    expect(parseSnapshot(r.list)!.items).toHaveLength(2);
+    expect(sp.merges.map((m) => m.body)).toEqual([{ Estado: 'Hecho' }]);
+    expect(ext.created).toEqual([]);
+    // Nada que hacer: no lee.
+    expect((await ext.ask({ type: 'marea-ext:sync', listUrl: LIST, changes: [], wantList: false }))!.list).toBeNull();
+  });
+
+  it('si SharePoint no deja en segundo plano, lo hace en una pestaña fijada de la lista', async () => {
+    const ext = await background(async () => new Response('', { status: 403 }));
+    const r = (await ext.ask({ type: 'marea-ext:sync', listUrl: LIST, changes: [], wantList: true }))!;
+    expect(r.via).toBe('tab');
+    expect(ext.created).toEqual([{ url: LIST, active: false, pinned: true }]);
+    expect(ext.injected).toEqual([[LIST, [], true]]);
+    expect(parseSnapshot(r.list)!.title).toBe('Contratos');
+  });
+
+  it('rechaza lo que no es de Marea o no es una lista de SharePoint', async () => {
+    const ext = await background(fakeSharePoint().fetch);
+    expect(await ext.ask({ type: 'marea-ext:sync', listUrl: LIST }, { id: 'otra', tab: { id: 1 } })).toBeUndefined();
+    expect(await ext.ask({ type: 'marea-ext:sync', listUrl: 'https://evil.es/x/Lists/Y' })).toEqual({ error: 'Esa dirección no es de una lista de SharePoint.' });
   });
 });

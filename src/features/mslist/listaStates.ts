@@ -1,7 +1,7 @@
 import { repo } from '../../data/services';
 import type { HistoryEntry, HistoryEvent } from '../../data/repository';
 import { LIST_CATEGORIES, listMoves, listPushes, statusValues, valueForCategory } from '../../domain/msList';
-import { currentItems, getListaState, isConnected, loadListaConfig, queueChange } from './listaStore';
+import { currentItems, extensionOk, getListaState, isConnected, loadListaConfig, queueChange } from './listaStore';
 
 let running = false;
 /** Mientras se aplican cambios que vienen de la lista, el historial no los vuelve a mandar. */
@@ -59,8 +59,8 @@ export async function pushToList(event: HistoryEvent, notify: (message: string) 
       continue;
     }
     queueChange(id, config.statusColumn, value);
-    notify(isConnected()
+    notify(isConnected() || extensionOk()
       ? `Elemento ${id}: «${value}» se está poniendo en la lista`
-      : `Elemento ${id}: «${value}» se pondrá en la lista en cuanto la abras en SharePoint con el marcador «Marea · Lista»`);
+      : `Elemento ${id}: «${value}» se pondrá en la lista en cuanto haya conexión (extensión o marcador «Marea · Lista»)`);
   }
 }

@@ -1003,6 +1003,21 @@ API de SharePoint no admite CORS, así que lo hace un **marcador del navegador**
   (`__mareaListaStop`); si se cierra la pestaña de Marea, se para y lo dice. Varias pestañas de Marea comparten lista y
   cambios por localStorage (evento `storage`); «Conectado» = «hola» de hace menos de 20 s (`lista-contact`, `isConnected`).
 
+- **Extensión de Chrome «Marea · Lista»** (sin tener SharePoint abierto; Chrome abierto y sesión de SharePoint iniciada):
+  carpeta `extension/` (`manifest.json` MV3 con `host_permissions` `https://*.sharepoint.com/*` y `scripting`; `content.js`
+  en las páginas de Marea, localhost y las dos de Vercel; `background.template.js`). `scripts/build-extension.mjs` (al final
+  de `npm run build`) compila con Vite `features/mslist/spWork.ts` (el trabajo en SharePoint, **común con el marcador**:
+  `bridge(app, work)` lo recibe como argumento; sin imports y autocontenido, porque viaja como texto), lo mete en
+  `background.js` y deja `dist/marea-lista/` y `dist/marea-lista-extension.zip` (se descarga en Lista → Conectar y se
+  instala con «Cargar descomprimida»). En segundo plano llama a la API REST con la sesión; si SharePoint da 401/403, lo hace
+  en una pestaña fijada de la lista (`chrome.scripting.executeScript` con `pageJob`). Solo atiende a su `content.js`
+  (`sender.id`, `sender.tab`), solo listas `https://<x>.sharepoint.com/…/Lists/…` y de una en una.
+- **Marea con la extensión** (`features/mslist/extension.ts`: `marea-ext:ping|hello|sync|result` por `postMessage` del mismo
+  origen; `useExtensionSync` en `ListaBridge`): con la dirección de la lista (`lista-url`, `normalizeListUrl`, o la de la
+  última lectura) aplica los pendientes al momento (400 ms tras un cambio, en cualquier pestaña) y relee cada 2 min (mira
+  cada 20 s). Una sola pestaña sincroniza (`navigator.locks`, `marea-lista-sync`). `lista-ext` guarda cuándo fue bien y el
+  último error; «Sincronizada» = bien hace menos de 5 min (`extensionOk`). El marcador sigue como alternativa.
+
 ### Más adelante
 
 - **Electron**: la app es web estática con rutas por hash y datos en IndexedDB, así que se puede empaquetar sin cambios

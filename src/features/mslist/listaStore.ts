@@ -14,6 +14,8 @@ const PENDING_KEY = 'gestor-tareas:lista-pending';
 const CONFIG_KEY = 'gestor-tareas:lista-config';
 const ERRORS_KEY = 'gestor-tareas:lista-errors';
 const CONTACT_KEY = 'gestor-tareas:lista-contact';
+const URL_KEY = 'gestor-tareas:lista-url';
+const EXT_KEY = 'gestor-tareas:lista-ext';
 
 /** Cada cuánto se pide la lista entera al marcador conectado. */
 export const LIST_EVERY_MS = 2 * 60_000;
@@ -39,9 +41,14 @@ export interface ListaState {
   errors: Record<string, string>;
   /** Último «hola» del marcador (ms), en cualquier pestaña de Marea: si es reciente, los cambios se aplican solos. */
   contactAt: number;
+  /** Dirección de la lista en SharePoint (la de la última lectura o la que se pegó para la extensión). */
+  listUrl: string | null;
+  /** La extensión: cuándo sincronizó bien por última vez y el último error (null = fue bien). */
+  ext: { okAt: number; error: string | null };
 }
 
-const load = (): ListaState => ({ snapshot: read(SNAPSHOT_KEY, null), pending: read(PENDING_KEY, []), errors: read(ERRORS_KEY, {}), contactAt: read(CONTACT_KEY, 0) });
+const load = (): ListaState => ({ snapshot: read(SNAPSHOT_KEY, null), pending: read(PENDING_KEY, []), errors: read(ERRORS_KEY, {}), contactAt: read(CONTACT_KEY, 0),
+  listUrl: read(URL_KEY, null), ext: read(EXT_KEY, { okAt: 0, error: null }) });
 let state: ListaState = load();
 const listeners = new Set<() => void>();
 function set(next: Partial<ListaState>) {
@@ -50,6 +57,8 @@ function set(next: Partial<ListaState>) {
   if ('pending' in next) write(PENDING_KEY, state.pending);
   if ('errors' in next) write(ERRORS_KEY, state.errors);
   if ('contactAt' in next) write(CONTACT_KEY, state.contactAt);
+  if ('listUrl' in next) write(URL_KEY, state.listUrl);
+  if ('ext' in next) write(EXT_KEY, state.ext);
   for (const l of listeners) l();
 }
 
@@ -101,11 +110,23 @@ export function dropChange(key: string) {
 export function receiveSnapshot(snapshot: MsListSnapshot, results: MsListResult[]) {
   const errors: Record<string, string> = {};
   for (const r of results) if (!r.ok) errors[r.key] = r.error ?? 'No se ha podido aplicar.';
-  set({ snapshot, pending: remainingPending(state.pending, snapshot.items, results), errors });
+  set({ snapshot, pending: remainingPending(state.pending, snapshot.items, results), errors, listUrl: snapshot.url });
 }
 
+/** Lista que hay que sincronizar con la extensión. */
+export function setListUrl(url: string) {
+  set({ listUrl: url, ext: { okAt: 0, error: null } });
+}
+
+export function setExtStatus(error: string | null) {
+  set({ ext: error ? { ...state.ext, error } : { okAt: Date.now(), error: null } });
+}
+
+/** ¿Está sincronizando la extensión? (fue bien hace menos de 5 minutos: relee cada 2). */
+export const extensionOk = (s: ListaState = state, now = Date.now()) => !!s.listUrl && !s.ext.error && now - s.ext.okAt < 5 * 60_000;
+
 export function forgetLista() {
-  set({ snapshot: null, pending: [], errors: {} });
+  set({ snapshot: null, pending: [], errors: {}, listUrl: null, ext: { okAt: 0, error: null } });
 }
 
 export function loadListaConfig(): MsListConfig {

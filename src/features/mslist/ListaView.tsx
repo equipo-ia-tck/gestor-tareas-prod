@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Bookmark, Copy, ExternalLink, ListChecks, Pencil, Plus, Search, Settings2, Trash2, X } from 'lucide-react';
+import { Bookmark, Copy, ExternalLink, ListChecks, Pencil, Plug, Plus, Puzzle, Search, Settings2, Trash2, X } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
 import { useWideLayout } from '../../app/Layout';
 import { ActionButton } from '../../components/TaskList';
@@ -10,14 +10,17 @@ import {
   categoryOfValue, guessStatusColumn, itemCategory, LIST_CATEGORIES, listColumns, listKey, statusValues, taskFromListItem,
   type MsListConfig,
 } from '../../domain/msList';
-import { changeKey, itemValue, TITLE_FIELD, type MsListField, type MsListItem } from '../../domain/msListParse';
+import { changeKey, itemValue, normalizeListUrl, TITLE_FIELD, type MsListField, type MsListItem } from '../../domain/msListParse';
 import { fold } from '../../domain/text';
 import type { StateCategory } from '../../domain/types';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { track } from '../usage/track';
 import { ViewHeader } from '../views/ViewHeader';
 import { bookmarkletCode, bookmarkletHref } from './bookmarklet';
-import { currentItems, dropChange, forgetLista, isConnected, loadListaConfig, queueChange, saveListaConfig, useLista } from './listaStore';
+import { useExtension } from './extension';
+import {
+  currentItems, dropChange, extensionOk, forgetLista, isConnected, loadListaConfig, queueChange, saveListaConfig, setListUrl, useLista,
+} from './listaStore';
 import { applyListStates } from './listaStates';
 
 const STALE_MS = 24 * 60 * 60_000;
@@ -43,13 +46,16 @@ function ago(iso: string): string {
  */
 export function ListaView() {
   const lista = useLista();
+  const extension = useExtension();
   const [setup, setSetup] = useState(false);
   useWideLayout(true);
   const pending = lista.pending.length;
-  // Se vuelve a pintar cada 5 s para que «Conectado» se apague solo si la pestaña de SharePoint se cierra.
+  // Se vuelve a pintar cada 5 s para que «Conectado» se apague solo si se pierde la conexión.
   const [, setTick] = useState(0);
   useEffect(() => { const t = setInterval(() => setTick((n) => n + 1), 5000); return () => clearInterval(t); }, []);
-  const connected = isConnected(lista);
+  const viaExtension = !!extension && extensionOk(lista);
+  const connected = viaExtension || isConnected(lista);
+  const url = lista.snapshot?.url ?? lista.listUrl;
 
   return (
     <>
@@ -58,19 +64,27 @@ export function ListaView() {
         subtitle={lista.snapshot
           ? <span className="inline-flex items-center gap-1.5">
               <span className={`size-2 rounded-full ${connected ? 'bg-emerald-500' : 'bg-zinc-400'}`} />
-              {connected
-                ? 'Conectado con SharePoint: los cambios se aplican solos en unos segundos y la lista se relee cada 2 minutos'
-                : 'Sin conectar: abre la lista en SharePoint y pulsa el marcador una vez; después, mientras esa pestaña siga abierta, todo va solo'}
+              {viaExtension
+                ? 'Sincronizada con la extensión: los cambios se aplican solos y la lista se relee cada 2 minutos, sin tener SharePoint abierto'
+                : connected
+                  ? 'Conectado con SharePoint: los cambios se aplican solos en unos segundos y la lista se relee cada 2 minutos'
+                  : extension && lista.ext.error
+                    ? `La extensión no puede sincronizar: ${lista.ext.error}`
+                    : extension
+                      ? 'Conectando con la extensión…'
+                      : 'Sin conectar: instala la extensión «Marea · Lista» (en Conectar) o abre la lista en SharePoint y pulsa el marcador'}
             </span>
-          : 'Trae una Microsoft List con un marcador del navegador'}
-        actions={lista.snapshot && (
+          : 'Trae una Microsoft List de SharePoint, sin Power Automate'}
+        actions={(lista.snapshot || lista.listUrl) && (
           <>
-            {/* Ventana con nombre: si la pestaña de SharePoint ya está abierta, se vuelve a ella en vez de abrir otra. */}
-            <a href={lista.snapshot.url} target="marea-sharepoint" rel="opener"
-              className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 px-2.5 py-1 text-sm hover:bg-zinc-100 dark:border-zinc-600 dark:hover:bg-zinc-800">
-              <ExternalLink className="size-4" />{connected ? 'Ir a SharePoint' : 'Abrir en SharePoint'}
-            </a>
-            <ActionButton icon={<Bookmark className="size-4" />} onClick={() => setSetup(!setup)}>Marcador</ActionButton>
+            {url && (
+              /* Ventana con nombre: si la pestaña de SharePoint ya está abierta, se vuelve a ella en vez de abrir otra. */
+              <a href={url} target="marea-sharepoint" rel="opener"
+                className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 px-2.5 py-1 text-sm hover:bg-zinc-100 dark:border-zinc-600 dark:hover:bg-zinc-800">
+                <ExternalLink className="size-4" />Abrir en SharePoint
+              </a>
+            )}
+            <ActionButton icon={<Plug className="size-4" />} onClick={() => setSetup(!setup)}>Conectar</ActionButton>
             <ActionButton icon={<Trash2 className="size-4" />} title="Borra la lista de este navegador (las tareas ya añadidas se quedan)"
               onClick={() => { if (confirm('¿Quitar la lista de este navegador? Las tareas ya añadidas se quedan; los cambios pendientes se pierden.')) forgetLista(); }}>
               Quitar
@@ -80,8 +94,8 @@ export function ListaView() {
       />
       {lista.snapshot && pending > 0 && !connected && (
         <p className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-200">
-          {pending === 1 ? '1 cambio esperando' : `${pending} cambios esperando`} para la lista: pulsa <b>Abrir en SharePoint</b> y, allí, el marcador
-          {' '}<b>Marea · Lista</b>. Se aplicarán solos y, mientras dejes esa pestaña abierta, los siguientes también.
+          {pending === 1 ? '1 cambio esperando' : `${pending} cambios esperando`} para la lista. Se aplicarán solos en cuanto haya conexión: con la
+          extensión instalada, o abriendo la lista en SharePoint y pulsando el marcador <b>Marea · Lista</b>.
         </p>
       )}
       {lista.snapshot && pending > 0 && connected && (
@@ -89,13 +103,73 @@ export function ListaView() {
           Aplicando {pending === 1 ? '1 cambio' : `${pending} cambios`} en SharePoint…
         </p>
       )}
-      {(!lista.snapshot || setup) && <Setup />}
+      {(!lista.snapshot || setup) && (
+        <div className="mb-5 grid gap-4 lg:grid-cols-2">
+          <ExtensionSetup />
+          <BookmarkletSetup />
+        </div>
+      )}
       {lista.snapshot && <ListaItems />}
     </>
   );
 }
 
-function Setup() {
+const EXTENSION_ZIP = 'marea-lista-extension.zip';
+
+/** La extensión: instalarla y decirle qué lista sincronizar. */
+function ExtensionSetup() {
+  const lista = useLista();
+  const extension = useExtension();
+  const [text, setText] = useState(lista.listUrl ?? '');
+  const [error, setError] = useState<string | null>(null);
+  const step = 'font-semibold text-zinc-800 dark:text-zinc-100';
+  const connect = () => {
+    const url = normalizeListUrl(text);
+    if (!url) { setError('Pega la dirección de la lista tal como sale en el navegador (https://….sharepoint.com/…/Lists/…).'); return; }
+    setError(null);
+    setText(url);
+    setListUrl(url);
+    track('lista-connect', 'extension');
+  };
+  return (
+    <section className="space-y-3 rounded-lg border border-teal-200 bg-teal-50/50 p-4 text-sm dark:border-teal-900 dark:bg-teal-950/30">
+      <h2 className="flex items-center gap-2 font-semibold">
+        <Puzzle className="size-4" />Con la extensión de Chrome <span className="font-normal text-zinc-500">(recomendado: sin tener SharePoint abierto)</span>
+      </h2>
+      {extension ? (
+        <p className="text-emerald-700 dark:text-emerald-300">✓ Extensión «Marea · Lista» instalada (versión {extension}).</p>
+      ) : (
+        <ol className="list-decimal space-y-1.5 pl-5 text-zinc-600 dark:text-zinc-300">
+          <li><a href={`/${EXTENSION_ZIP}`} download className="font-medium text-indigo-600 underline dark:text-indigo-400">Descarga la extensión</a> y
+            descomprímela (doble clic en el .zip): queda una carpeta <code>marea-lista</code>. Déjala en un sitio fijo, p. ej. Documentos.</li>
+          <li>Abre <code className="rounded bg-white px-1 dark:bg-zinc-800">chrome://extensions</code> (cópialo en la barra de direcciones) y
+            activa <span className={step}>Modo de desarrollador</span>, arriba a la derecha.</li>
+          <li>Pulsa <span className={step}>Cargar descomprimida</span> y elige la carpeta <code>marea-lista</code>.</li>
+          <li>Vuelve aquí y recarga la página.</li>
+        </ol>
+      )}
+      <div>
+        <p className="mb-1 text-zinc-600 dark:text-zinc-300"><span className={step}>Dirección de la lista</span>: ábrela en SharePoint y copia la dirección del navegador.</p>
+        <div className="flex gap-2">
+          <input className={`${inputClass} min-w-0 flex-1 py-1`} value={text} onChange={(e) => { setText(e.target.value); setError(null); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') connect(); }} placeholder="https://….sharepoint.com/sites/…/Lists/…" aria-label="Dirección de la lista" />
+          <button type="button" onClick={connect} disabled={!extension || !text.trim()}
+            className="rounded-md bg-indigo-600 px-3 py-1 font-medium text-white hover:bg-indigo-500 disabled:opacity-40">Conectar</button>
+        </div>
+        {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+        {extension && lista.listUrl && lista.ext.error && <p className="mt-1 text-xs text-red-600">{lista.ext.error}</p>}
+        {extension && lista.listUrl && !lista.ext.error && !lista.ext.okAt && <p className="mt-1 text-xs text-zinc-500">Leyendo la lista…</p>}
+      </div>
+      <p className="text-xs text-zinc-500">
+        Funciona con Chrome abierto y la sesión de SharePoint iniciada en Chrome. Si SharePoint no deja hacerlo en segundo plano, la extensión
+        abre la lista en una pestaña fijada y la usa sin que tengas que tocar nada. Si en <code>chrome://extensions</code> no puedes activar el Modo de
+        desarrollador, tu empresa bloquea las extensiones propias: usa el marcador.
+      </p>
+    </section>
+  );
+}
+
+function BookmarkletSetup() {
   const ref = useRef<HTMLAnchorElement>(null);
   const app = window.location.origin;
   const [copied, setCopied] = useState(false);
@@ -103,8 +177,8 @@ function Setup() {
   useEffect(() => { ref.current?.setAttribute('href', bookmarkletHref(app)); }, [app]);
   const step = 'font-semibold text-zinc-800 dark:text-zinc-100';
   return (
-    <section className="mb-5 space-y-3 rounded-lg border border-teal-200 bg-teal-50/50 p-4 text-sm dark:border-teal-900 dark:bg-teal-950/30">
-      <h2 className="font-semibold">Conectar con un marcador (sin Power Automate)</h2>
+    <section className="space-y-3 rounded-lg border border-zinc-200 p-4 text-sm dark:border-zinc-700">
+      <h2 className="flex items-center gap-2 font-semibold"><Bookmark className="size-4" />Sin extensión: con un marcador</h2>
       <ol className="list-decimal space-y-2 pl-5 text-zinc-600 dark:text-zinc-300">
         <li>
           <span className={step}>Arrastra este botón a la barra de marcadores</span> (si no la ves: Cmd+Shift+B):{' '}
@@ -113,24 +187,20 @@ function Setup() {
             <Bookmark className="size-3.5" />Marea · Lista
           </a>
         </li>
-        <li><span className={step}>Abre tu lista en SharePoint</span> (la dirección tiene <code>/Lists/…</code>) con tu cuenta de siempre.</li>
-        <li><span className={step}>Pulsa el marcador.</span> Se abre Marea en otra pestaña, recibe la lista y, si hay cambios hechos aquí, el marcador los
-          aplica antes en la lista. Abajo a la derecha de SharePoint verás cómo va.</li>
-        <li><span className={step}>Deja abierta esa pestaña de SharePoint.</span> Mientras siga abierta, Marea le manda tus cambios (estados y campos)
-          y se aplican solos en unos segundos, y la lista se relee cada 2 minutos. Si cierras el navegador, al volver basta con abrir la lista y
-          pulsar el marcador otra vez.</li>
+        <li><span className={step}>Abre tu lista en SharePoint</span> (la dirección tiene <code>/Lists/…</code>) y pulsa el marcador.</li>
+        <li><span className={step}>Deja abierta esa pestaña de SharePoint.</span> Mientras siga abierta, los cambios se aplican solos en unos segundos
+          y la lista se relee cada 2 minutos. Si la cierras, vuelve a pulsar el marcador.</li>
       </ol>
       <p className="text-xs text-zinc-500">
-        Usa tu sesión de SharePoint: no se guarda ninguna contraseña ni se piden permisos. La lista y los cambios pendientes se guardan en
-        este navegador ({app.replace(/^https?:\/\//, '')}). Si el navegador bloquea la ventana, permite las ventanas emergentes de SharePoint.
-      </p>
-      <p className="text-xs text-zinc-500">
-        ¿El marcador no hace nada? Algunas páginas no dejan ejecutarlos. Entonces copia el código, abre la consola en la página de la lista
-        (Cmd+Option+J), pégalo y pulsa Enter.{' '}
+        ¿El marcador no hace nada? Copia el código, abre la consola en la página de la lista (Cmd+Option+J), pégalo y pulsa Enter.{' '}
         <button type="button" className="inline-flex items-center gap-1 font-medium text-teal-700 hover:underline dark:text-teal-300"
           onClick={() => { void navigator.clipboard.writeText(bookmarkletCode(app)).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); }); }}>
           <Copy className="size-3" />{copied ? 'Copiado' : 'Copiar el código'}
         </button>
+      </p>
+      <p className="text-xs text-zinc-500">
+        Con los dos (extensión y marcador) se usa tu sesión de SharePoint: no se guarda ninguna contraseña ni se piden permisos. La lista y los
+        cambios pendientes se guardan en este navegador ({app.replace(/^https?:\/\//, '')}).
       </p>
     </section>
   );
@@ -284,7 +354,7 @@ function ListaItems() {
                       <button type="button" onClick={() => setOpenId(it.id)} className="text-left hover:text-indigo-600 hover:underline">{it.title}</button>
                       {pendingIds.has(it.id) && (
                         <span className={`ml-2 text-[11px] ${errors.length ? 'text-red-600' : 'text-amber-600'}`}
-                          title={errors.length ? errors.join('\n') : 'Se aplicará en la lista (solo si la pestaña de SharePoint está conectada)'}>
+                          title={errors.length ? errors.join('\n') : 'Se aplicará en la lista en cuanto haya conexión'}>
                           {errors.length ? 'error al aplicar' : 'pendiente'}
                         </span>
                       )}
@@ -386,7 +456,7 @@ function ItemPanel({ item, original, fields, pendingKeys, errors, onClose }: {
         })}
       </div>
       <footer className="flex items-center justify-end gap-2 border-t border-zinc-200 px-4 py-3 dark:border-zinc-700">
-        <span className="mr-auto text-xs text-zinc-500">Se aplica en la lista en unos segundos si la pestaña de SharePoint está conectada.</span>
+        <span className="mr-auto text-xs text-zinc-500">Se aplica en la lista en unos segundos si hay conexión.</span>
         <button type="button" onClick={onClose} className="rounded-md px-3 py-1.5 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800">Cancelar</button>
         <button type="button" disabled={!changed.length} onClick={save}
           className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40">

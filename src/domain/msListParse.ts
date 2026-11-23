@@ -157,3 +157,18 @@ export function addPending(pending: MsListChange[], change: MsListChange, items:
   const item = items.find((it) => it.id === change.id);
   return item && itemValue(item, change.field) === change.value ? rest : [...rest, change];
 }
+
+/**
+ * Dirección de una lista a partir de lo que se pegue (la de la vista, con `AllItems.aspx?…`, o la de un elemento):
+ * `https://<x>.sharepoint.com/…/Lists/<nombre>`. Null si no es de una lista de SharePoint Online.
+ */
+export function normalizeListUrl(raw: string): string | null {
+  try {
+    const u = new URL(raw.trim());
+    if (u.protocol !== 'https:' || !/^[a-z0-9-]+\.sharepoint\.com$/i.test(u.hostname)) return null;
+    const m = /^(.*?\/Lists\/[^/]+)/i.exec(decodeURIComponent(u.pathname));
+    return m ? u.origin + m[1] : null;
+  } catch {
+    return null;
+  }
+}

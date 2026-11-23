@@ -3,7 +3,8 @@ import { useToast } from '../../components/Toast';
 import { repo } from '../../data/services';
 import { changeKey, isSharePointOrigin, parseSnapshot, type MsListResult } from '../../domain/msListParse';
 import { track } from '../usage/track';
-import { getListaState, isConnected, markContact, receiveSnapshot, subscribeLista, wantsList } from './listaStore';
+import { extensionVersion, extSync, useExtension } from './extension';
+import { getListaState, isConnected, markContact, receiveSnapshot, setExtStatus, subscribeLista, wantsList } from './listaStore';
 import { applyListStates, pushToList } from './listaStates';
 
 /**
@@ -14,6 +15,8 @@ import { applyListStates, pushToList } from './listaStates';
  */
 export function ListaBridge() {
   const toast = useToast();
+  const extension = useExtension();
+  useExtensionSync(!!extension, toast);
   useEffect(() => {
     let first = true;
     /** La pestaña de SharePoint conectada (la última que ha dicho «hola» a esta pestaña). */
@@ -72,4 +75,81 @@ export function ListaBridge() {
     return () => { window.removeEventListener('message', onMessage); stopHistory(); stopStore(); };
   }, [toast]);
   return null;
+}
+
+/** Cada cuánto mira la extensión si hay algo que hacer (los cambios nuevos van al momento). */
+const EXT_EVERY_MS = 20_000;
+
+/**
+ * Con la extensión instalada y la dirección de la lista: aplica los cambios pendientes en cuanto aparecen y relee la
+ * lista cada 2 minutos, sin tener SharePoint abierto. Solo lo hace una pestaña de Marea a la vez (Web Locks); las demás
+ * se enteran por localStorage.
+ */
+function useExtensionSync(enabled: boolean, toast: (message: string) => void) {
+  useEffect(() => {
+    if (!enabled) return;
+    let running = false;
+    let again = false;
+    let lastError: string | null = null;
+    let debounce: ReturnType<typeof setTimeout> | null = null;
+
+    const work = async () => {
+      const s = getListaState();
+      if (!s.listUrl || !extensionVersion()) return;
+      const wantList = wantsList(s) || !s.snapshot || s.snapshot.url !== s.listUrl;
+      // Los que fallaron se reintentan solo con la relectura.
+      const changes = wantList ? s.pending : s.pending.filter((c) => !s.errors[changeKey(c)]);
+      if (!changes.length && !wantList) return;
+      const r = await extSync(s.listUrl, changes, wantList);
+      const snapshot = r.error ? null : parseSnapshot(r.list);
+      if (r.error || (r.list && !snapshot)) {
+        const message = r.error ?? 'La extensión ha devuelto algo que no parece una lista.';
+        setExtStatus(message);
+        if (message !== lastError) toast(`Lista: ${message}`);
+        lastError = message;
+        return;
+      }
+      lastError = null;
+      setExtStatus(null);
+      const results: MsListResult[] = Array.isArray(r.results) ? r.results : [];
+      if (snapshot) receiveSnapshot(snapshot, results);
+      if (results.length) {
+        const bad = results.filter((x) => !x.ok).length;
+        toast(`Lista: ${results.length - bad} ${results.length - bad === 1 ? 'cambio aplicado' : 'cambios aplicados'} en SharePoint${bad ? `, ${bad} con error` : ''}`);
+        track('lista-sync', bad ? 'extension-errors' : 'extension', results.length);
+      }
+      void applyListStates().catch(() => {});
+    };
+
+    const run = () => {
+      if (running) { again = true; return; }
+      running = true;
+      const go = async () => {
+        try {
+          do { again = false; await work(); } while (again);
+        } finally {
+          running = false;
+        }
+      };
+      // Una sola pestaña sincroniza; si otra lo está haciendo, esta no.
+      if (navigator.locks) void navigator.locks.request('marea-lista-sync', { ifAvailable: true }, async (lock) => { if (lock) await go(); else running = false; });
+      else void go();
+    };
+
+    const timer = setInterval(run, EXT_EVERY_MS);
+    let sent = JSON.stringify(getListaState().pending);
+    let lastUrl = getListaState().listUrl;
+    const stop = subscribeLista(() => {
+      const s = getListaState();
+      const now = JSON.stringify(s.pending);
+      // Un cambio nuevo (en esta pestaña o en otra) o una lista nueva: enseguida.
+      if (now === sent && s.listUrl === lastUrl) return;
+      sent = now;
+      lastUrl = s.listUrl;
+      if (debounce) clearTimeout(debounce);
+      debounce = setTimeout(run, 400);
+    });
+    run();
+    return () => { clearInterval(timer); stop(); if (debounce) clearTimeout(debounce); };
+  }, [enabled, toast]);
 }

@@ -1,3 +1,5 @@
+import { spWork } from './spWork';
+
 /**
  * Marcador «Marea · Lista»: se arrastra a la barra de marcadores y se pulsa estando en la lista de SharePoint. Sin
  * Power Automate ni permisos de Microsoft: usa la sesión que ya tiene abierta la persona en SharePoint (la API REST
@@ -8,19 +10,14 @@
  *    con los cambios pendientes (estados y campos cambiados en el gestor) y si quiere la lista entera.
  * 3. Si hay cambios, los aplica en la lista (MERGE); después la vuelve a leer y se la manda a Marea con el resultado.
  *
- * `bridge` se convierte en texto con `toString()`, así que no puede usar NADA de fuera de la función (ni imports ni
- * constantes del módulo).
+ * El trabajo en SharePoint es `spWork` (el mismo de la extensión), que se le pasa como argumento. `bridge` y `spWork` se
+ * convierten en texto con `toString()`, así que no pueden usar NADA de fuera de su función.
  */
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- aquí todo viene de SharePoint sin tipos
 type Any = any;
 
-function bridge(app: string) {
-  const J = 'application/json;odata=nometadata';
-  const TYPES = ['Text', 'Note', 'Choice', 'MultiChoice', 'Number', 'Currency', 'DateTime', 'Boolean', 'User', 'UserMulti', 'Lookup', 'LookupMulti', 'URL'];
-  const EDIT = ['Text', 'Note', 'Choice', 'MultiChoice', 'Number', 'Currency', 'DateTime', 'Boolean'];
-  const SKIP = /^(_|ContentType|Attachments|Edit$|LinkTitle|DocIcon|ItemChildCount|FolderChildCount|AppAuthor|AppEditor|ComplianceAssetId)/;
-
+function bridge(app: string, work: typeof spWork) {
   // Si ya estaba conectado (se ha vuelto a pulsar), se para el anterior.
   const w: Any = window;
   if (typeof w.__mareaListaStop === 'function') w.__mareaListaStop();
@@ -47,123 +44,7 @@ function bridge(app: string) {
 
   const m = /^(.*?)\/Lists\/([^/]+)/i.exec(decodeURIComponent(location.pathname));
   if (!m) { say('Abre la lista en SharePoint (una dirección con /Lists/…) y vuelve a pulsar el marcador.', true); return; }
-  const web = location.origin + m[1];
-  const listPath = m[1] + '/Lists/' + m[2];
-  const api = (s: string) => web + '/_api/web/GetList(@u)' + s + (s.indexOf('?') >= 0 ? '&' : '?')
-    + "@u='" + encodeURIComponent(listPath.replace(/'/g, "''")) + "'";
-  const get = async (url: string): Promise<Any> => {
-    const r = await fetch(url, { headers: { Accept: J }, credentials: 'include' });
-    if (!r.ok) throw new Error('SharePoint respondió ' + r.status + ' al leer la lista.');
-    return r.json();
-  };
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const day = (d: Date) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
-  const text = (v: Any, f: Any): string => {
-    if (v === null || v === undefined) return '';
-    if (Array.isArray(v)) return v.map((x) => text(x, f)).filter(Boolean).join(', ');
-    if (typeof v === 'object') return String(v.Title ?? v.Description ?? v.Url ?? '');
-    if (typeof v === 'boolean') return v ? 'Sí' : 'No';
-    if (f.TypeAsString === 'DateTime') {
-      const d = new Date(v);
-      return isNaN(d.getTime()) ? String(v) : f.DisplayFormat === 1 ? day(d) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) : day(d);
-    }
-    if (f.TypeAsString === 'Note' && /</.test(String(v))) {
-      return (new DOMParser().parseFromString(String(v), 'text/html').body.textContent ?? '').replace(/\s+/g, ' ').trim();
-    }
-    return String(v);
-  };
-
-  async function columns(): Promise<Any[]> {
-    const all: Any[] = (await get(api('/fields?$filter=Hidden eq false'))).value;
-    const seen: Record<string, boolean> = {};
-    return all.filter((f) => {
-      const ok = TYPES.indexOf(f.TypeAsString) >= 0 && !SKIP.test(f.InternalName) && (f.InternalName === 'Title' || !f.ReadOnlyField) && !seen[f.Title];
-      if (ok) seen[f.Title] = true;
-      return ok;
-    });
-  }
-
-  async function apply(changes: Any[], fields: Any[]) {
-    const results: Any[] = [];
-    if (!changes.length) return results;
-    const ctx = await fetch(web + '/_api/contextinfo', { method: 'POST', headers: { Accept: J }, credentials: 'include' });
-    if (!ctx.ok) throw new Error('SharePoint no deja escribir (' + ctx.status + ').');
-    const digest = (await ctx.json()).FormDigestValue;
-    for (const c of changes) {
-      const key = c.id + '|' + c.field;
-      const f = c.field === 'Título' ? fields.find((x) => x.InternalName === 'Title') : fields.find((x) => x.Title === c.field);
-      if (!f || EDIT.indexOf(f.TypeAsString) < 0 || !/^\d+$/.test(String(c.id))) {
-        results.push({ key, ok: false, error: 'La columna «' + c.field + '» no se puede cambiar desde Marea.' });
-        continue;
-      }
-      const v = String(c.value ?? '').trim();
-      let val: Any = v === '' ? null : v;
-      if (val !== null) {
-        if (f.TypeAsString === 'Number' || f.TypeAsString === 'Currency') val = Number(v.replace(',', '.'));
-        else if (f.TypeAsString === 'Boolean') val = /^(s[ií]|true|1|yes)$/i.test(v);
-        else if (f.TypeAsString === 'MultiChoice') val = v.split(/\s*,\s*/).filter(Boolean);
-        else if (f.TypeAsString === 'DateTime') val = new Date(/\d:\d/.test(v) ? v.replace(' ', 'T') : v + 'T00:00:00').toISOString();
-      }
-      try {
-        const r = await fetch(api('/items(' + Number(c.id) + ')'), {
-          method: 'POST',
-          credentials: 'include',
-          headers: { Accept: J, 'Content-Type': J, 'X-RequestDigest': digest, 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' },
-          body: JSON.stringify({ [f.InternalName]: val }),
-        });
-        if (r.ok) results.push({ key, ok: true });
-        else {
-          const body: Any = await r.json().catch(() => null);
-          results.push({ key, ok: false, error: 'SharePoint ' + r.status + (body?.['odata.error']?.message?.value ? ': ' + body['odata.error'].message.value : '') });
-        }
-      } catch (e: Any) {
-        results.push({ key, ok: false, error: String(e?.message ?? e) });
-      }
-    }
-    return results;
-  }
-
-  async function read(fields: Any[]) {
-    const info = await get(api('?$select=Title'));
-    const select = ['Id', 'Title', 'Modified'];
-    const expand: string[] = [];
-    for (const f of fields) {
-      if (f.InternalName === 'Title') continue;
-      if (/^(User|Lookup)/.test(f.TypeAsString)) { select.push(f.InternalName + '/Title'); expand.push(f.InternalName); }
-      else select.push(f.InternalName);
-    }
-    let url: string | undefined = api('/items?$top=1000&$select=' + select.join(',') + (expand.length ? '&$expand=' + expand.join(',') : ''));
-    const rows: Any[] = [];
-    while (url && rows.length < 10000) {
-      const r: Any = await get(url);
-      for (const it of r.value) rows.push(it);
-      url = r['odata.nextLink'];
-      say('Leyendo la lista… ' + rows.length + ' elementos');
-    }
-    const base = location.origin + listPath;
-    return {
-      title: info.Title,
-      url: base,
-      at: new Date().toISOString(),
-      fields: fields.map((f) => ({
-        name: f.InternalName,
-        label: f.InternalName === 'Title' ? 'Título' : f.Title,
-        type: f.TypeAsString,
-        choices: f.Choices ?? [],
-        editable: EDIT.indexOf(f.TypeAsString) >= 0,
-        format: f.TypeAsString === 'DateTime' ? (f.DisplayFormat === 1 ? 'datetime' : 'date') : undefined,
-      })),
-      items: rows.map((it) => {
-        const values: Record<string, string> = {};
-        for (const f of fields) {
-          if (f.InternalName === 'Title') continue;
-          const t = text(it[f.InternalName], f);
-          if (t) values[f.Title] = t;
-        }
-        return { id: String(it.Id), title: String(it.Title ?? ''), fields: values, url: base + '/DispForm.aspx?ID=' + it.Id, modified: it.Modified ?? null };
-      }),
-    };
-  }
+  const listUrl = location.origin + m[1] + '/Lists/' + m[2];
 
   const win = window.open(app + '/#/lista', 'marea-lista');
   if (!win) { say('El navegador ha bloqueado la ventana de Marea: permite las ventanas emergentes de esta página y vuelve a pulsar.', true); return; }
@@ -176,7 +57,6 @@ function bridge(app: string) {
    */
   let connected = false;
   let busy = false;
-  let fields: Any[] | null = null;
   let stopped = false;
   const hello = () => {
     if (win.closed) { stop(); say('La pestaña de Marea se ha cerrado. Vuelve a pulsar el marcador para seguir sincronizando.', true); return; }
@@ -210,18 +90,13 @@ function bridge(app: string) {
     if (!changes.length && !data.wantList) return;
     busy = true;
     try {
-      // Las columnas, una vez (y otra vez si la lectura falla, por si se han cambiado en SharePoint).
-      if (!fields) { say('Leyendo la lista…'); fields = await columns(); }
-      if (changes.length) say('Aplicando ' + changes.length + (changes.length === 1 ? ' cambio…' : ' cambios…'));
-      const results = await apply(changes, fields);
-      const list = await read(fields);
+      const { list, results } = await work(listUrl, changes, true, say);
       win!.postMessage({ type: 'marea-lista:data', list, results }, app);
       const bad = results.filter((r: Any) => !r.ok).length;
       say('Conectado · ' + list.items.length + ' elementos · ' + clock()
         + (results.length ? ' · ' + (results.length - bad) + ' cambios aplicados' + (bad ? ', ' + bad + ' con error' : '') : '')
         + '. Deja esta pestaña abierta.');
     } catch (err: Any) {
-      fields = null;
       const message = String(err?.message ?? err);
       win!.postMessage({ type: 'marea-lista:error', message }, app);
       say('Error (se reintenta solo): ' + message);
@@ -233,7 +108,7 @@ function bridge(app: string) {
 }
 
 /** Código que ejecuta el marcador para esta instancia de Marea (`app` = su dirección, p. ej. https://….vercel.app). */
-export const bookmarkletCode = (app: string) => `(${bridge.toString()})(${JSON.stringify(app)});`;
+export const bookmarkletCode = (app: string) => `(${bridge.toString()})(${JSON.stringify(app)}, ${spWork.toString()});`;
 
 /** El `href` del marcador (`javascript:…`). React no deja ponerlo en JSX: se pone con `setAttribute`. */
 export const bookmarkletHref = (app: string) => `javascript:${encodeURIComponent(`${bookmarkletCode(app)}void 0`)}`;
