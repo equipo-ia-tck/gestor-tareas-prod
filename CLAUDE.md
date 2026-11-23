@@ -1078,6 +1078,13 @@ Petición de la usuaria: algo a lo que preguntar y pedir cosas sobre el proyecto
   (`SharePointPanel`): pegar la carpeta, «Buscar en: todo el sitio / solo la carpeta», subir (también arrastrando) y los
   últimos archivos; la configuración es de cada persona (`asistente-sharepoint` en localStorage). Cada búsqueda enseña
   «En SharePoint» (`SharePointHits`) y «En Marea». Sin la extensión, el Asistente busca solo en Marea.
+- **La carpeta, al momento** (extensión 1.4.0): el buscador de SharePoint tarda de minutos a horas en indexar lo nuevo, así
+  que `texts` recorre la carpeta y sus subcarpetas (`walk`: 4 niveles, 400 archivos, sin «Forms») y devuelve el texto de
+  los Word `.docx` (su XML descomprimido sin librerías, títulos con «#»), texto, Markdown, CSV y HTML (máx. 5 MB cada uno,
+  3 MB de texto en total); con `known` (enlace → fecha) solo baja los que han cambiado. `folderDocs.ts` los guarda en
+  memoria y entran en el buscador local: la respuesta enseña primero «En la carpeta» (`FolderHits`), después «En
+  SharePoint» sin repetir y después «En Marea». `list` también recorre subcarpetas. La consulta a SharePoint ya no exige
+  todas las palabras: si salen menos de 3, se completa con la de alguna; y verbos como «usa» o «sirve» no cuentan.
 
 ### Más adelante
 

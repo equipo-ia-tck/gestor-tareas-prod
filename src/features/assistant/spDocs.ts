@@ -60,7 +60,8 @@ export async function spDocs(op: string, args: Any): Promise<Any> {
     } catch {
       throw new Error('Esa dirección no es de una carpeta de SharePoint (o no tienes acceso).');
     }
-    return { siteUrl: web.Url, siteTitle: web.Title, folder, folderName, folderUrl: u.origin + encodeURI(folder) };
+    const siteTitle = web.Title || decodeURIComponent(String(web.Url).split('/').filter(Boolean).pop() || '');
+    return { siteUrl: web.Url, siteTitle, folder, folderName, folderUrl: u.origin + encodeURI(folder) };
   }
 
   if (op === 'search') {
@@ -80,18 +81,114 @@ export async function spDocs(op: string, args: Any): Promise<Any> {
         return { title: c.Title || '', url: c.Path || '', summary: c.HitHighlightedSummary || '', author: c.Author || '', modified: c.LastModifiedTime || '', type: c.FileType || c.FileExtension || '' };
       }).filter((h: Any) => h.url);
     };
+    // Primero con todas las palabras; si salen pocos, se completan con los que tienen alguna (SharePoint los ordena por
+    // relevancia, así que los que tienen más palabras salen antes).
     let hits = await run(String(args.query || ''));
     let loose = false;
-    if (!hits.length && args.orQuery && args.orQuery !== args.query) { hits = await run(String(args.orQuery)); loose = true; }
+    const want = Math.min(Number(args.limit) || 8, 30);
+    if (hits.length < Math.min(3, want) && args.orQuery && args.orQuery !== args.query) {
+      const seen: Record<string, boolean> = {};
+      for (const h of hits) seen[h.url] = true;
+      const more = (await run(String(args.orQuery))).filter((h: Any) => !seen[h.url]);
+      loose = !hits.length && more.length > 0;
+      hits = hits.concat(more).slice(0, want);
+    }
     return { hits, loose };
   }
+
+  /** Archivos de la carpeta y sus subcarpetas (hasta 4 niveles y 400 archivos; sin «Forms» ni las ocultas). */
+  const walk = async (site: string, root: string) => {
+    const origin = new URL(site).origin;
+    const files: Any[] = [];
+    let queue: { path: string; depth: number }[] = [{ path: root, depth: 0 }];
+    while (queue.length && files.length < 400) {
+      const next: { path: string; depth: number }[] = [];
+      for (const f of queue) {
+        const fs = await get(folderApi(site, f.path, '/Files?$select=Name,ServerRelativeUrl,TimeLastModified,Length'));
+        for (const x of fs.value || []) {
+          files.push({ name: x.Name, path: x.ServerRelativeUrl, url: origin + encodeURI(x.ServerRelativeUrl), modified: x.TimeLastModified, size: Number(x.Length) || 0,
+            folder: f.path === root ? '' : f.path.slice(root.length + 1) });
+        }
+        if (f.depth >= 4) continue;
+        const ds = await get(folderApi(site, f.path, '/Folders?$select=Name,ServerRelativeUrl'));
+        for (const d of ds.value || []) if (d.Name !== 'Forms' && d.Name.charAt(0) !== '_') next.push({ path: d.ServerRelativeUrl, depth: f.depth + 1 });
+      }
+      queue = next;
+    }
+    return files.sort((a, b) => String(b.modified).localeCompare(String(a.modified)));
+  };
 
   if (op === 'list') {
     const site = String(args.siteUrl);
     sp(site);
-    const r = await get(folderApi(site, String(args.folder), '/Files?$select=Name,ServerRelativeUrl,TimeLastModified,Length&$orderby=TimeLastModified desc&$top=40'));
-    const origin = new URL(site).origin;
-    return { files: (r.value || []).map((f: Any) => ({ name: f.Name, url: origin + encodeURI(f.ServerRelativeUrl), modified: f.TimeLastModified, size: Number(f.Length) || 0 })) };
+    const files = await walk(site, String(args.folder));
+    return { total: files.length, files: files.slice(0, 40).map((f) => ({ name: f.name, url: f.url, modified: f.modified, size: f.size, folder: f.folder })) };
+  }
+
+  // Texto de los archivos de la carpeta que se pueden leer sin librerías (Word .docx, texto, Markdown, CSV, HTML), para
+  // encontrarlos al momento, sin esperar a que SharePoint los meta en su buscador. `known` (enlace → fecha) evita
+  // volver a descargar los que no han cambiado.
+  if (op === 'texts') {
+    const site = String(args.siteUrl);
+    sp(site);
+    const known: Any = args.known && typeof args.known === 'object' ? args.known : {};
+    const readable = /\.(docx|txt|md|markdown|csv|json|html?|xml)$/i;
+    const files = (await walk(site, String(args.folder))).filter((f) => readable.test(f.name) && f.size <= 5 * 1024 * 1024);
+    const out: Any[] = [];
+    let budget = 3 * 1024 * 1024;
+    const unzipXml = async (zip: Uint8Array, name: string): Promise<string> => {
+      const v = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
+      let e = -1;
+      for (let i = zip.length - 22; i >= Math.max(0, zip.length - 65557); i--) if (v.getUint32(i, true) === 0x06054b50) { e = i; break; }
+      if (e < 0) return '';
+      let p = v.getUint32(e + 16, true);
+      const count = v.getUint16(e + 10, true);
+      const dec = new TextDecoder();
+      for (let n = 0; n < count && p + 46 <= zip.length; n++) {
+        const method = v.getUint16(p + 10, true);
+        const size = v.getUint32(p + 20, true);
+        const nl = v.getUint16(p + 28, true);
+        const el = v.getUint16(p + 30, true);
+        const cl = v.getUint16(p + 32, true);
+        const local = v.getUint32(p + 42, true);
+        if (dec.decode(zip.subarray(p + 46, p + 46 + nl)) === name) {
+          const start = local + 30 + v.getUint16(local + 26, true) + v.getUint16(local + 28, true);
+          const data = zip.slice(start, start + size);
+          if (method === 0) return dec.decode(data);
+          return new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text();
+        }
+        p += 46 + nl + el + cl;
+      }
+      return '';
+    };
+    const ent = (t: string) => t.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+    for (const f of files) {
+      if (known[f.url] && known[f.url] === f.modified) { out.push({ url: f.url, unchanged: true }); continue; }
+      if (budget <= 0) break;
+      try {
+        const r = await fetch(site + "/_api/web/GetFileByServerRelativePath(decodedurl=@f)/$value?@f='" + q(f.path) + "'", { credentials: 'include' });
+        if (!r.ok) continue;
+        let text = '';
+        if (/\.docx$/i.test(f.name)) {
+          const xml = await unzipXml(new Uint8Array(await r.arrayBuffer()), 'word/document.xml');
+          const paras = xml.match(/<w:p[ >][\s\S]*?<\/w:p>/g) || [];
+          text = paras.map((para) => {
+            const t = ent((para.match(/<w:t[^>]*>[^<]*<\/w:t>/g) || []).map((x) => x.replace(/<[^>]+>/g, '')).join(''));
+            const h = /<w:pStyle w:val="(?:Heading|Ttulo|Titulo|Título)(\d)"/i.exec(para);
+            return h && t.trim() ? '#'.repeat(Number(h[1])) + ' ' + t.trim() : t;
+          }).join('\n');
+        } else {
+          text = await r.text();
+          if (/\.html?$/i.test(f.name)) text = ent(text.replace(/<(script|style)[\s\S]*?<\/\1>/gi, '').replace(/<\/(p|div|li|h\d|tr)>/gi, '\n').replace(/<[^>]+>/g, ' '));
+        }
+        text = text.replace(/\n{3,}/g, '\n\n').trim().slice(0, 600000);
+        budget -= text.length;
+        out.push({ name: f.name, url: f.url, modified: f.modified, folder: f.folder, text });
+      } catch {
+        // Un archivo que no se puede leer no para el resto.
+      }
+    }
+    return { files: out, total: files.length };
   }
 
   if (op === 'upload') {

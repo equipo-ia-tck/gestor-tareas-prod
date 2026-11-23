@@ -221,7 +221,7 @@ export function matchTasks(tasks: Task[], query: string, onlyActive = true): Tas
 }
 
 /** Los trozos buscables de todo lo que ve la persona: tareas, notas, personas, proyectos y documentación. */
-export function buildChunks(data: { tasks: Task[]; notes: Note[]; people: Person[]; projects: Project[]; docs: KnowledgeDoc[] }): Chunk[] {
+export function buildChunks(data: { tasks: Task[]; notes: Note[]; people: Person[]; projects: Project[]; docs: Pick<KnowledgeDoc, 'id' | 'title' | 'body'>[] }): Chunk[] {
   const out: Chunk[] = [];
   for (const t of data.tasks) {
     if (t.deleted_at) continue;

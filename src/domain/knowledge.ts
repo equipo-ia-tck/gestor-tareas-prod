@@ -49,7 +49,9 @@ const STOP = new Set(`a al algo algun alguna algunas alguno algunos ante antes a
 del desde donde dos e el ella ellas ellos en entre era es esa esas ese eso esos esta estan estas este esto estos fue ha hay
 la las le les lo los mas me mi mis muy nada ni no nos o os otra otro para pero poco por porque que quien se sea segun ser si
 sin sobre solo son su sus tambien te tiene tienen todo todos tu tus un una unas uno unos y ya yo hacer hace como cual
-dime decir dice puedo puede quiero saber sabes busca buscar encuentra informacion info sobre explica explicame`.split(/\s+/));
+dime decir dice puedo puede quiero saber sabes busca buscar encuentra informacion info sobre explica explicame
+usa usan usar uso utiliza utilizan utilizar sirve sirven sirva necesito necesita tengo tenemos quieres puedes podria podrias
+favor gracias hola oye vale`.split(/\s+/));
 
 /** Raíz sencilla: sin tildes, sin plural y sin las terminaciones más comunes (validaciones → validacion). */
 export function stem(word: string): string {
