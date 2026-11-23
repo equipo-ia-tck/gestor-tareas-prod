@@ -12,7 +12,8 @@ import { useProjectOptions } from '../../hooks/useProjectOptions';
 import { ViewHeader } from '../views/ViewHeader';
 import { useWideLayout } from '../../app/Layout';
 import { ViewSwitcher, type DisplayMode } from '../../components/ui/ViewSwitcher';
-import { BoardDisplayButtons, RallyBoard } from './Board';
+import { Board, BoardDisplayButtons, RallyBoard } from './Board';
+import { LIST_TYPE_ID } from '../../domain/msList';
 
 const CATEGORIES: { value: StateCategory; label: string; color: string }[] = [
   { value: 'todo', label: 'Por hacer', color: '#94a3b8' },
@@ -38,9 +39,11 @@ export function useBoardFilter(key: string) {
   return { filter, set, setStored };
 }
 
-export function boardSubtitle(mode: DisplayMode, count: number, includeDone: boolean) {
+export function boardSubtitle(mode: DisplayMode, count: number, includeDone: boolean, onlyList = false) {
   return mode === 'board'
-    ? 'Las 7 columnas de Rally, en su orden, para todos los tipos. Al soltar una tarjeta enlazada se mueve también en Rally.'
+    ? onlyList
+      ? 'Los estados de la lista de SharePoint. Al soltar una tarjeta cambia también en la lista.'
+      : 'Las 7 columnas de Rally, en su orden, para todos los tipos. Al soltar una tarjeta enlazada se mueve también en Rally.'
     : `${count} elemento${count === 1 ? '' : 's'}${includeDone ? ' (con completadas)' : ''}`;
 }
 
@@ -68,7 +71,7 @@ export function BoardView() {
     <>
       <ViewHeader
         title="Tablero"
-        subtitle={boardSubtitle(mode, results.length, filter.includeDone)}
+        subtitle={boardSubtitle(mode, results.length, filter.includeDone, filter.types.length === 1 && filter.types[0] === LIST_TYPE_ID)}
         actions={<ViewSwitcher value={mode} onChange={setMode} />}
       />
 
@@ -187,7 +190,10 @@ export function BoardContent({ tasks, filter, mode, defaults, showProject = true
     ...(filter.releases.length === 1 ? { release_id: filter.releases[0] } : {}),
   };
   const groups = groupTasks(results, filter.groupBy, ctx);
-  // Todas las vistas (un tipo, varios o todos) usan las 7 columnas de Rally, a petición de la usuaria (nov 2026).
+  // Todas las vistas (un tipo, varios o todos) usan las 7 columnas de Rally, a petición de la usuaria (nov 2026), salvo
+  // «Lista» sola: sus columnas son los estados de la Microsoft List (Backlog, En curso, Dependencia, Completada…).
+  const listType = filter.types.length === 1 && filter.types[0] === LIST_TYPE_ID ? itemTypes.find((t) => t.id === LIST_TYPE_ID) : undefined;
+  if (mode === 'board' && listType) return <Board tasks={boardTasks} type={listType} defaults={cardDefaults} showProject={showProject} />;
   if (mode === 'board') return <RallyBoard tasks={boardTasks} defaults={cardDefaults} showProject={showProject} />;
   return (
     <>

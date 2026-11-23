@@ -1044,6 +1044,8 @@ API de SharePoint no admite CORS, así que lo hace un **marcador del navegador**
   la lista se crean ya de ese tipo. Con él los estados van **uno a uno** en los dos sentidos: `listMoves` busca el estado
   con el nombre del valor y `listPushes` manda cualquier cambio de estado con su nombre (`stateName`), aunque sea del mismo
   grupo; sin coincidencia, por grupo como antes.
+  Con **solo «Lista»** elegido en los tipos, el Tablero (y el de cada proyecto) usa sus estados como columnas (`Board` con
+  ese tipo, en `BoardContent`) en vez de las 7 de Rally; soltar una tarjeta llama a `setState` y el cambio va a la lista.
 - **Versión de la extensión**: al cambiar `spWork` o la extensión, sube `version` en `extension/manifest.json` y
   `LATEST_EXTENSION` en `features/mslist/extension.ts` (un test comprueba que coinciden); si la instalada es anterior, la
   pantalla Lista avisa y explica cómo actualizarla (descargar, sustituir la carpeta y recargar en `chrome://extensions`).
