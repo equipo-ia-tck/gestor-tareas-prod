@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { BRIDGE_VERSION } from './bookmarklet';
 import { folderLocation, isSharePointOrigin, parseSnapshot, type SharePointFolder, type SharePointSnapshot } from '../../domain/sharepoint';
 
 /**
@@ -24,6 +25,9 @@ export const sharePointState = () => state;
 
 export const setSnapshot = (s: SharePointSnapshot | null) => set({ snapshot: s, error: null, loading: false });
 export const setSnapshotError = (message: string | null) => set({ error: message, loading: false });
+
+export const OLD_BOOKMARKLET = 'El marcador de tu barra es de una versión anterior. Bórralo (clic derecho → Eliminar) y vuelve a '
+  + 'arrastrar «Marea · Carpeta» desde esta pantalla; después púlsalo otra vez en SharePoint.';
 
 /** La pestaña de SharePoint que hace de puente (la que pulsó el marcador). */
 let bridge: { win: Window; origin: string } | null = null;
@@ -100,6 +104,12 @@ export function handleBridgeMessage(e: MessageEvent) {
   const settle = (fn: () => void) => { if (pending) { clearTimeout(pending.timer); waiting.delete(data.request as number); } fn(); };
 
   if (data.type === 'marea-sp:hello' && source) {
+    // Un marcador arrastrado antes de un cambio sigue con su código viejo: se avisa en vez de conectarse a medias.
+    const v = (e.data as { v?: unknown }).v;
+    if (typeof v !== 'number' || v < BRIDGE_VERSION) {
+      if (state.error !== OLD_BOOKMARKLET) set({ error: OLD_BOOKMARKLET, connected: false });
+      return;
+    }
     bridge = { win: source, origin: e.origin };
     set({ connected: true });
     source.postMessage({ type: 'marea-sp:ready' }, e.origin);

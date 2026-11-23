@@ -102,7 +102,7 @@ describe('SharePoint: marcador', () => {
       [{ Name: 'Guía #1.docx', ServerRelativeUrl: '/sites/Etiquetado/Shared Documents/Guías/App/Guía #1.docx', Length: '1200', TimeLastModified: '2026-11-20T09:00:00Z' }]);
     expect(r.opened).toEqual([`${r.app}/#/sharepoint`]);
     vi.advanceTimersByTime(800);
-    expect(r.sent[0]).toEqual({ msg: { type: 'marea-sp:hello' }, origin: r.app });
+    expect(r.sent[0]).toEqual({ msg: { type: 'marea-sp:hello', v: 3 }, origin: r.app });
     r.reply();
     await vi.runAllTimersAsync();
     expect(r.requests).toHaveLength(2);
@@ -165,9 +165,13 @@ describe('SharePoint: Marea habla con el puente', () => {
   it('solo acepta mensajes de *.sharepoint.com y las respuestas del puente conectado', async () => {
     const posted: unknown[] = [];
     const sp = { closed: false, postMessage: (m: unknown) => posted.push(m) } as unknown as Window;
-    handleBridgeMessage({ origin: 'https://evil.com', source: sp, data: { type: 'marea-sp:hello' } } as MessageEvent);
+    handleBridgeMessage({ origin: 'https://evil.com', source: sp, data: { type: 'marea-sp:hello', v: 3 } } as MessageEvent);
     expect(posted).toEqual([]);
+    // Marcador antiguo (sin versión): no se conecta y avisa de volver a arrastrarlo.
     handleBridgeMessage({ origin: SITE, source: sp, data: { type: 'marea-sp:hello' } } as MessageEvent);
+    expect(posted).toEqual([]);
+    expect(sharePointState().error).toMatch(/versión anterior/);
+    handleBridgeMessage({ origin: SITE, source: sp, data: { type: 'marea-sp:hello', v: 3 } } as MessageEvent);
     expect(posted).toEqual([{ type: 'marea-sp:ready' }]);
 
     const going = openFolder('/sites/E/Shared Documents/B');
@@ -192,7 +196,7 @@ describe('SharePoint: carpeta guardada antes de conectar', () => {
     expect(showFolder({ id: '1', name: 'Entregas', url: 'https://otro.sharepoint.com/sites/E/Shared%20Documents/Entregas' })).toBe(true);
     expect(sharePointState().waitingFor).toMatchObject({ name: 'Entregas', path: '/sites/E/Shared Documents/Entregas' });
     const ORIGIN = 'https://otro.sharepoint.com';
-    handleBridgeMessage({ origin: ORIGIN, source: sp, data: { type: 'marea-sp:hello' } } as MessageEvent);
+    handleBridgeMessage({ origin: ORIGIN, source: sp, data: { type: 'marea-sp:hello', v: 3 } } as MessageEvent);
     handleBridgeMessage({ origin: ORIGIN, source: sp, data: { type: 'marea-sp:folder', path: '/sites/E/Shared Documents', site: '/sites/E',
       url: `${ORIGIN}/sites/E/Shared%20Documents`, entries: [] } } as MessageEvent);
     expect(sharePointState().waitingFor).toBeNull();

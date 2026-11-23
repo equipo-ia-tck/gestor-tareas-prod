@@ -91,7 +91,8 @@ function bridge(app: string) {
   let started = false;
   const opener = window.opener && !window.opener.closed ? window.opener as Window : null;
   const sayHello = () => {
-    for (const w of [opener, win]) { if (w) { try { w.postMessage({ type: 'marea-sp:hello' }, app); } catch { /* aún cargando */ } } }
+    // v: versión del marcador. Marea avisa si es antigua (el código de un marcador no se actualiza solo).
+    for (const w of [opener, win]) { if (w) { try { w.postMessage({ type: 'marea-sp:hello', v: 3 }, app); } catch { /* aún cargando */ } } }
   };
   const openMarea = () => {
     if (started || win) return;
@@ -148,6 +149,9 @@ function bridge(app: string) {
   }
   window.addEventListener('message', onMessage);
 }
+
+/** Versión del marcador que espera Marea (la misma que manda `bridge` en su «hola»). */
+export const BRIDGE_VERSION = 3;
 
 /** Código que ejecuta el marcador para esta instancia de Marea (`app` = su dirección). */
 export const bookmarkletCode = (app: string) => `(${bridge.toString()})(${JSON.stringify(app)});`;

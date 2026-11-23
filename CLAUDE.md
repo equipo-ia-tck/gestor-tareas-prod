@@ -1009,6 +1009,10 @@ de proveedor externo). Son documentos del cliente, así que **nada de su conteni
   origen de Marea; si no contesta en 2,5 s abre Marea en otra) y, al llegar su primera carpeta, se abre la pedida. El puente
   lee cualquier sitio (`/sites/…` o `/teams/…`) del mismo dominio de SharePoint, con la sesión de la persona. Si SharePoint
   bloquea los marcadores, el código se pega en la consola.
+- **Versión del marcador** (`BRIDGE_VERSION`, `v` en el «hola»): el código de un marcador se queda como estaba al
+  arrastrarlo, así que Marea no se conecta con uno antiguo y pide volver a arrastrarlo (`OLD_BOOKMARKLET`). Si se cambia
+  el protocolo del puente, hay que subir la versión en los dos sitios. El marcador lleva dentro la dirección de Marea desde
+  la que se arrastró: en producción hay que arrastrarlo desde la app publicada.
 
 ### Más adelante
 
