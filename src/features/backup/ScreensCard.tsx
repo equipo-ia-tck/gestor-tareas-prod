@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Eye, EyeOff, LayoutGrid, RotateCcw } from 'lucide-react';
 import { useToast } from '../../components/Toast';
 import { sync, useSync, type AdminUser } from '../../data/sync';
-import { SCREENS } from '../../domain/screens';
+import { HIDDEN_FOR_ALL, SCREENS } from '../../domain/screens';
 
 const button = 'inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2 py-0.5 text-xs hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800';
 
@@ -66,6 +66,11 @@ export function ScreensCard() {
         abrirla, pero no cambia qué datos ve nadie. Hoy y Ajustes siempre se ven. La fila «Por defecto» vale para las cuentas nuevas y para las
         que no tienen las suyas. Los cambios le llegan a cada persona en menos de un minuto.
       </p>
+      {HIDDEN_FOR_ALL.length > 0 && (
+        <p className="mb-3 rounded-md bg-zinc-100 px-2 py-1 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+          Apagadas para todo el mundo desde el código, digan lo que digan estas casillas: {SCREENS.filter((s) => HIDDEN_FOR_ALL.includes(s.id)).map((s) => s.label).join(', ')}.
+        </p>
+      )}
       {error && <p className="mb-3 rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-800 dark:bg-amber-950/50 dark:text-amber-200">{error}</p>}
       <div className="overflow-x-auto">
         <table className="w-full min-w-[760px] text-sm">
