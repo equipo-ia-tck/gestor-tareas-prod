@@ -139,3 +139,17 @@ export function breadcrumbs(path: string, site: string): { name: string; path: s
   const rest = path.slice(site.length + 1).split('/').filter(Boolean);
   return rest.map((name, i) => ({ name, path: `${site}/${rest.slice(0, i + 1).join('/')}` }));
 }
+
+/**
+ * Dónde está la carpeta de un enlace guardado: el dominio de SharePoint y la ruta («/sites/X/Shared Documents/Guías»),
+ * del parámetro `id` (o `RootFolder`) de la vista de biblioteca, de un enlace `/:f:/r/…` o de la propia ruta. Null si no se
+ * puede saber (p. ej. un enlace de compartir con código): entonces se abre en SharePoint.
+ */
+export function folderLocation(raw: string): { origin: string; path: string } | null {
+  if (!isSharePointUrl(raw)) return null;
+  const u = new URL(raw.trim());
+  let path = u.searchParams.get('id') ?? u.searchParams.get('RootFolder') ?? safeDecode(u.pathname);
+  path = path.replace(/^\/:[a-z]:\/r(?=\/)/i, '').replace(/\/Forms\/[^/]+\.aspx$/i, '').replace(/\/[^/]+\.aspx$/i, '').replace(/\/+$/, '');
+  if (!/^\/(sites|teams)\/[^/]+\/.+/i.test(path) || path.includes('..')) return null;
+  return { origin: u.origin, path };
+}

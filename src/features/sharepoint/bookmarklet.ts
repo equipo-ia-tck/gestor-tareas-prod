@@ -43,15 +43,17 @@ function bridge(app: string) {
     say('Abre una carpeta de una biblioteca de documentos de SharePoint y vuelve a pulsar el marcador.', true);
     return;
   }
-  const site = (/^\/(sites|teams)\/[^/]+/i.exec(path) as RegExpExecArray)[0];
-  const web = location.origin + site;
+  // Sitio de una ruta («/sites/X»): las llamadas van a su API. Solo este SharePoint (el mismo dominio) y con la sesión de la
+  // persona, así que solo se ve lo que ella ya puede ver.
+  const siteOf = (p: string) => (/^\/(sites|teams)\/[^/]+/i.exec(p) as RegExpExecArray)[0];
   // Cada tramo codificado: un nombre con # o ? no rompe el enlace.
   const link = (serverRelative: string) => location.origin + serverRelative.split('/').map(encodeURIComponent).join('/');
-  // Solo se lee dentro del sitio de la carpeta en la que se pulsó el marcador.
-  const inSite = (p: unknown): p is string => typeof p === 'string' && p.indexOf(site + '/') === 0 && p.indexOf('..') < 0 && p.length < 1000;
+  const inSite = (p: unknown): p is string => typeof p === 'string' && /^\/(sites|teams)\/[^/]+\/.+/i.test(p) && p.indexOf('..') < 0 && p.length < 1000;
   const at = (p: string) => "@u='" + encodeURIComponent(p.replace(/'/g, "''")) + "'";
 
   async function read(folder: string) {
+    const site = siteOf(folder);
+    const web = location.origin + site;
     const sel = '$select=Name,ServerRelativeUrl,ItemCount,TimeLastModified,Length';
     const q = (part: string) => web + '/_api/web/GetFolderByServerRelativePath(decodedurl=@u)/' + part + '?' + sel + '&$top=' + (MAX + 1) + '&' + at(folder);
     const get = async (url: string) => {
@@ -73,7 +75,7 @@ function bridge(app: string) {
   const MAX_FILE = 20 * 1024 * 1024;
   async function file(p: string) {
     if (!PREVIEW.test(p)) throw new Error('Solo se pueden ver aquí PDF e imágenes.');
-    const r = await fetch(web + '/_api/web/GetFileByServerRelativePath(decodedurl=@u)/$value?' + at(p), { credentials: 'include' });
+    const r = await fetch(location.origin + siteOf(p) + '/_api/web/GetFileByServerRelativePath(decodedurl=@u)/$value?' + at(p), { credentials: 'include' });
     if (!r.ok) throw new Error('SharePoint respondió ' + r.status + ' al abrir el archivo.');
     const size = Number(r.headers.get('content-length') || 0);
     if (size > MAX_FILE) throw new Error('El archivo pesa más de 20 MB: ábrelo en SharePoint.');
@@ -82,11 +84,24 @@ function bridge(app: string) {
     return buffer;
   }
 
-  const win = window.open(app + '/#/sharepoint', 'marea-sharepoint');
-  if (!win) { say('El navegador ha bloqueado la ventana de Marea: permite las ventanas emergentes de esta página y vuelve a pulsar.', true); return; }
-  say('Abriendo Marea… (inicia sesión si te lo pide)');
+  // Si esta pestaña la abrió Marea («Conectar» o una carpeta guardada), se habla con esa misma pestaña de Marea; si no
+  // contesta en unos segundos (o no hay), se abre Marea en otra. postMessage con el origen de Marea: si la pestaña que
+  // abrió esta no es Marea, el mensaje no le llega.
+  let win: Window | null = null;
   let started = false;
-  const hello = setInterval(() => { try { win.postMessage({ type: 'marea-sp:hello' }, app); } catch { /* aún cargando */ } }, 700);
+  const opener = window.opener && !window.opener.closed ? window.opener as Window : null;
+  const sayHello = () => {
+    for (const w of [opener, win]) { if (w) { try { w.postMessage({ type: 'marea-sp:hello' }, app); } catch { /* aún cargando */ } } }
+  };
+  const openMarea = () => {
+    if (started || win) return;
+    win = window.open(app + '/#/sharepoint', 'marea-sharepoint');
+    if (!win) say('El navegador ha bloqueado la ventana de Marea: permite las ventanas emergentes de esta página y vuelve a pulsar.', true);
+    else say('Abriendo Marea… (inicia sesión si te lo pide)');
+  };
+  if (opener) { say('Conectando con Marea…'); setTimeout(openMarea, 2500); } else openMarea();
+  sayHello();
+  const hello = setInterval(sayHello, 700);
   const giveUp = setTimeout(() => {
     clearInterval(hello);
     if (!started) { window.removeEventListener('message', onMessage); say('Marea no ha contestado. ¿Has iniciado sesión? Vuelve a pulsar el marcador.', true); }
@@ -95,9 +110,10 @@ function bridge(app: string) {
   // Después del primer envío, esta pestaña hace de puente: Marea le pide otras carpetas del sitio o un archivo para verlo.
   async function onMessage(e: MessageEvent) {
     const data: Any = e.data;
-    if (e.origin !== app || e.source !== win || !data) return;
-    if (data.type === 'marea-sp:ready' && !started) {
+    if (e.origin !== app || !data) return;
+    if (data.type === 'marea-sp:ready' && !started && e.source && (e.source === opener || e.source === win)) {
       started = true;
+      win = e.source as Window;
       clearInterval(hello);
       clearTimeout(giveUp);
       try {
@@ -111,7 +127,8 @@ function bridge(app: string) {
       }
       return;
     }
-    if (!started) return;
+    // Después, solo atiende a la pestaña de Marea con la que se ha conectado.
+    if (!started || e.source !== win) return;
     if (data.type === 'marea-sp:list') {
       try {
         if (!inSite(data.path)) throw new Error('Esa carpeta no es de este sitio de SharePoint.');

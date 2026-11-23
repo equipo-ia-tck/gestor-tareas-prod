@@ -1,13 +1,20 @@
 import { useSyncExternalStore } from 'react';
-import { isSharePointOrigin, parseSnapshot, type SharePointSnapshot } from '../../domain/sharepoint';
+import { folderLocation, isSharePointOrigin, parseSnapshot, type SharePointFolder, type SharePointSnapshot } from '../../domain/sharepoint';
 
 /**
  * Lo que manda el marcador, **solo en memoria** de esta pestaña (a propósito: son datos de CaixaBank). No se guarda en
  * Supabase, IndexedDB ni localStorage; al recargar o cerrar la pestaña desaparece. Mientras la pestaña de SharePoint del
  * marcador siga abierta, hace de puente: se le piden otras carpetas (navegar) y PDF o imágenes (vista previa).
  */
-interface State { snapshot: SharePointSnapshot | null; error: string | null; loading: boolean; connected: boolean }
-let state: State = { snapshot: null, error: null, loading: false, connected: false };
+interface State {
+  snapshot: SharePointSnapshot | null;
+  error: string | null;
+  loading: boolean;
+  connected: boolean;
+  /** Carpeta guardada que se quiere ver y espera a que se conecte el puente. */
+  waitingFor: (SharePointFolder & { origin: string; path: string }) | null;
+}
+let state: State = { snapshot: null, error: null, loading: false, connected: false, waitingFor: null };
 const listeners = new Set<() => void>();
 const set = (patch: Partial<State>) => { state = { ...state, ...patch }; for (const l of listeners) l(); };
 const subscribe = (l: () => void) => { listeners.add(l); return () => { listeners.delete(l); }; };
@@ -48,6 +55,33 @@ export async function openFolder(path: string) {
   }
 }
 
+/**
+ * Ver una carpeta guardada dentro de Marea. Con el puente conectado a ese SharePoint, se abre al momento; si no, queda
+ * esperando (`waitingFor`) y se abre sola en cuanto se pulsa el marcador. Devuelve false si el enlace no dice qué carpeta
+ * es (entonces se abre en SharePoint).
+ */
+export function showFolder(folder: SharePointFolder): boolean {
+  const where = folderLocation(folder.url);
+  if (!where) return false;
+  if (bridge && !bridge.win.closed && bridge.origin === where.origin) {
+    set({ waitingFor: null });
+    void openFolder(where.path);
+  } else {
+    set({ waitingFor: { ...folder, ...where }, error: null });
+  }
+  return true;
+}
+
+/**
+ * «Conectar»: abre la carpeta en SharePoint en otra pestaña **sin** cortar el enlace con esta (sin `noopener`), para que el
+ * marcador, al pulsarlo allí, hable con esta misma pestaña de Marea y no abra otra.
+ */
+export function openForBridge(url: string) {
+  window.open(url, '_blank');
+}
+
+export const cancelWaiting = () => set({ waitingFor: null });
+
 /** Un PDF o una imagen, como `blob:` de esta pestaña (quien lo pide revoca la URL al cerrar la vista previa). */
 export async function loadFile(path: string, type: string, maxBytes: number): Promise<string> {
   const buffer = await ask<ArrayBuffer>({ type: 'marea-sp:file', path }, 60000);
@@ -73,8 +107,15 @@ export function handleBridgeMessage(e: MessageEvent) {
     const snap = parseSnapshot(e.data);
     settle(() => {
       if (pending) { if (snap) pending.resolve(snap); else pending.reject(new Error('Lo que ha llegado de SharePoint no es válido.')); }
-      else if (snap) setSnapshot(snap);
-      else setSnapshotError('Lo que ha llegado de SharePoint no es válido.');
+      else if (snap) {
+        setSnapshot(snap);
+        // Se había pedido una carpeta guardada: en cuanto conecta el puente, se abre esa.
+        const want = state.waitingFor;
+        if (want && bridge && want.origin === bridge.origin) {
+          set({ waitingFor: null });
+          if (want.path !== snap.path) void openFolder(want.path);
+        }
+      } else setSnapshotError('Lo que ha llegado de SharePoint no es válido.');
     });
   } else if (data.type === 'marea-sp:filedata' && pending) {
     settle(() => pending.resolve(data.buffer));

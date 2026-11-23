@@ -10,7 +10,8 @@ import { fold } from '../../domain/text';
 import { track } from '../usage/track';
 import { bookmarkletCode, bookmarkletHref } from './bookmarklet';
 import { foldersOf, newFolder, saveFolders } from './folders';
-import { handleBridgeMessage, loadFile, openFolder, setSnapshot, useSharePointSnapshot } from './sharepointStore';
+import { cancelWaiting, handleBridgeMessage, loadFile, openFolder, openForBridge, setSnapshot, showFolder, useSharePointSnapshot } from './sharepointStore';
+import { navigate } from '../../app/router';
 
 const card = 'rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900';
 const title = 'mb-3 flex items-center gap-2 text-sm font-semibold';
@@ -124,6 +125,17 @@ export function AddFolder({ projectId: fixedProject, compact = false }: { projec
   );
 }
 
+/**
+ * Pulsar una carpeta guardada: se ve dentro de Marea (al momento si ya está conectado el marcador; si no, con los pasos
+ * para conectar). Si el enlace no dice qué carpeta es, se abre en SharePoint.
+ */
+export function openSaved(folder: SharePointFolder) {
+  track('sharepoint', 'open');
+  if (!showFolder(folder)) { window.open(folder.url, '_blank', 'noopener,noreferrer'); return; }
+  navigate({ view: 'sharepoint' });
+  setTimeout(() => document.getElementById('sp-contents')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+}
+
 export function FolderRow({ folder, projectId }: { folder: SharePointFolder; projectId: string | null }) {
   const { projects, settings } = useApp();
   const [editing, setEditing] = useState(false);
@@ -148,8 +160,8 @@ export function FolderRow({ folder, projectId }: { folder: SharePointFolder; pro
           onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { setName(folder.name); setEditing(false); } }}
           className={`${inputClass} flex-1 py-0.5`} />
       ) : (
-        <a href={folder.url} target="_blank" rel="noopener noreferrer" onClick={() => track('sharepoint', 'open')}
-          className="min-w-0 flex-1 truncate font-medium hover:underline" title={folder.url}>{folder.name}</a>
+        <button type="button" onClick={() => openSaved(folder)} title="Ver dentro de Marea"
+          className="min-w-0 flex-1 truncate text-left font-medium hover:underline">{folder.name}</button>
       )}
       <span className="hidden shrink-0 text-xs text-zinc-400 sm:inline">{where}</span>
       <span className="flex shrink-0 gap-0.5 opacity-60 group-hover:opacity-100">
@@ -167,7 +179,7 @@ export function FolderRow({ folder, projectId }: { folder: SharePointFolder; pro
 // ───────────────────────────── Contenido (marcador) ─────────────────────────────
 
 function FolderContents() {
-  const { snapshot, error, loading, connected } = useSharePointSnapshot();
+  const { snapshot, error, loading, connected, waitingFor } = useSharePointSnapshot();
   const { projects, settings, today } = useApp();
   const [q, setQ] = useState('');
   const [saved, setSaved] = useState(false);
@@ -189,9 +201,10 @@ function FolderContents() {
   const go = (path: string) => { track('sharepoint', 'navigate'); void openFolder(path); };
 
   return (
-    <section className={card}>
+    <section id="sp-contents" className={card}>
       <h2 className={title}><Bookmark className="size-4 text-[var(--marc)]" />Ver lo que hay en una carpeta</h2>
-      {!snapshot && <BookmarkletSetup />}
+      {waitingFor && <ConnectFirst folder={waitingFor} />}
+      {!snapshot && !waitingFor && <BookmarkletSetup />}
       {error && <p className="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{error}</p>}
       {snapshot && (
         <div>
@@ -270,6 +283,30 @@ function FolderContents() {
   );
 }
 
+/** Se ha pedido una carpeta guardada y aún no hay puente con ese SharePoint: los pasos para conectar (una vez). */
+function ConnectFirst({ folder }: { folder: SharePointFolder }) {
+  return (
+    <div className="mb-4 rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-sm dark:border-indigo-900 dark:bg-indigo-950/40">
+      <p className="mb-2 font-semibold">Para ver «{folder.name}» aquí, conecta con SharePoint (una vez por sesión):</p>
+      <ol className="mb-3 list-decimal space-y-1 pl-5">
+        <li>
+          <button type="button" onClick={() => openForBridge(folder.url)}
+            className="inline-flex items-center gap-1 rounded-md bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-indigo-700">
+            <ExternalLink className="size-3.5" />Abrir «{folder.name}» en SharePoint
+          </button>
+        </li>
+        <li>En esa pestaña, pulsa el marcador <b>Marea · Carpeta</b> de tu barra de marcadores (si no sale el aviso azul abajo a la derecha, mira «¿Aún no tienes el marcador?»: se puede pegar en la consola).</li>
+        <li>La carpeta aparece aquí sola. Deja abierta la pestaña de SharePoint: así las demás carpetas se abren aquí directamente.</li>
+      </ol>
+      <details className="text-xs text-zinc-600 dark:text-zinc-300">
+        <summary className="cursor-pointer">¿Aún no tienes el marcador?</summary>
+        <div className="mt-2"><BookmarkletSetup /></div>
+      </details>
+      <button type="button" onClick={cancelWaiting} className="mt-2 text-xs text-zinc-500 underline">Cancelar</button>
+    </div>
+  );
+}
+
 /**
  * Vista previa de un PDF o una imagen dentro de Marea: el archivo llega del puente y vive solo como `blob:` de esta pestaña;
  * al cerrar la vista previa (o cambiar de archivo) se libera.
@@ -332,7 +369,11 @@ function BookmarkletSetup() {
           className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 dark:border-zinc-600 dark:hover:bg-zinc-800">
           {copied ? <Check className="size-4" /> : <Copy className="size-4" />}{copied ? 'Copiado' : 'Copiar el código'}
         </button>
-        <span className="text-xs text-zinc-500">Si la página no deja usar marcadores, pega el código en la consola (F12) estando en la carpeta.</span>
+        <span className="text-xs text-zinc-500">
+          <b>Si al pulsarlo no sale nada</b> (abajo a la derecha tiene que aparecer un aviso azul «Marea · …»), SharePoint está
+          bloqueando los marcadores: pulsa «Copiar el código» y, en la pestaña de SharePoint, abre la consola (⌥⌘J en Chrome,
+          F12 en Windows), pégalo y pulsa Enter. Chrome puede pedirte que escribas «allow pasting» la primera vez.
+        </span>
       </div>
       <p className="mt-2 text-xs text-zinc-500">El marcador lee con tu sesión nombres, fechas y tamaños de las carpetas de ese sitio. Solo trae un archivo cuando pides verlo (PDF o imagen, hasta 20 MB), y se queda en esta pestaña sin guardarse.</p>
     </div>

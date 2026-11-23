@@ -1001,6 +1001,14 @@ de proveedor externo). Son documentos del cliente, así que **nada de su conteni
   PowerPoint se siguen abriendo en SharePoint (Office web no se deja incrustar; el inicio de sesión de Microsoft responde
   `X-Frame-Options: DENY`). **Pendiente**: el visto bueno de José a la vista previa (trae contenido de documentos de
   CaixaBank a la pestaña) antes de pasarla a `main`.
+- **Carpetas guardadas dentro de Marea** (misma rama): pulsar un acceso (pantalla o fila «Carpetas» del proyecto,
+  `openSaved`) lo enseña en Marea. `folderLocation` saca dominio y ruta del enlace (`?id=`, `/:f:/r/…` o la ruta; los enlaces
+  de compartir con código no se pueden: se abren en SharePoint). Con puente de ese dominio, `openFolder` al momento; si no,
+  `waitingFor` y la tarjeta «Conecta con SharePoint»: «Abrir en SharePoint» abre la carpeta **sin `noopener`**
+  (`openForBridge`) para que el marcador, pulsado allí, hable con esta misma pestaña (`window.opener`, con `postMessage` al
+  origen de Marea; si no contesta en 2,5 s abre Marea en otra) y, al llegar su primera carpeta, se abre la pedida. El puente
+  lee cualquier sitio (`/sites/…` o `/teams/…`) del mismo dominio de SharePoint, con la sesión de la persona. Si SharePoint
+  bloquea los marcadores, el código se pega en la consola.
 
 ### Más adelante
 

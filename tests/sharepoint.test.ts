@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { breadcrumbs, fileSize, folderNameFromUrl, isSharePointOrigin, isSharePointUrl, parseSnapshot, previewType } from '../src/domain/sharepoint';
-import { handleBridgeMessage, openFolder, sharePointState } from '../src/features/sharepoint/sharepointStore';
+import { breadcrumbs, fileSize, folderLocation, folderNameFromUrl, isSharePointOrigin, isSharePointUrl, parseSnapshot, previewType } from '../src/domain/sharepoint';
+import { handleBridgeMessage, openFolder, sharePointState, showFolder } from '../src/features/sharepoint/sharepointStore';
 import { bookmarkletCode } from '../src/features/sharepoint/bookmarklet';
 import { newFolder } from '../src/features/sharepoint/folders';
 
@@ -47,6 +47,14 @@ describe('SharePoint: enlaces', () => {
     expect(fileSize(2048)).toBe('2 KB');
   });
 
+  it('saca la carpeta de un enlace guardado', () => {
+    expect(folderLocation(LIB)).toEqual({ origin: SITE, path: '/sites/Etiquetado/Shared Documents/Guías/App' });
+    expect(folderLocation(`${SITE}/sites/Etiquetado/Shared%20Documents/Gu%C3%ADas`)).toEqual({ origin: SITE, path: '/sites/Etiquetado/Shared Documents/Guías' });
+    expect(folderLocation(`${SITE}/:f:/r/sites/Etiquetado/Shared%20Documents/Entregas?csf=1&web=1`)).toEqual({ origin: SITE, path: '/sites/Etiquetado/Shared Documents/Entregas' });
+    expect(folderLocation(`${SITE}/:f:/s/Etiquetado/EabcdEFG123`)).toBeNull(); // enlace de compartir con código
+    expect(folderLocation('https://otra.com/sites/x/y')).toBeNull();
+  });
+
   it('migas de pan desde la biblioteca y qué se puede ver dentro', () => {
     expect(breadcrumbs('/sites/E/Shared Documents/Guías/App', '/sites/E').map((c) => c.name)).toEqual(['Shared Documents', 'Guías', 'App']);
     expect(breadcrumbs('/sites/E/Shared Documents/Guías', '/sites/E')[1].path).toBe('/sites/E/Shared Documents/Guías');
@@ -58,7 +66,7 @@ describe('SharePoint: enlaces', () => {
 describe('SharePoint: marcador', () => {
   afterEach(() => { vi.useRealTimers(); });
 
-  function run(href: string, folders: unknown[], files: unknown[]) {
+  function run(href: string, folders: unknown[], files: unknown[], withOpener = false) {
     vi.useFakeTimers();
     const app = 'https://marea.example';
     const sent: { msg: Record<string, unknown>; origin: string }[] = [];
@@ -67,6 +75,7 @@ describe('SharePoint: marcador', () => {
     const marea = { postMessage: (msg: Record<string, unknown>, origin: string) => sent.push({ msg, origin }) };
     const opened: string[] = [];
     const win = {
+      opener: withOpener ? marea : null,
       open: (url: string) => { opened.push(url); return marea; },
       addEventListener: (_: string, fn: (e: unknown) => void) => { listener = fn; },
       removeEventListener: () => { listener = null; },
@@ -113,9 +122,14 @@ describe('SharePoint: marcador', () => {
     r.send({ type: 'marea-sp:list', path: '/sites/Etiquetado/Shared Documents/Guías', request: 7 });
     await vi.runAllTimersAsync();
     expect(r.sent.at(-1)!.msg).toMatchObject({ type: 'marea-sp:folder', request: 7, path: '/sites/Etiquetado/Shared Documents/Guías' });
+    // Otro sitio del mismo SharePoint, sí (con la sesión de la persona); una ruta que no es de un sitio, no.
     r.send({ type: 'marea-sp:list', path: '/sites/Otro/Shared Documents', request: 8 });
     await vi.runAllTimersAsync();
-    expect(r.sent.at(-1)!.msg).toMatchObject({ type: 'marea-sp:error', request: 8 });
+    expect(r.sent.at(-1)!.msg).toMatchObject({ type: 'marea-sp:folder', request: 8, site: '/sites/Otro' });
+    expect(r.requests.at(-1)).toContain('https://caixa.sharepoint.com/sites/Otro/_api/');
+    r.send({ type: 'marea-sp:list', path: '/_layouts/../x', request: 12 });
+    await vi.runAllTimersAsync();
+    expect(r.sent.at(-1)!.msg).toMatchObject({ type: 'marea-sp:error', request: 12 });
     const before = r.sent.length;
     r.send({ type: 'marea-sp:list', path: '/sites/Etiquetado/x', request: 9 }, {}, 'https://evil.com');
     await vi.runAllTimersAsync();
@@ -129,6 +143,15 @@ describe('SharePoint: marcador', () => {
     r.send({ type: 'marea-sp:file', path: '/sites/Etiquetado/Shared Documents/a.docx', request: 11 });
     await vi.runAllTimersAsync();
     expect(r.sent.at(-1)!.msg).toMatchObject({ type: 'marea-sp:error', request: 11 });
+  });
+
+  it('si la pestaña la abrió Marea, habla con esa pestaña y no abre otra', async () => {
+    const r = run(LIB, [], [], true);
+    expect(r.opened).toEqual([]);
+    r.reply();
+    await vi.runAllTimersAsync();
+    expect(r.opened).toEqual([]);
+    expect(r.sent.some((x) => x.msg.type === 'marea-sp:folder')).toBe(true);
   });
 
   it('fuera de una biblioteca no lee nada ni abre Marea', () => {
@@ -158,5 +181,23 @@ describe('SharePoint: Marea habla con el puente', () => {
     handleBridgeMessage({ origin: SITE, source: sp, data: answer } as MessageEvent);
     await going;
     expect(sharePointState()).toMatchObject({ loading: false, error: null, connected: true, snapshot: { path: '/sites/E/Shared Documents/B', site: '/sites/E' } });
+  });
+});
+
+describe('SharePoint: carpeta guardada antes de conectar', () => {
+  it('espera al marcador y, al conectar, abre la carpeta pedida', async () => {
+    const posted: { type: string; path?: string; request?: number }[] = [];
+    const sp = { closed: false, postMessage: (m: never) => posted.push(m) } as unknown as Window;
+    // Otro SharePoint: no hay puente con él, así que queda esperando.
+    expect(showFolder({ id: '1', name: 'Entregas', url: 'https://otro.sharepoint.com/sites/E/Shared%20Documents/Entregas' })).toBe(true);
+    expect(sharePointState().waitingFor).toMatchObject({ name: 'Entregas', path: '/sites/E/Shared Documents/Entregas' });
+    const ORIGIN = 'https://otro.sharepoint.com';
+    handleBridgeMessage({ origin: ORIGIN, source: sp, data: { type: 'marea-sp:hello' } } as MessageEvent);
+    handleBridgeMessage({ origin: ORIGIN, source: sp, data: { type: 'marea-sp:folder', path: '/sites/E/Shared Documents', site: '/sites/E',
+      url: `${ORIGIN}/sites/E/Shared%20Documents`, entries: [] } } as MessageEvent);
+    expect(sharePointState().waitingFor).toBeNull();
+    expect(posted.at(-1)).toMatchObject({ type: 'marea-sp:list', path: '/sites/E/Shared Documents/Entregas' });
+    // Un enlace de compartir con código no dice qué carpeta es: se abre en SharePoint.
+    expect(showFolder({ id: '2', name: 'x', url: `${ORIGIN}/:f:/s/E/EabcDEF` })).toBe(false);
   });
 });
