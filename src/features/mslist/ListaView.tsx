@@ -25,9 +25,10 @@ import { ViewHeader } from '../views/ViewHeader';
 import { bookmarkletCode, bookmarkletHref } from './bookmarklet';
 import { isOutdated, LATEST_EXTENSION, useExtension } from './extension';
 import {
-  currentItems, dropChange, extensionOk, forgetLista, isConnected, loadListaConfig, queueChange, saveListaConfig, setListUrl, useLista,
+  currentItems, dropChange, dropCreate, extensionOk, forgetLista, isConnected, loadListaConfig, queueChange, saveListaConfig, setListUrl, useLista,
 } from './listaStore';
 import { applyListStates } from './listaStates';
+import { FieldInput, NewListButtons } from './NewListItem';
 
 const STALE_MS = 24 * 60 * 60_000;
 const CATEGORY_COLOR: Record<string, string> = {
@@ -55,7 +56,7 @@ export function ListaView() {
   const extension = useExtension();
   const [setup, setSetup] = useState(false);
   useWideLayout(true);
-  const pending = lista.pending.length;
+  const pending = lista.pending.length + lista.creates.length;
   // Se vuelve a pintar cada 5 s para que «Conectado» se apague solo si se pierde la conexión.
   const [, setTick] = useState(0);
   useEffect(() => { const t = setInterval(() => setTick((n) => n + 1), 5000); return () => clearInterval(t); }, []);
@@ -83,6 +84,7 @@ export function ListaView() {
           : 'Trae una Microsoft List de SharePoint, sin Power Automate'}
         actions={(lista.snapshot || lista.listUrl) && (
           <>
+            {lista.snapshot && <NewListButtons fields={lista.snapshot.fields} />}
             {url && (
               /* Ventana con nombre: si la pestaña de SharePoint ya está abierta, se vuelve a ella en vez de abrir otra. */
               <a href={url} target="marea-sharepoint" rel="opener"
@@ -111,7 +113,7 @@ export function ListaView() {
       )}
       {extension && isOutdated(extension) && !setup && (
         <p className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-200">
-          Hay una versión nueva de la extensión «Marea · Lista» (trae las vistas de SharePoint).{' '}
+          Hay una versión nueva de la extensión «Marea · Lista» (necesaria para crear elementos nuevos).{' '}
           <button type="button" onClick={() => setSetup(true)} className="font-medium underline">Cómo actualizarla</button>
         </p>
       )}
@@ -459,6 +461,30 @@ function ListaItems() {
         {toAdd.length > 0 && <ActionButton icon={<Plus className="size-4" />} onClick={() => void add(toAdd)}>Crear {toAdd.length === 1 ? '1 tarea' : `${toAdd.length} tareas`}</ActionButton>}
       </div>
 
+      {lista.creates.length > 0 && (
+        <section className="mb-4 rounded-lg border border-indigo-200 bg-indigo-50/50 p-3 text-sm dark:border-indigo-900 dark:bg-indigo-950/30">
+          <p className="mb-1 font-semibold">Por crear en la lista ({lista.creates.length})</p>
+          <ul className="space-y-1">
+            {lista.creates.map((c) => {
+              const error = lista.errors[c.key];
+              return (
+                <li key={c.key} className="flex items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate">{c.values['Título']}</span>
+                  <span className={`text-xs ${error ? 'text-red-600' : 'text-zinc-500'}`} title={error}>{error ? `error: ${error}` : 'esperando conexión con SharePoint'}</span>
+                  <button type="button" onClick={() => { if (confirm(`¿No crear «${c.values['Título']}»?`)) dropCreate(c.key); }}
+                    className="rounded-md p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800" aria-label={`No crear ${c.values['Título']}`}>
+                    <X className="size-3.5" />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          {lista.creates.some((c) => lista.errors[c.key]) && (
+            <p className="mt-1 text-xs text-zinc-500">Los que fallan se reintentan solos con la siguiente lectura de la lista (cada 2 minutos), o quítalos con la ×.</p>
+          )}
+        </section>
+      )}
+
       {visible.length === 0 && (
         <p className="text-sm text-zinc-500">
           No hay elementos con estos filtros.{' '}
@@ -651,47 +677,4 @@ function ItemPanel({ item, original, fields, pendingKeys, errors, onClose }: {
       </footer>
     </aside>
   );
-}
-
-function FieldInput({ field: f, value, changed, onChange }: { field: MsListField; value: string; changed: boolean; onChange: (v: string) => void }) {
-  const cls = `${inputClass} py-1 ${changed ? 'border-amber-400 bg-amber-50 dark:border-amber-600 dark:bg-amber-950/40' : ''}`;
-  if (!f.editable) return <p className="rounded-md bg-zinc-50 px-2 py-1 whitespace-pre-wrap text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">{value || '—'}</p>;
-  if (f.type === 'Choice') {
-    const options = f.choices.includes(value) || !value ? f.choices : [value, ...f.choices];
-    return (
-      <select className={cls} value={value} onChange={(e) => onChange(e.target.value)}>
-        <option value="">—</option>
-        {options.map((c) => <option key={c} value={c}>{c}</option>)}
-      </select>
-    );
-  }
-  if (f.type === 'MultiChoice') {
-    const chosen = value ? value.split(/\s*,\s*/) : [];
-    return (
-      <div className={`${cls} flex flex-wrap gap-x-3 gap-y-1`}>
-        {f.choices.map((c) => (
-          <span key={c} className="inline-flex items-center gap-1">
-            <input type="checkbox" checked={chosen.includes(c)}
-              onChange={(e) => onChange((e.target.checked ? [...chosen, c] : chosen.filter((x) => x !== c)).filter((x) => f.choices.includes(x)).sort((a, b) => f.choices.indexOf(a) - f.choices.indexOf(b)).join(', '))} />
-            {c}
-          </span>
-        ))}
-      </div>
-    );
-  }
-  if (f.type === 'Boolean') {
-    return (
-      <select className={cls} value={value} onChange={(e) => onChange(e.target.value)}>
-        <option value="">—</option><option value="Sí">Sí</option><option value="No">No</option>
-      </select>
-    );
-  }
-  if (f.type === 'DateTime') {
-    return f.format === 'datetime'
-      ? <input type="datetime-local" className={cls} value={value.replace(' ', 'T')} onChange={(e) => onChange(e.target.value.replace('T', ' '))} />
-      : <input type="date" className={cls} value={value} onChange={(e) => onChange(e.target.value)} />;
-  }
-  if (f.type === 'Number' || f.type === 'Currency') return <input type="number" step="any" className={cls} value={value} onChange={(e) => onChange(e.target.value)} />;
-  if (f.type === 'Note') return <textarea rows={4} className={`${cls} resize-y`} value={value} onChange={(e) => onChange(e.target.value)} />;
-  return <input className={cls} value={value} onChange={(e) => onChange(e.target.value)} />;
 }

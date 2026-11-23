@@ -1,7 +1,8 @@
 import { useSyncExternalStore } from 'react';
 import type { MsListConfig } from '../../domain/msList';
 import {
-  addPending, remainingPending, withPending, type MsListChange, type MsListItem, type MsListResult, type MsListSnapshot,
+  addPending, changeKey, remainingPending, withPending, type MsListChange, type MsListCreate, type MsListItem, type MsListResult,
+  type MsListSnapshot,
 } from '../../domain/msListParse';
 
 /**
@@ -15,6 +16,7 @@ const CONFIG_KEY = 'gestor-tareas:lista-config';
 const ERRORS_KEY = 'gestor-tareas:lista-errors';
 const CONTACT_KEY = 'gestor-tareas:lista-contact';
 const URL_KEY = 'gestor-tareas:lista-url';
+const CREATES_KEY = 'gestor-tareas:lista-creates';
 const EXT_KEY = 'gestor-tareas:lista-ext';
 
 /** Cada cuánto se pide la lista entera al marcador conectado. */
@@ -37,6 +39,8 @@ function write(key: string, value: unknown) {
 export interface ListaState {
   snapshot: MsListSnapshot | null;
   pending: MsListChange[];
+  /** Elementos nuevos que aún no se han creado en SharePoint. */
+  creates: MsListCreate[];
   /** Errores de la última aplicación, por `changeKey`. */
   errors: Record<string, string>;
   /** Último «hola» del marcador (ms), en cualquier pestaña de Marea: si es reciente, los cambios se aplican solos. */
@@ -47,7 +51,7 @@ export interface ListaState {
   ext: { okAt: number; error: string | null };
 }
 
-const load = (): ListaState => ({ snapshot: read(SNAPSHOT_KEY, null), pending: read(PENDING_KEY, []), errors: read(ERRORS_KEY, {}), contactAt: read(CONTACT_KEY, 0),
+const load = (): ListaState => ({ snapshot: read(SNAPSHOT_KEY, null), pending: read(PENDING_KEY, []), creates: read(CREATES_KEY, []), errors: read(ERRORS_KEY, {}), contactAt: read(CONTACT_KEY, 0),
   listUrl: read(URL_KEY, null), ext: read(EXT_KEY, { okAt: 0, error: null }) });
 let state: ListaState = load();
 const listeners = new Set<() => void>();
@@ -55,6 +59,7 @@ function set(next: Partial<ListaState>) {
   state = { ...state, ...next };
   if ('snapshot' in next) write(SNAPSHOT_KEY, state.snapshot);
   if ('pending' in next) write(PENDING_KEY, state.pending);
+  if ('creates' in next) write(CREATES_KEY, state.creates);
   if ('errors' in next) write(ERRORS_KEY, state.errors);
   if ('contactAt' in next) write(CONTACT_KEY, state.contactAt);
   if ('listUrl' in next) write(URL_KEY, state.listUrl);
@@ -106,11 +111,52 @@ export function dropChange(key: string) {
   set({ pending: state.pending.filter((c) => `${c.id}|${c.field}` !== key), errors });
 }
 
-/** Lo que manda el marcador: la lista recién leída y cómo ha ido cada cambio. */
-export function receiveSnapshot(snapshot: MsListSnapshot, results: MsListResult[]) {
+/** Apunta un elemento nuevo para crearlo en la lista en cuanto haya conexión. */
+export function queueCreate(values: Record<string, string>, task: MsListCreate['task']): MsListCreate {
+  const create: MsListCreate = { key: `new:${crypto.randomUUID()}`, values, at: new Date().toISOString(), task };
+  set({ creates: [...state.creates, create] });
+  return create;
+}
+
+export function dropCreate(key: string) {
+  const errors = { ...state.errors };
+  delete errors[key];
+  set({ creates: state.creates.filter((c) => c.key !== key), errors });
+}
+
+/**
+ * Lo que se manda a SharePoint: las altas primero y después los cambios. Los que fallaron solo se reintentan con la
+ * relectura de la lista (`retry`), no cada pocos segundos.
+ */
+export function outgoing(s: ListaState = state, retry = false): unknown[] {
+  const ok = (key: string) => retry || !s.errors[key];
+  return [
+    ...s.creates.filter((c) => ok(c.key)).map((c) => ({ create: true, key: c.key, values: c.values })),
+    ...s.pending.filter((c) => ok(changeKey(c))),
+  ];
+}
+
+/** Elemento creado en SharePoint: el alta que lo pidió y su ID. */
+export interface Created { create: MsListCreate; id: string; skipped: string[] }
+
+/** Lo que manda el marcador o la extensión: la lista recién leída y cómo ha ido cada cambio. Devuelve las altas hechas. */
+export function receiveSnapshot(snapshot: MsListSnapshot, results: MsListResult[]): Created[] {
   const errors: Record<string, string> = {};
   for (const r of results) if (!r.ok) errors[r.key] = r.error ?? 'No se ha podido aplicar.';
-  set({ snapshot, pending: remainingPending(state.pending, snapshot.items, results), errors, listUrl: snapshot.url });
+  const created: Created[] = [];
+  for (const r of results) {
+    const create = state.creates.find((c) => c.key === r.key);
+    if (create && r.ok && r.id) created.push({ create, id: r.id, skipped: r.skipped ?? [] });
+  }
+  const done = new Set(created.map((c) => c.create.key));
+  set({
+    snapshot,
+    pending: remainingPending(state.pending, snapshot.items, results),
+    creates: state.creates.filter((c) => !done.has(c.key)),
+    errors,
+    listUrl: snapshot.url,
+  });
+  return created;
 }
 
 /** Lista que hay que sincronizar con la extensión. */
@@ -126,7 +172,7 @@ export function setExtStatus(error: string | null) {
 export const extensionOk = (s: ListaState = state, now = Date.now()) => !!s.listUrl && !s.ext.error && now - s.ext.okAt < 5 * 60_000;
 
 export function forgetLista() {
-  set({ snapshot: null, pending: [], errors: {}, listUrl: null, ext: { okAt: 0, error: null } });
+  set({ snapshot: null, pending: [], creates: [], errors: {}, listUrl: null, ext: { okAt: 0, error: null } });
 }
 
 export function loadListaConfig(): MsListConfig {

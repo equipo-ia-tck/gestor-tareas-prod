@@ -82,37 +82,76 @@ export async function spWork(listUrl: string, changes: Any[], wantList: boolean,
     return digestValue;
   };
 
+  /** Texto de Marea → valor de SharePoint según el tipo de columna (`verbose`: formato de las altas). */
+  const toSp = (f: Any, raw: Any, verbose: boolean): Any => {
+    const v = String(raw ?? '').trim();
+    if (v === '') return null;
+    const t = f.TypeAsString;
+    if (t === 'Number' || t === 'Currency') return Number(v.replace(',', '.'));
+    if (t === 'Boolean') return /^(s[ií]|true|1|yes)$/i.test(v);
+    if (t === 'MultiChoice') {
+      const list = v.split(/\s*,\s*/).filter(Boolean);
+      return verbose ? { __metadata: { type: 'Collection(Edm.String)' }, results: list } : list;
+    }
+    if (t === 'DateTime') return new Date(/\d:\d/.test(v) ? v.replace(' ', 'T') : v + 'T00:00:00').toISOString();
+    return v;
+  };
+  const fieldFor = (label: string) => (label === 'Título' ? fields.find((x) => x.InternalName === 'Title') : fields.find((x) => x.Title === label));
+  const spError = async (r: Response) => {
+    const body: Any = await r.json().catch(() => null);
+    const msg = body?.['odata.error']?.message?.value ?? body?.error?.message?.value;
+    return 'SharePoint ' + r.status + (msg ? ': ' + msg : '');
+  };
+
   const results: Any[] = [];
   if (changes.length) {
     say('Aplicando ' + changes.length + (changes.length === 1 ? ' cambio…' : ' cambios…'));
     const digest = await getDigest();
+    let entityType = '';
     for (const c of changes) {
+      // Alta de un elemento nuevo: { create: true, key: 'new:…', values: { columna: valor } }.
+      if (c.create) {
+        const key = String(c.key);
+        try {
+          if (!entityType) entityType = (await get(api('?$select=ListItemEntityTypeFullName'))).ListItemEntityTypeFullName;
+          const body: Any = { __metadata: { type: entityType } };
+          const skipped: string[] = [];
+          for (const label of Object.keys(c.values || {})) {
+            const f = fieldFor(label);
+            if (!f || EDIT.indexOf(f.TypeAsString) < 0) { skipped.push(label); continue; }
+            const val = toSp(f, c.values[label], true);
+            if (val !== null) body[f.InternalName] = val;
+          }
+          if (!body.Title) { results.push({ key, ok: false, error: 'Falta el título.' }); continue; }
+          const r = await fetch(api('/items'), {
+            method: 'POST',
+            credentials: 'include',
+            headers: { Accept: J, 'Content-Type': 'application/json;odata=verbose', 'X-RequestDigest': digest },
+            body: JSON.stringify(body),
+          });
+          if (!r.ok) { results.push({ key, ok: false, error: await spError(r) }); continue; }
+          const made: Any = await r.json();
+          results.push({ key, ok: true, id: String(made.Id ?? made.ID ?? ''), ...(skipped.length ? { skipped } : {}) });
+        } catch (e: Any) {
+          results.push({ key, ok: false, error: String(e?.message ?? e) });
+        }
+        continue;
+      }
       const key = c.id + '|' + c.field;
-      const f = c.field === 'Título' ? fields.find((x) => x.InternalName === 'Title') : fields.find((x) => x.Title === c.field);
+      const f = fieldFor(c.field);
       if (!f || EDIT.indexOf(f.TypeAsString) < 0 || !/^\d+$/.test(String(c.id))) {
         results.push({ key, ok: false, error: 'La columna «' + c.field + '» no se puede cambiar desde Marea.' });
         continue;
-      }
-      const v = String(c.value ?? '').trim();
-      let val: Any = v === '' ? null : v;
-      if (val !== null) {
-        if (f.TypeAsString === 'Number' || f.TypeAsString === 'Currency') val = Number(v.replace(',', '.'));
-        else if (f.TypeAsString === 'Boolean') val = /^(s[ií]|true|1|yes)$/i.test(v);
-        else if (f.TypeAsString === 'MultiChoice') val = v.split(/\s*,\s*/).filter(Boolean);
-        else if (f.TypeAsString === 'DateTime') val = new Date(/\d:\d/.test(v) ? v.replace(' ', 'T') : v + 'T00:00:00').toISOString();
       }
       try {
         const r = await fetch(api('/items(' + Number(c.id) + ')'), {
           method: 'POST',
           credentials: 'include',
           headers: { Accept: J, 'Content-Type': J, 'X-RequestDigest': digest, 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' },
-          body: JSON.stringify({ [f.InternalName]: val }),
+          body: JSON.stringify({ [f.InternalName]: toSp(f, c.value, false) }),
         });
         if (r.ok) results.push({ key, ok: true });
-        else {
-          const body: Any = await r.json().catch(() => null);
-          results.push({ key, ok: false, error: 'SharePoint ' + r.status + (body?.['odata.error']?.message?.value ? ': ' + body['odata.error'].message.value : '') });
-        }
+        else results.push({ key, ok: false, error: await spError(r) });
       } catch (e: Any) {
         results.push({ key, ok: false, error: String(e?.message ?? e) });
       }
@@ -182,6 +221,8 @@ export async function spWork(listUrl: string, changes: Any[], wantList: boolean,
         choices: f.Choices ?? [],
         editable: EDIT.indexOf(f.TypeAsString) >= 0,
         format: f.TypeAsString === 'DateTime' ? (f.DisplayFormat === 1 ? 'datetime' : 'date') : undefined,
+        required: f.Required === true,
+        defaultValue: f.DefaultValue == null ? null : String(f.DefaultValue),
       })),
       items: rows.map((it) => {
         const values: Record<string, string> = {};

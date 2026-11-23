@@ -1,7 +1,8 @@
 import { repo } from '../../data/services';
 import type { HistoryEntry, HistoryEvent } from '../../data/repository';
 import { LIST_CATEGORIES, listMoves, listPushes, statusValues, valueForCategory } from '../../domain/msList';
-import { currentItems, extensionOk, getListaState, isConnected, loadListaConfig, queueChange } from './listaStore';
+import { taskFromListItem } from '../../domain/msList';
+import { currentItems, extensionOk, getListaState, isConnected, loadListaConfig, queueChange, type Created } from './listaStore';
 
 let running = false;
 /** Mientras se aplican cambios que vienen de la lista, el historial no los vuelve a mandar. */
@@ -62,5 +63,33 @@ export async function pushToList(event: HistoryEvent, notify: (message: string) 
     notify(isConnected() || extensionOk()
       ? `Elemento ${id}: «${value}» se está poniendo en la lista`
       : `Elemento ${id}: «${value}» se pondrá en la lista en cuanto haya conexión (extensión o marcador «Marea · Lista»)`);
+  }
+}
+
+/**
+ * Después de crear elementos en SharePoint: las altas que lo pedían tienen ya su tarea de Marea enlazada (`LS-<id>`), en
+ * su proyecto. Avisa de cada elemento creado (y de las columnas que no se han podido rellenar).
+ */
+export async function afterCreated(created: Created[], notify: (message: string) => void) {
+  if (!created.length) return;
+  const s = getListaState();
+  const items = s.snapshot?.items ?? [];
+  const config = loadListaConfig();
+  const withTask = created.filter((c) => c.create.task);
+  if (withTask.length) {
+    const tasks = await repo.listTasks();
+    const linked = new Set(tasks.map((t) => t.external_id));
+    await repo.batch(withTask.length === 1 ? 'Tarea creada con el elemento nuevo de la lista' : `${withTask.length} tareas creadas con los elementos nuevos de la lista`, async () => {
+      for (const c of withTask) {
+        if (linked.has(`LS-${c.id}`)) continue;
+        const item = items.find((it) => it.id === c.id)
+          ?? { id: c.id, title: c.create.values['Título'] ?? `Elemento ${c.id}`, fields: {}, url: null, modified: null };
+        await repo.createTask(taskFromListItem(item, config, c.create.task!.projectId, s.snapshot?.title));
+      }
+    });
+    void applyListStates().catch(() => {});
+  }
+  for (const c of created) {
+    notify(`Creado en la lista: «${c.create.values['Título'] ?? c.id}» (elemento ${c.id})${c.skipped.length ? `. Sin rellenar: ${c.skipped.join(', ')}` : ''}`);
   }
 }

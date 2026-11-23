@@ -96,6 +96,7 @@ describe('Microsoft List: en el gestor', () => {
 function fakeSharePoint() {
   const merges: { url: string; body: unknown; headers: Record<string, string> }[] = [];
   const calls: string[] = [];
+  const creates: { body: Record<string, unknown>; headers: Record<string, string> }[] = [];
   const viewQueries: { query: { ViewXml: string } }[] = [];
   const fields = [
     { InternalName: 'Title', Title: 'Title', TypeAsString: 'Text', ReadOnlyField: false },
@@ -109,6 +110,11 @@ function fakeSharePoint() {
     calls.push(url);
     const json = (v: unknown) => new Response(JSON.stringify(v), { status: 200, headers: { 'content-type': 'application/json;odata=nometadata' } });
     if (url.endsWith('/_api/contextinfo')) return json({ FormDigestValue: 'digest-1' });
+    if (url.includes('$select=ListItemEntityTypeFullName')) return json({ ListItemEntityTypeFullName: 'SP.Data.ContratosListItem' });
+    if (init.method === 'POST' && /\/items\?/.test(url)) {
+      creates.push({ body: JSON.parse(init.body!), headers: init.headers! });
+      return json({ Id: 9 });
+    }
     if (init.method === 'POST' && /\/items\(\d+\)/.test(url)) {
       merges.push({ url, body: JSON.parse(init.body!), headers: init.headers! });
       return new Response(null, { status: 204 });
@@ -132,7 +138,7 @@ function fakeSharePoint() {
     if (url.includes('GetList(@u)?$select=Title')) return json({ Title: 'Contratos' });
     return new Response('no', { status: 404 });
   };
-  return { fetch, merges, calls, viewQueries };
+  return { fetch, merges, calls, viewQueries, creates };
 }
 
 describe('Microsoft List: el marcador', () => {
@@ -214,11 +220,11 @@ describe('Microsoft List: conexión con el marcador', () => {
     const { isConnected, wantsList, CONTACT_MS, LIST_EVERY_MS } = await import('../src/features/mslist/listaStore');
     const now = Date.parse('2026-11-23T10:00:00Z');
     const snapshot = { title: 'L', url: LIST, fields: [], items: [], views: [], at: new Date(now - 60_000).toISOString() };
-    expect(isConnected({ snapshot, pending: [], errors: {}, contactAt: now - 5000, listUrl: null, ext: { okAt: 0, error: null } }, now)).toBe(true);
-    expect(isConnected({ snapshot, pending: [], errors: {}, contactAt: now - CONTACT_MS - 1, listUrl: null, ext: { okAt: 0, error: null } }, now)).toBe(false);
-    expect(wantsList({ snapshot, pending: [], errors: {}, contactAt: 0, listUrl: null, ext: { okAt: 0, error: null } }, now)).toBe(false);
-    expect(wantsList({ snapshot, pending: [], errors: {}, contactAt: 0, listUrl: null, ext: { okAt: 0, error: null } }, now + LIST_EVERY_MS)).toBe(true);
-    expect(wantsList({ snapshot: null, pending: [], errors: {}, contactAt: 0, listUrl: null, ext: { okAt: 0, error: null } }, now)).toBe(true);
+    expect(isConnected({ snapshot, pending: [], creates: [], errors: {}, contactAt: now - 5000, listUrl: null, ext: { okAt: 0, error: null } }, now)).toBe(true);
+    expect(isConnected({ snapshot, pending: [], creates: [], errors: {}, contactAt: now - CONTACT_MS - 1, listUrl: null, ext: { okAt: 0, error: null } }, now)).toBe(false);
+    expect(wantsList({ snapshot, pending: [], creates: [], errors: {}, contactAt: 0, listUrl: null, ext: { okAt: 0, error: null } }, now)).toBe(false);
+    expect(wantsList({ snapshot, pending: [], creates: [], errors: {}, contactAt: 0, listUrl: null, ext: { okAt: 0, error: null } }, now + LIST_EVERY_MS)).toBe(true);
+    expect(wantsList({ snapshot: null, pending: [], creates: [], errors: {}, contactAt: 0, listUrl: null, ext: { okAt: 0, error: null } }, now)).toBe(true);
   });
 });
 
@@ -286,6 +292,24 @@ describe('Microsoft List: la extensión', () => {
     expect(ext.created).toEqual([{ url: LIST, active: false, pinned: true }]);
     expect(ext.injected).toEqual([[LIST, [], true]]);
     expect(parseSnapshot(r.list)!.title).toBe('Contratos');
+  });
+
+  it('crea elementos nuevos con su tipo de SharePoint; lo que no se puede rellenar se dice', async () => {
+    const sp = fakeSharePoint();
+    const ext = await background(sp.fetch);
+    const r = (await ext.ask({ type: 'marea-ext:sync', listUrl: LIST, wantList: false, changes: [
+      { create: true, key: 'new:a', values: { Título: 'Nuevo contrato', Estado: 'En curso', Horas: '1,5', Responsable: 'Ana' } },
+      { create: true, key: 'new:b', values: { Estado: 'Hecho' } },
+    ] }))!;
+    expect(r.results).toEqual([
+      { key: 'new:a', ok: true, id: '9', skipped: ['Responsable'] },
+      { key: 'new:b', ok: false, error: 'Falta el título.' },
+    ]);
+    expect(sp.creates).toHaveLength(1);
+    expect(sp.creates[0].body).toEqual({ __metadata: { type: 'SP.Data.ContratosListItem' }, Title: 'Nuevo contrato', Estado: 'En curso', Horas: 1.5 });
+    expect(sp.creates[0].headers['Content-Type']).toBe('application/json;odata=verbose');
+    // Después de un alta se relee la lista (para enseñarla ya con el elemento).
+    expect(r.list).not.toBeNull();
   });
 
   it('rechaza lo que no es de Marea o no es una lista de SharePoint', async () => {
@@ -360,4 +384,67 @@ it('la versión de la extensión que conoce Marea es la del manifiesto', async (
   expect(isOutdated(LATEST_EXTENSION)).toBe(false);
   expect(isOutdated('9.0.0')).toBe(false);
   expect(isOutdated(null)).toBe(false);
+});
+
+describe('Microsoft List: crear con petición', async () => {
+  const { parseListRequest } = await import('../src/domain/msListRequest');
+  const fields = [
+    { name: 'Title', label: 'Título', type: 'Text', choices: [], editable: true, required: true },
+    { name: 'Madre', label: 'Tarea madre', type: 'Choice', choices: ['MEJORAS MEDICION', 'BANKSY', 'CAMPAÑAS INTERNAS', 'INCIDENCIAS'], editable: true },
+    { name: 'Estado', label: 'Estado', type: 'Choice', choices: ['En curso', 'Dependencia', 'Backlog', 'Completada'], editable: true },
+    { name: 'Fecha', label: 'Fecha estimada', type: 'DateTime', choices: [], editable: true, format: 'date' as const },
+    { name: 'Equipo', label: 'Equipo responsable', type: 'MultiChoice', choices: ['Omniexperiencia', 'DS&A'], editable: true },
+    { name: 'Prio', label: 'Prioridad Tarea', type: 'Choice', choices: ['1', '2', '3', '4', '5'], editable: true },
+    { name: 'Coment', label: 'Comentarios o bloqueos', type: 'Note', choices: [], editable: true },
+    { name: 'Resp', label: 'Responsable', type: 'User', choices: [], editable: false },
+  ];
+  const today = '2026-11-23'; // lunes
+  const parse = (t: string) => parseListRequest(t, fields, today);
+
+  it('columna y valor, por su nombre o su primera palabra', () => {
+    expect(parse('crear Revisar etiquetado Imagin, estado en curso, prioridad 1, equipo responsable DS&A y Omniexperiencia, fecha estimada el viernes')).toEqual({
+      values: {
+        Título: 'Revisar etiquetado Imagin', Estado: 'En curso', 'Prioridad Tarea': '1',
+        'Equipo responsable': 'Omniexperiencia, DS&A', 'Fecha estimada': '2026-11-27',
+      },
+      unknown: [],
+    });
+  });
+
+  it('opciones sueltas, fecha suelta, título entre comillas y textos libres', () => {
+    expect(parse('"Medir campaña Navidad" banksy backlog para el 15 de diciembre comentarios o bloqueos: depende de la de Imagin, en PRE').values).toEqual({
+      Título: 'Medir campaña Navidad', 'Tarea madre': 'BANKSY', Estado: 'Backlog', 'Fecha estimada': '2026-12-15',
+      'Comentarios o bloqueos': 'depende de la de Imagin, en PRE',
+    });
+    expect(parse('nueva tarea Arreglar login incidencias').values).toEqual({ Título: 'Arreglar login', 'Tarea madre': 'INCIDENCIAS' });
+  });
+
+  it('lo que no encaja va a «no entendido»', () => {
+    const r = parse('Algo estado inventado responsable Ana');
+    expect(r.values).toEqual({ Título: 'Algo' });
+    expect(r.unknown).toEqual(['Estado inventado', 'Responsable Ana (no se puede rellenar desde Marea)']);
+  });
+});
+
+describe('Microsoft List: altas pendientes en Marea', () => {
+  it('se mandan antes que los cambios, se quitan al crearse y devuelven su ID', async () => {
+    const store = await import('../src/features/mslist/listaStore');
+    store.forgetLista();
+    const a = store.queueCreate({ Título: 'Uno', Estado: 'Backlog' }, { projectId: 'p1' });
+    const b = store.queueCreate({ Título: 'Dos' }, null);
+    store.queueChange('7', 'Estado', 'Hecho');
+    expect(store.outgoing()).toEqual([
+      { create: true, key: a.key, values: { Título: 'Uno', Estado: 'Backlog' } },
+      { create: true, key: b.key, values: { Título: 'Dos' } },
+      expect.objectContaining({ id: '7', field: 'Estado', value: 'Hecho' }),
+    ]);
+    const snapshot = { title: 'L', url: LIST, fields: [], views: [], at: new Date().toISOString(), items: [...items, item('9', 'Uno', { Estado: 'Backlog' })] };
+    const created = store.receiveSnapshot(snapshot, [{ key: a.key, ok: true, id: '9' }, { key: b.key, ok: false, error: 'Columna obligatoria' }]);
+    expect(created).toEqual([{ create: a, id: '9', skipped: [] }]);
+    expect(store.getListaState().creates).toEqual([b]);
+    // El que falló no se reintenta cada pocos segundos, solo con la relectura.
+    expect(store.outgoing().some((c) => (c as { key?: string }).key === b.key)).toBe(false);
+    expect(store.outgoing(store.getListaState(), true).some((c) => (c as { key?: string }).key === b.key)).toBe(true);
+    store.forgetLista();
+  });
 });

@@ -1026,6 +1026,16 @@ API de SharePoint no admite CORS, así que lo hace un **marcador del navegador**
   columna = o, distintas = y); **Agrupar** (plegable, en el orden de las opciones; por defecto, el de la vista) y
   **Ordenar** (por defecto, el de la vista o por ID; vacíos al final). Búsqueda por todas las palabras sin tildes. Se
   recuerdan en `lista-view`, `lista-filters`, `lista-group` y `lista-sort`. Las listas leídas antes no traen vistas.
+- **Crear elementos** («Nuevo elemento» y «Crear con petición» en la cabecera de la Lista; `NewListItem.tsx`): formulario
+  con el título y las columnas que se pueden rellenar (obligatorias con *, `required` y `defaultValue` de SharePoint en
+  `MsListField`), «Crear también la tarea en Marea» con proyecto, y pie Descartar · Crear y otro · Crear. Las altas van a
+  `lista-creates` (`MsListCreate`, clave `new:<uuid>`) y viajan con los cambios (`outgoing`: primero las altas, después los
+  cambios; los que fallaron solo con la relectura); `spWork` las crea con POST `/items` en `odata=verbose` con
+  `ListItemEntityTypeFullName` y devuelve el ID y las columnas que no ha podido rellenar (`skipped`). `receiveSnapshot`
+  devuelve las creadas y `afterCreated` crea su tarea enlazada (`LS-<id>`). «Por crear» se ve encima de la tabla (con la × se
+  quita). **Petición** (`domain/msListRequest.ts`, `parseListRequest`, sin IA): reconoce los nombres de las columnas (o su
+  primera palabra si es única) seguidos del valor, opciones sueltas que solo están en una columna, una fecha suelta si hay
+  una sola columna de fecha, y el título entre comillas o al principio; lo demás, «No entendido».
 - **Versión de la extensión**: al cambiar `spWork` o la extensión, sube `version` en `extension/manifest.json` y
   `LATEST_EXTENSION` en `features/mslist/extension.ts` (un test comprueba que coinciden); si la instalada es anterior, la
   pantalla Lista avisa y explica cómo actualizarla (descargar, sustituir la carpeta y recargar en `chrome://extensions`).

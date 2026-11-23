@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import type { MsListChange, MsListResult } from '../../domain/msListParse';
+import type { MsListResult } from '../../domain/msListParse';
 
 /**
  * La extensión de Chrome «Marea · Lista» (carpeta `extension/`): su `content.js` se mete en las páginas de Marea y
@@ -7,7 +7,7 @@ import type { MsListChange, MsListResult } from '../../domain/msListParse';
  */
 
 /** Versión de `extension/manifest.json` (un test comprueba que coinciden): si la instalada es anterior, se avisa. */
-export const LATEST_EXTENSION = '1.1.0';
+export const LATEST_EXTENSION = '1.2.0';
 
 /** ¿La versión instalada es anterior a la última? */
 export function isOutdated(installed: string | null): boolean {
@@ -48,7 +48,7 @@ const subscribe = (l: () => void) => { listeners.add(l); return () => { listener
 export const useExtension = () => useSyncExternalStore(subscribe, extensionVersion);
 
 /** Pide a la extensión aplicar los cambios y, si se aplica alguno o se pide, leer la lista. */
-export function extSync(listUrl: string, changes: MsListChange[], wantList: boolean): Promise<ExtResult> {
+export function extSync(listUrl: string, changes: unknown[], wantList: boolean): Promise<ExtResult> {
   const id = crypto.randomUUID();
   return new Promise((resolve) => {
     // Leer una lista grande o abrir la pestaña de SharePoint puede tardar.

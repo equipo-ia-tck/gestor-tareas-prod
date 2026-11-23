@@ -28,6 +28,10 @@ export interface MsListField {
   /** Si se puede cambiar desde el gestor (texto, opciones, números, fechas y sí/no; personas y búsquedas, no). */
   editable: boolean;
   format?: 'date' | 'datetime';
+  /** Obligatoria al crear (las listas leídas antes no lo traen). */
+  required?: boolean;
+  /** Valor por defecto de SharePoint al crear (p. ej. la primera opción de «Estado»). */
+  defaultValue?: string | null;
 }
 
 /** Una vista de la lista en SharePoint (las pestañas de arriba: «Seguimiento Track», «Todos los elementos»…). */
@@ -65,8 +69,19 @@ export interface MsListChange {
   at: string;
 }
 
-/** Resultado de aplicar un cambio, por `changeKey`. */
-export interface MsListResult { key: string; ok: boolean; error?: string }
+/** Resultado de aplicar un cambio, por `changeKey` (o `new:…` en las altas, con el ID que le ha dado SharePoint). */
+export interface MsListResult { key: string; ok: boolean; error?: string; id?: string; skipped?: string[] }
+
+/** Elemento nuevo que se creará en la lista la próxima vez que haya conexión. */
+export interface MsListCreate {
+  /** `new:<uuid>`: así se reconoce su resultado. */
+  key: string;
+  /** Nombre visible de la columna → valor («Título» para el título). */
+  values: Record<string, string>;
+  at: string;
+  /** Crear también la tarea de Marea enlazada, en este proyecto (null = Bandeja). */
+  task?: { projectId: string | null } | null;
+}
 
 /** Nombre del título en los cambios (el marcador busca la columna `Title`). */
 export const TITLE_FIELD = 'Título';
@@ -102,6 +117,8 @@ export function parseSnapshot(data: unknown): MsListSnapshot | null {
       choices: Array.isArray(o.choices) ? o.choices.slice(0, 200).map((c) => str(c, 200)).filter(Boolean) : [],
       editable: o.editable === true,
       ...(o.format === 'date' || o.format === 'datetime' ? { format: o.format } : {}),
+      ...(o.required === true ? { required: true } : {}),
+      ...(typeof o.defaultValue === 'string' && o.defaultValue ? { defaultValue: o.defaultValue.slice(0, 500) } : {}),
     });
   }
   const items: MsListItem[] = [];

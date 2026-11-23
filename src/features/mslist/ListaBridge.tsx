@@ -1,11 +1,24 @@
 import { useEffect } from 'react';
 import { useToast } from '../../components/Toast';
 import { repo } from '../../data/services';
-import { changeKey, isSharePointOrigin, parseSnapshot, type MsListResult } from '../../domain/msListParse';
+import { isSharePointOrigin, parseSnapshot, type MsListResult } from '../../domain/msListParse';
 import { track } from '../usage/track';
 import { extensionVersion, extSync, useExtension } from './extension';
-import { getListaState, isConnected, markContact, receiveSnapshot, setExtStatus, subscribeLista, wantsList } from './listaStore';
-import { applyListStates, pushToList } from './listaStates';
+import { getListaState, isConnected, markContact, outgoing, receiveSnapshot, setExtStatus, subscribeLista, wantsList } from './listaStore';
+import { afterCreated, applyListStates, pushToList } from './listaStates';
+
+/** Resultados que llegan de SharePoint (por el marcador o la extensión), validados. */
+function cleanResults(raw: unknown): MsListResult[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((r): r is MsListResult => !!r && typeof r === 'object' && typeof (r as MsListResult).key === 'string')
+    .map((r) => ({
+      key: r.key.slice(0, 100),
+      ok: r.ok === true,
+      error: typeof r.error === 'string' ? r.error.slice(0, 300) : undefined,
+      id: typeof r.id === 'string' && /^\d+$/.test(r.id) ? r.id : undefined,
+      skipped: Array.isArray(r.skipped) ? r.skipped.filter((x): x is string => typeof x === 'string').slice(0, 30) : undefined,
+    }));
+}
 
 /**
  * Sin interfaz, en todas las pantallas. Contesta al marcador «Marea · Lista» (solo desde páginas de SharePoint Online),
@@ -26,7 +39,7 @@ export function ListaBridge() {
       const s = getListaState();
       const wantList = wantsList(s);
       // Los que fallaron no se reintentan cada 4 s: solo con la relectura de cada 2 minutos.
-      const changes = wantList ? s.pending : s.pending.filter((c) => !s.errors[changeKey(c)]);
+      const changes = outgoing(s, wantList);
       sent = JSON.stringify(changes);
       target.win.postMessage({ type: 'marea-lista:ready', changes, wantList }, target.origin);
     };
@@ -34,7 +47,7 @@ export function ListaBridge() {
     // una pestaña que no está a la vista, Chrome espacia los temporizadores hasta un minuto.
     const stopStore = subscribeLista(() => {
       const s = getListaState();
-      const fresh = s.pending.filter((c) => !s.errors[changeKey(c)]);
+      const fresh = outgoing(s);
       if (!peer || peer.win.closed || !isConnected(s) || !fresh.length || JSON.stringify(fresh) === sent) return;
       try { offer(peer); } catch { peer = null; }
     });
@@ -50,11 +63,8 @@ export function ListaBridge() {
       } else if (data.type === 'marea-lista:data') {
         const snapshot = parseSnapshot(data.list);
         if (!snapshot) { toast('Lo que ha llegado del marcador no parece una lista.'); return; }
-        const results: MsListResult[] = Array.isArray(data.results)
-          ? data.results.filter((r): r is MsListResult => !!r && typeof r === 'object' && typeof (r as MsListResult).key === 'string')
-            .map((r) => ({ key: r.key, ok: r.ok === true, error: typeof r.error === 'string' ? r.error.slice(0, 300) : undefined }))
-          : [];
-        receiveSnapshot(snapshot, results);
+        const results = cleanResults(data.results);
+        void afterCreated(receiveSnapshot(snapshot, results), toast);
         const bad = results.filter((r) => !r.ok).length;
         track('lista-sync', bad ? 'errors' : 'ok', snapshot.items.length);
         // Solo se avisa la primera vez y cuando se aplican cambios (la lista se relee sola cada 2 minutos).
@@ -98,7 +108,7 @@ function useExtensionSync(enabled: boolean, toast: (message: string) => void) {
       if (!s.listUrl || !extensionVersion()) return;
       const wantList = wantsList(s) || !s.snapshot || s.snapshot.url !== s.listUrl;
       // Los que fallaron se reintentan solo con la relectura.
-      const changes = wantList ? s.pending : s.pending.filter((c) => !s.errors[changeKey(c)]);
+      const changes = outgoing(s, wantList);
       if (!changes.length && !wantList) return;
       const r = await extSync(s.listUrl, changes, wantList);
       const snapshot = r.error ? null : parseSnapshot(r.list);
@@ -111,8 +121,8 @@ function useExtensionSync(enabled: boolean, toast: (message: string) => void) {
       }
       lastError = null;
       setExtStatus(null);
-      const results: MsListResult[] = Array.isArray(r.results) ? r.results : [];
-      if (snapshot) receiveSnapshot(snapshot, results);
+      const results = cleanResults(r.results);
+      if (snapshot) void afterCreated(receiveSnapshot(snapshot, results), toast);
       if (results.length) {
         const bad = results.filter((x) => !x.ok).length;
         toast(`Lista: ${results.length - bad} ${results.length - bad === 1 ? 'cambio aplicado' : 'cambios aplicados'} en SharePoint${bad ? `, ${bad} con error` : ''}`);
@@ -137,11 +147,11 @@ function useExtensionSync(enabled: boolean, toast: (message: string) => void) {
     };
 
     const timer = setInterval(run, EXT_EVERY_MS);
-    let sent = JSON.stringify(getListaState().pending);
+    let sent = JSON.stringify(outgoing());
     let lastUrl = getListaState().listUrl;
     const stop = subscribeLista(() => {
       const s = getListaState();
-      const now = JSON.stringify(s.pending);
+      const now = JSON.stringify(outgoing(s));
       // Un cambio nuevo (en esta pestaña o en otra) o una lista nueva: enseguida.
       if (now === sent && s.listUrl === lastUrl) return;
       sent = now;
