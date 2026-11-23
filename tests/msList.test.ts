@@ -448,3 +448,68 @@ describe('Microsoft List: altas pendientes en Marea', () => {
     store.forgetLista();
   });
 });
+
+describe('Microsoft List: tipo «Lista» en el Tablero', async () => {
+  const { LIST_TYPE_ID, listItemType, listTypeChanged } = await import('../src/domain/msList');
+  const config: MsListConfig = { statusColumn: 'Estado', map: {} };
+  const type = listItemType(['Backlog', 'En curso', 'Dependencia', 'Completada'], config, 9);
+  const types = [...DEFAULT_ITEM_TYPES, type];
+  const rows = [item('1', 'Uno', { Estado: 'Dependencia' }), item('2', 'Dos', { Estado: 'Backlog' })];
+
+  it('un estado por valor de la lista, con su grupo', () => {
+    expect(type).toMatchObject({ id: LIST_TYPE_ID, name: 'Lista', short: 'LS', order: 9 });
+    expect(type.states.map((st) => [st.id, st.name, st.category])).toEqual([
+      ['lista-backlog', 'Backlog', 'todo'], ['lista-en-curso', 'En curso', 'doing'],
+      ['lista-dependencia', 'Dependencia', 'blocked'], ['lista-completada', 'Completada', 'done'],
+    ]);
+    // Sin un estado de Hecho (o de Por hacer) en la lista, se añade para poder completar y reabrir.
+    expect(listItemType(['Abierta', 'En curso'], config, 1).states.map((st) => st.name)).toEqual(['Abierta', 'En curso', 'Hecho']);
+    expect(listTypeChanged(undefined, type)).toBe(true);
+    expect(listTypeChanged({ ...type, color: '#000', order: 2 }, type)).toBe(false);
+    expect(listTypeChanged(type, listItemType(['Backlog', 'En curso', 'Completada'], config, 9))).toBe(true);
+  });
+
+  it('la lista manda con el estado exacto, no solo el grupo', () => {
+    const t1 = makeTask({ external_id: 'LS-1', type_id: LIST_TYPE_ID, state_id: 'lista-backlog' });
+    const t2 = makeTask({ external_id: 'LS-2', type_id: LIST_TYPE_ID, state_id: 'lista-backlog' });
+    expect(listMoves([t1, t2], rows, config, types).map((m) => [m.task.external_id, m.stateId])).toEqual([['LS-1', 'lista-dependencia']]);
+  });
+
+  it('al cambiar de estado aquí se manda el valor con su nombre, aunque sea del mismo grupo', () => {
+    const before = makeTask({ external_id: 'LS-2', type_id: LIST_TYPE_ID, state_id: 'lista-backlog' });
+    const after = { ...before, state_id: 'lista-dependencia' };
+    expect(listPushes([{ table: 'tasks', before, after }], false, types)).toEqual([{ id: '2', category: 'blocked', stateName: 'Dependencia' }]);
+    const two = listItemType(['Backlog', 'Pendiente de revisar', 'Completada'], config, 9);
+    const b = makeTask({ external_id: 'LS-3', type_id: LIST_TYPE_ID, state_id: 'lista-backlog' });
+    expect(listPushes([{ table: 'tasks', before: b, after: { ...b, state_id: 'lista-pendiente-de-revisar' } }], false, [...DEFAULT_ITEM_TYPES, two]))
+      .toEqual([{ id: '3', category: 'todo', stateName: 'Pendiente de revisar' }]);
+  });
+
+  it('la tarea de un elemento nuevo puede ser ya del tipo Lista', () => {
+    expect(taskFromListItem(rows[0], config, null, 'L', LIST_TYPE_ID).type_id).toBe(LIST_TYPE_ID);
+    expect(taskFromListItem(rows[0], config, null).type_id).toBe('task');
+  });
+});
+
+describe('Microsoft List: tipo «Lista» en el repositorio', () => {
+  it('lo crea la sesión de admin, pasa a él las tareas de la lista y se ajusta si cambian los estados', async () => {
+    const { TasksDB } = await import('../src/data/db');
+    const { DexieRepository } = await import('../src/data/repository');
+    const { LIST_TYPE_ID, listItemType } = await import('../src/domain/msList');
+    const repo = new DexieRepository(new TasksDB(`lista-${crypto.randomUUID()}`));
+    const config: MsListConfig = { statusColumn: 'Estado', map: {} };
+    const doing = await repo.createTask({ title: 'De la lista', external_id: 'LS-4' });
+    await repo.setState(doing.id, 'task-doing');
+    const other = await repo.createTask({ title: 'Otra', external_id: 'US1' });
+    // Sin el tipo (y sin ser admin) no cambia nada.
+    await repo.ensureListType(null);
+    expect((await repo.getTask(doing.id))!.type_id).toBe('task');
+    await repo.ensureListType(listItemType(['Backlog', 'En curso', 'Dependencia', 'Completada'], config, 50));
+    expect((await repo.listItemTypes()).find((t) => t.id === LIST_TYPE_ID)!.states.map((st) => st.name)).toEqual(['Backlog', 'En curso', 'Dependencia', 'Completada']);
+    expect(await repo.getTask(doing.id)).toMatchObject({ type_id: LIST_TYPE_ID, state_id: 'lista-en-curso' });
+    expect((await repo.getTask(other.id))!.type_id).not.toBe(LIST_TYPE_ID);
+    // La lista cambia «En curso» por «Revisión» (del mismo grupo): la tarea pasa a ese estado.
+    await repo.ensureListType(listItemType(['Backlog', 'Revisión', 'Completada'], { statusColumn: 'Estado', map: { Revisión: 'doing' } }, 50));
+    expect((await repo.getTask(doing.id))!.state_id).toBe('lista-revision');
+  });
+});

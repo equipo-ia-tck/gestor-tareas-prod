@@ -1,10 +1,13 @@
 import { useEffect } from 'react';
+import { useApp } from '../../app/AppContext';
+import { useSync } from '../../data/sync';
+import { LIST_TYPE_ID, listItemType, statusValues } from '../../domain/msList';
 import { useToast } from '../../components/Toast';
 import { repo } from '../../data/services';
 import { isSharePointOrigin, parseSnapshot, type MsListResult } from '../../domain/msListParse';
 import { track } from '../usage/track';
 import { extensionVersion, extSync, useExtension } from './extension';
-import { getListaState, isConnected, markContact, outgoing, receiveSnapshot, setExtStatus, subscribeLista, wantsList } from './listaStore';
+import { getListaState, isConnected, loadListaConfig, markContact, outgoing, useLista, receiveSnapshot, setExtStatus, subscribeLista, wantsList } from './listaStore';
 import { afterCreated, applyListStates, pushToList } from './listaStates';
 
 /** Resultados que llegan de SharePoint (por el marcador o la extensión), validados. */
@@ -30,6 +33,7 @@ export function ListaBridge() {
   const toast = useToast();
   const extension = useExtension();
   useExtensionSync(!!extension, toast);
+  useListType();
   useEffect(() => {
     let first = true;
     /** La pestaña de SharePoint conectada (la última que ha dicho «hola» a esta pestaña). */
@@ -162,4 +166,27 @@ function useExtensionSync(enabled: boolean, toast: (message: string) => void) {
     run();
     return () => { clearInterval(timer); stop(); if (debounce) clearTimeout(debounce); };
   }, [enabled, toast]);
+}
+
+/**
+ * Tipo «Lista» del Tablero con los estados de la columna de estado de la lista (Backlog, En curso, Dependencia…): lo
+ * crea y lo mantiene la sesión de un administrador (los tipos son comunes al equipo); en cualquier sesión, las tareas de
+ * la lista que siguen como Tarea pasan a ese tipo.
+ */
+function useListType() {
+  const { itemTypes } = useApp();
+  const { isAdmin } = useSync();
+  const lista = useLista();
+  const config = loadListaConfig();
+  const field = lista.snapshot && config.statusColumn ? lista.snapshot.fields.find((f) => f.label === config.statusColumn) : undefined;
+  const values = lista.snapshot && config.statusColumn
+    ? field?.choices.length ? field.choices : statusValues(lista.snapshot.items, config.statusColumn)
+    : [];
+  const key = JSON.stringify([values, config]);
+  const hasType = itemTypes.some((t) => t.id === LIST_TYPE_ID);
+  useEffect(() => {
+    if (!itemTypes.length || (!values.length && !hasType)) return;
+    const order = Math.max(0, ...itemTypes.map((t) => t.order)) + 1;
+    void repo.ensureListType(isAdmin && values.length ? listItemType(values, config, order) : null).catch(() => {});
+  }, [key, isAdmin, hasType, itemTypes.length]); // eslint-disable-line react-hooks/exhaustive-deps -- `key` resume lista y configuración
 }

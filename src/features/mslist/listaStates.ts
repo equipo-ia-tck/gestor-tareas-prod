@@ -1,7 +1,8 @@
 import { repo } from '../../data/services';
 import type { HistoryEntry, HistoryEvent } from '../../data/repository';
 import { LIST_CATEGORIES, listMoves, listPushes, statusValues, valueForCategory } from '../../domain/msList';
-import { taskFromListItem } from '../../domain/msList';
+import { LIST_TYPE_ID, taskFromListItem } from '../../domain/msList';
+import { DEFAULT_TYPE_ID } from '../../domain/types';
 import { currentItems, extensionOk, getListaState, isConnected, loadListaConfig, queueChange, type Created } from './listaStore';
 
 let running = false;
@@ -51,9 +52,13 @@ export async function pushToList(event: HistoryEvent, notify: (message: string) 
   if (!config.statusColumn || !getListaState().snapshot) return;
   const pushes = listPushes(event.entry.changes, event.type === 'undo', await repo.listItemTypes());
   if (!pushes.length) return;
-  const values = statusValues(getListaState().snapshot!.items, config.statusColumn);
-  for (const { id, category } of pushes) {
-    const value = valueForCategory(category, values, config);
+  // Todos los valores posibles (las opciones de la columna), aunque ningún elemento los tenga aún.
+  const snapshot = getListaState().snapshot!;
+  const field = snapshot.fields.find((f) => f.label === config.statusColumn);
+  const values = field?.choices.length ? field.choices : statusValues(snapshot.items, config.statusColumn);
+  for (const { id, category, stateName } of pushes) {
+    // Tipo «Lista»: el valor que se llama como el estado (Dependencia → Dependencia); si no, el primero de su categoría.
+    const value = (stateName && values.find((v) => v.toLowerCase() === stateName.toLowerCase())) || valueForCategory(category, values, config);
     const label = LIST_CATEGORIES.find((c) => c.category === (category === 'accepted' ? 'done' : category))?.label ?? category;
     if (!value) {
       notify(`El elemento ${id} no se cambiará en la lista: ningún valor de «${config.statusColumn}» corresponde a ${label}.`);
@@ -77,14 +82,15 @@ export async function afterCreated(created: Created[], notify: (message: string)
   const config = loadListaConfig();
   const withTask = created.filter((c) => c.create.task);
   if (withTask.length) {
-    const tasks = await repo.listTasks();
+    const [tasks, types] = await Promise.all([repo.listTasks(), repo.listItemTypes()]);
     const linked = new Set(tasks.map((t) => t.external_id));
+    const typeId = types.some((t) => t.id === LIST_TYPE_ID) ? LIST_TYPE_ID : DEFAULT_TYPE_ID;
     await repo.batch(withTask.length === 1 ? 'Tarea creada con el elemento nuevo de la lista' : `${withTask.length} tareas creadas con los elementos nuevos de la lista`, async () => {
       for (const c of withTask) {
         if (linked.has(`LS-${c.id}`)) continue;
         const item = items.find((it) => it.id === c.id)
           ?? { id: c.id, title: c.create.values['Título'] ?? `Elemento ${c.id}`, fields: {}, url: null, modified: null };
-        await repo.createTask(taskFromListItem(item, config, c.create.task!.projectId, s.snapshot?.title));
+        await repo.createTask(taskFromListItem(item, config, c.create.task!.projectId, s.snapshot?.title, typeId));
       }
     });
     void applyListStates().catch(() => {});

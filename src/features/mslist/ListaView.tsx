@@ -10,7 +10,7 @@ import { ProjectOptions } from '../../components/ui/ProjectOptions';
 import { inputClass } from '../../components/ui/styles';
 import { repo } from '../../data/services';
 import {
-  categoryOfValue, guessStatusColumn, itemCategory, LIST_CATEGORIES, listColumns, listKey, statusValues, taskFromListItem,
+  categoryOfValue, LIST_TYPE_ID, guessStatusColumn, itemCategory, LIST_CATEGORIES, listColumns, listKey, statusValues, taskFromListItem,
   type MsListConfig,
 } from '../../domain/msList';
 import { changeKey, itemValue, normalizeListUrl, TITLE_FIELD, type MsListField, type MsListItem } from '../../domain/msListParse';
@@ -18,7 +18,7 @@ import {
   activeFilters, facetValues, filterableColumns, groupItems, isDateField, itemsInView, matchesFilters, matchesText, sortItems,
   type ColumnFilter, type ListFilters, type SortDir,
 } from '../../domain/msListView';
-import type { StateCategory } from '../../domain/types';
+import { DEFAULT_TYPE_ID, type StateCategory } from '../../domain/types';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { track } from '../usage/track';
 import { ViewHeader } from '../views/ViewHeader';
@@ -227,7 +227,7 @@ function BookmarkletSetup() {
 }
 
 function ListaItems() {
-  const { tasks, editTask, projects } = useApp();
+  const { tasks, editTask, projects, itemTypes } = useApp();
   const lista = useLista();
   const snapshot = lista.snapshot!;
   const views = snapshot.views ?? [];
@@ -284,7 +284,8 @@ function ListaItems() {
 
   const add = async (list: MsListItem[]) => {
     await repo.batch(list.length === 1 ? `${list[0].title} añadida desde la lista` : `${list.length} añadidas desde la lista`, async () => {
-      for (const it of list) await repo.createTask(taskFromListItem(it, effective, target, snapshot.title));
+      const typeId = itemTypes.some((t) => t.id === LIST_TYPE_ID) ? LIST_TYPE_ID : DEFAULT_TYPE_ID;
+      for (const it of list) await repo.createTask(taskFromListItem(it, effective, target, snapshot.title, typeId));
     });
     track('lista-add', target ? 'project' : 'inbox', list.length);
     // Que cada tarea nueva quede ya en el estado de su elemento.

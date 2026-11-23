@@ -1036,6 +1036,14 @@ API de SharePoint no admite CORS, así que lo hace un **marcador del navegador**
   quita). **Petición** (`domain/msListRequest.ts`, `parseListRequest`, sin IA): reconoce los nombres de las columnas (o su
   primera palabra si es única) seguidos del valor, opciones sueltas que solo están en una columna, una fecha suelta si hay
   una sola columna de fecha, y el título entre comillas o al principio; lo demás, «No entendido».
+- **Tipo «Lista» en el Tablero** (`LIST_TYPE_ID = 'lista'`, abreviatura LS): un estado por cada valor de la columna de
+  estado (las opciones de la columna, en su orden; ids `lista-<valor>`) con el grupo de «Estados» (`listItemType`; siempre
+  hay uno de Por hacer y uno de Hecho; «dependencia» cuenta como Bloqueado). Lo crea y lo ajusta la sesión de un
+  administrador (`repo.ensureListType`, desde `useListType` en `ListaBridge`; las tareas en estados que desaparecen pasan
+  al equivalente) y, en cualquier sesión, las tareas `LS-<id>` que siguen como Tarea pasan a «Lista». Las tareas nuevas de
+  la lista se crean ya de ese tipo. Con él los estados van **uno a uno** en los dos sentidos: `listMoves` busca el estado
+  con el nombre del valor y `listPushes` manda cualquier cambio de estado con su nombre (`stateName`), aunque sea del mismo
+  grupo; sin coincidencia, por grupo como antes.
 - **Versión de la extensión**: al cambiar `spWork` o la extensión, sube `version` en `extension/manifest.json` y
   `LATEST_EXTENSION` en `features/mslist/extension.ts` (un test comprueba que coinciden); si la instalada es anterior, la
   pantalla Lista avisa y explica cómo actualizarla (descargar, sustituir la carpeta y recargar en `chrome://extensions`).

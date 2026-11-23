@@ -1,5 +1,6 @@
-import { DEFAULT_TYPE_ID, type ItemType, type NewTask, type StateCategory, type Task } from './types';
+import { DEFAULT_TYPE_ID, type ItemType, type NewTask, type StateCategory, type Task, type WorkflowState } from './types';
 import { findType, stateOf } from './workflows';
+import { fold } from './text';
 import { columnLabel, type MsListItem } from './msListParse';
 import type { RecordChange } from './rally';
 
@@ -61,7 +62,7 @@ export function statusValues(items: MsListItem[], column: string | null): string
 export function guessCategory(value: string): StateCategory {
   const v = value.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
   if (/hech|complet|cerrad|termin|finaliz|resuel|done|closed|aprobad|entregad|ok\b/.test(v)) return 'done';
-  if (/bloq|block|esper|hold|paus|parad|impedid/.test(v)) return 'blocked';
+  if (/bloq|block|esper|hold|paus|parad|impedid|dependen/.test(v)) return 'blocked';
   if (/curso|progres|doing|desarroll|trabaj|revisi|review|validac|pruebas|activ/.test(v)) return 'doing';
   return 'todo';
 }
@@ -79,6 +80,42 @@ export function valueForCategory(category: StateCategory, values: string[], conf
   return values.find((v) => categoryOfValue(v, config) === want) ?? null;
 }
 
+/** Tipo «Lista» del gestor: sus estados son los valores de la columna de estado de la lista. */
+export const LIST_TYPE_ID = 'lista';
+
+const CATEGORY_COLOR: Record<string, string> = { todo: '#2563eb', doing: '#16a34a', blocked: '#d97706', done: '#64748b', accepted: '#64748b' };
+const stateIdFor = (value: string) => `lista-${fold(value).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'x'}`;
+
+/**
+ * El tipo «Lista» con un estado por cada valor de la columna de estado, en su orden y con su categoría (la de «Estados»).
+ * Siempre tiene un estado de Por hacer y uno de Hecho (si la lista no los tiene, se añaden), para que completar y reabrir
+ * funcionen como en los demás tipos.
+ */
+export function listItemType(values: string[], config: MsListConfig, order: number): ItemType {
+  const seen = new Set<string>();
+  const states: WorkflowState[] = [];
+  for (const v of values) {
+    const id = stateIdFor(v);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const category = categoryOfValue(v, config);
+    states.push({ id, name: v, color: CATEGORY_COLOR[category] ?? CATEGORY_COLOR.todo, category });
+  }
+  if (!states.some((st) => st.category === 'todo')) states.unshift({ id: 'lista-por-hacer', name: 'Por hacer', color: CATEGORY_COLOR.todo, category: 'todo' });
+  if (!states.some((st) => st.category === 'done')) states.push({ id: 'lista-hecho', name: 'Hecho', color: CATEGORY_COLOR.done, category: 'done' });
+  return { id: LIST_TYPE_ID, name: 'Lista', short: 'LS', color: '#0d9488', order, states };
+}
+
+/** ¿Hay que guardar el tipo? (no existe o sus estados no son los de la lista). */
+export function listTypeChanged(current: ItemType | undefined, wanted: ItemType): boolean {
+  if (!current) return true;
+  const sig = (t: ItemType) => t.states.map((st) => `${st.id}:${st.name}:${st.category}`).join('|');
+  return sig(current) !== sig(wanted);
+}
+
+/** El estado del tipo «Lista» que se llama como el valor de la lista (sin tildes ni mayúsculas). */
+const stateNamed = (type: ItemType, value: string | undefined) => (value ? type.states.find((st) => fold(st.name) === fold(value)) : undefined);
+
 export interface ListMove { task: Task; stateId: string; stateName: string; item: MsListItem }
 
 /**
@@ -93,10 +130,17 @@ export function listMoves(tasks: Task[], items: MsListItem[], config: MsListConf
     if (task.deleted_at || task.status === 'archived') continue;
     const item = byId.get(listIdOf(task.external_id) ?? '');
     if (!item) continue;
-    const want = itemCategory(item, config);
     const current = stateOf(types, task);
+    const type = findType(types, task.type_id);
+    // Tipo «Lista»: el estado con el mismo nombre que el valor (Backlog ↔ Backlog), no solo de la misma categoría.
+    const exact = task.type_id === LIST_TYPE_ID ? stateNamed(type, config.statusColumn ? item.fields[config.statusColumn] : undefined) : undefined;
+    if (exact) {
+      if (exact.id !== current.id) moves.push({ task, stateId: exact.id, stateName: exact.name, item });
+      continue;
+    }
+    const want = itemCategory(item, config);
     if (current.category === want || (want === 'done' && current.category === 'accepted')) continue;
-    const target = findType(types, task.type_id).states.find((s) => s.category === want);
+    const target = type.states.find((s) => s.category === want);
     if (target && target.id !== current.id) moves.push({ task, stateId: target.id, stateName: target.name, item });
   }
   return moves;
@@ -106,7 +150,7 @@ export function listMoves(tasks: Task[], items: MsListItem[], config: MsListConf
  * Elementos de la lista que hay que cambiar porque su tarea ha cambiado de categoría en el gestor (o al deshacerlo).
  * Como en Rally, cuenta el estado antes del primer cambio de la entrada y después del último.
  */
-export function listPushes(changes: RecordChange[], undo: boolean, types: ItemType[]): { id: string; category: StateCategory }[] {
+export function listPushes(changes: RecordChange[], undo: boolean, types: ItemType[]): { id: string; category: StateCategory; stateName?: string }[] {
   const span = new Map<string, { first: Task | undefined; last: Task | undefined }>();
   for (const c of changes) {
     if (c.table !== 'tasks') continue;
@@ -115,20 +159,22 @@ export function listPushes(changes: RecordChange[], undo: boolean, types: ItemTy
     if (s) s.last = c.after as Task | undefined;
     else span.set(key, { first: c.before as Task | undefined, last: c.after as Task | undefined });
   }
-  const out: { id: string; category: StateCategory }[] = [];
+  const out: { id: string; category: StateCategory; stateName?: string }[] = [];
   for (const { first, last } of span.values()) {
     const from = undo ? last : first;
     const to = undo ? first : last;
     const id = listIdOf(to?.external_id);
     if (!from || !to || !id || to.deleted_at || to.status === 'archived') continue;
     const category = stateOf(types, to).category;
-    if (stateOf(types, from).category !== category) out.push({ id, category });
+    // Tipo «Lista»: cuenta cualquier cambio de estado (Backlog → Dependencia), y se manda con su nombre.
+    if (to.type_id === LIST_TYPE_ID && stateOf(types, from).id !== stateOf(types, to).id) out.push({ id, category, stateName: stateOf(types, to).name });
+    else if (stateOf(types, from).category !== category) out.push({ id, category });
   }
   return out;
 }
 
 /** Tarea nueva a partir de un elemento: título, enlace, ID externo y, en las notas, sus columnas. */
-export function taskFromListItem(item: MsListItem, config: MsListConfig, projectId: string | null, listName = 'la lista'): NewTask {
+export function taskFromListItem(item: MsListItem, config: MsListConfig, projectId: string | null, listName = 'la lista', typeId = DEFAULT_TYPE_ID): NewTask {
   const lines = Object.entries(item.fields)
     .filter(([k]) => k !== config.statusColumn)
     .slice(0, 12)
@@ -137,7 +183,7 @@ export function taskFromListItem(item: MsListItem, config: MsListConfig, project
     title: item.title,
     external_id: listKey(item.id),
     url: item.url,
-    type_id: DEFAULT_TYPE_ID,
+    type_id: typeId,
     project_id: projectId,
     notes: [`De ${listName} (elemento ${item.id})`, ...lines].join('\n'),
     raw_input: listKey(item.id),
