@@ -14,8 +14,12 @@ interface State {
   connected: boolean;
   /** Carpeta guardada que se quiere ver y espera a que se conecte el puente. */
   waitingFor: (SharePointFolder & { origin: string; path: string }) | null;
+  /** Carpeta sincronizada (Power Automate) que se quiere ver: sitio y ruta dentro del sitio. */
+  syncedTarget: { site: string; path: string; at: number } | null;
 }
-let state: State = { snapshot: null, error: null, loading: false, connected: false, waitingFor: null };
+let state: State = { snapshot: null, error: null, loading: false, connected: false, waitingFor: null, syncedTarget: null };
+
+export const showSynced = (site: string, path: string) => set({ syncedTarget: { site, path, at: Date.now() }, waitingFor: null });
 const listeners = new Set<() => void>();
 const set = (patch: Partial<State>) => { state = { ...state, ...patch }; for (const l of listeners) l(); };
 const subscribe = (l: () => void) => { listeners.add(l); return () => { listeners.delete(l); }; };

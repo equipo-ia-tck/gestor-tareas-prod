@@ -1013,6 +1013,16 @@ de proveedor externo). Son documentos del cliente, así que **nada de su conteni
   arrastrarlo, así que Marea no se conecta con uno antiguo y pide volver a arrastrarlo (`OLD_BOOKMARKLET`). Si se cambia
   el protocolo del puente, hay que subir la versión en los dos sitios. El marcador lleva dentro la dirección de Marea desde
   la que se arrastró: en producción hay que arrastrarlo desde la app publicada.
+- **Sincronizado con Power Automate** (misma rama; sin Premium, como el calendario; migración `013_sharepoint_subido.sql`
+  después de 001 a 012): CaixaBank no registra apps, así que un flujo programado (pasos en `docs/sharepoint-power-automate.md`:
+  «Obtener archivos (solo propiedades)» con elementos anidados + «Seleccionar» + «Redactar») escribe
+  `OneDrive/Gestor/sharepoint.json`. El programa de subida del Mac (`scripts/subir-onedrive.ts`, también la versión suelta) lo
+  vigila si existe (`GESTOR_SHAREPOINT` lo cambia; sus errores no paran el calendario) y lo sube recortado
+  (`trimSharePointExport` en `domain/sharepointSync.ts`, sin imports: nombre, ruta, enlace, si es carpeta y fecha; máx. 20.000)
+  a `connector_uploads` con `kind = 'sharepoint'` y la misma clave de subida. **Esto sí guarda la lista en Supabase** (cada
+  persona la suya, RLS); nunca contenido. En Marea, «Carpetas sincronizadas» (`SyncedFolders`, `sharepointCloud.ts`,
+  `parseSyncedRoots` revalida al leer): migas, entrar en subcarpetas, buscar en todo (`searchSynced`) y abrir cada archivo en
+  SharePoint. Una carpeta guardada que está sincronizada (`findSynced`) se abre ahí, sin marcador; si no, el puente.
 
 ### Más adelante
 

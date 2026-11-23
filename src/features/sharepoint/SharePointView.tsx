@@ -4,14 +4,17 @@ import { useApp } from '../../app/AppContext';
 import { ViewHeader } from '../views/ViewHeader';
 import { ProjectOptions } from '../../components/ui/ProjectOptions';
 import { inputClass } from '../../components/ui/styles';
-import { breadcrumbs, fileSize, isSharePointOrigin, isSharePointUrl, MAX_PREVIEW_BYTES, previewType, type SharePointEntry, type SharePointFolder } from '../../domain/sharepoint';
+import { breadcrumbs, fileSize, folderLocation, isSharePointOrigin, isSharePointUrl, MAX_PREVIEW_BYTES, previewType, type SharePointEntry, type SharePointFolder } from '../../domain/sharepoint';
 import { formatDay } from '../../domain/dates';
 import { fold } from '../../domain/text';
 import { track } from '../usage/track';
 import { bookmarkletCode, bookmarkletHref } from './bookmarklet';
 import { foldersOf, newFolder, saveFolders } from './folders';
-import { cancelWaiting, handleBridgeMessage, loadFile, openFolder, openForBridge, setSnapshot, showFolder, useSharePointSnapshot } from './sharepointStore';
+import { cancelWaiting, handleBridgeMessage, loadFile, openFolder, openForBridge, setSnapshot, showFolder, showSynced, useSharePointSnapshot } from './sharepointStore';
 import { navigate } from '../../app/router';
+import { SyncedFolders } from './SyncedFolders';
+import { ensureSynced } from './sharepointCloud';
+import { findSynced } from '../../domain/sharepointSync';
 
 const card = 'rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900';
 const title = 'mb-3 flex items-center gap-2 text-sm font-semibold';
@@ -33,6 +36,7 @@ export function SharePointView() {
       </p>
       <div className="space-y-4">
         <FolderList />
+        <SyncedFolders />
         <FolderContents />
       </div>
     </>
@@ -129,8 +133,18 @@ export function AddFolder({ projectId: fixedProject, compact = false }: { projec
  * Pulsar una carpeta guardada: se ve dentro de Marea (al momento si ya está conectado el marcador; si no, con los pasos
  * para conectar). Si el enlace no dice qué carpeta es, se abre en SharePoint.
  */
-export function openSaved(folder: SharePointFolder) {
+export async function openSaved(folder: SharePointFolder) {
   track('sharepoint', 'open');
+  // Primero lo sincronizado con Power Automate (sin marcador); si no está, el puente del marcador.
+  const where = folderLocation(folder.url);
+  const data = where ? await ensureSynced() : null;
+  const synced = where && data ? findSynced(data.roots, where.origin, where.path) : null;
+  if (synced) {
+    showSynced(synced.root.site, synced.path);
+    navigate({ view: 'sharepoint' });
+    setTimeout(() => document.getElementById('sp-synced')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+    return;
+  }
   if (!showFolder(folder)) { window.open(folder.url, '_blank', 'noopener,noreferrer'); return; }
   navigate({ view: 'sharepoint' });
   setTimeout(() => document.getElementById('sp-contents')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
@@ -160,7 +174,7 @@ export function FolderRow({ folder, projectId }: { folder: SharePointFolder; pro
           onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { setName(folder.name); setEditing(false); } }}
           className={`${inputClass} flex-1 py-0.5`} />
       ) : (
-        <button type="button" onClick={() => openSaved(folder)} title="Ver dentro de Marea"
+        <button type="button" onClick={() => void openSaved(folder)} title="Ver dentro de Marea"
           className="min-w-0 flex-1 truncate text-left font-medium hover:underline">{folder.name}</button>
       )}
       <span className="hidden shrink-0 text-xs text-zinc-400 sm:inline">{where}</span>
@@ -202,7 +216,7 @@ function FolderContents() {
 
   return (
     <section id="sp-contents" className={card}>
-      <h2 className={title}><Bookmark className="size-4 text-[var(--marc)]" />Ver lo que hay en una carpeta</h2>
+      <h2 className={title}><Bookmark className="size-4 text-[var(--marc)]" />Al momento, con el marcador <span className="font-normal text-zinc-500">(opcional: lo más reciente, sin esperar al flujo)</span></h2>
       {waitingFor && <ConnectFirst folder={waitingFor} />}
       {!snapshot && !waitingFor && <BookmarkletSetup />}
       {error && <p className="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{error}</p>}
