@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { BookOpen, CornerDownLeft, ExternalLink, FileText, FolderOpen, MessagesSquare, Puzzle, RefreshCw, Upload, User, X } from 'lucide-react';
+import { BookOpen, ChevronDown, ChevronRight, CornerDownLeft, ExternalLink, FileText, FolderOpen, ListChecks, MessagesSquare, Plus, Puzzle, RefreshCw, Upload, User, X } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
 import { useWideLayout } from '../../app/Layout';
 import { routeHref } from '../../app/router';
@@ -21,7 +21,8 @@ import { submitCapture } from '../capture/submitCapture';
 import { track } from '../usage/track';
 import { ViewHeader } from '../views/ViewHeader';
 import { extDocs, useExtension } from '../mslist/extension';
-import { loadFolderDocs, useFolderDocs } from './folderDocs';
+import { currentItems, loadListaConfig, useLista } from '../mslist/listaStore';
+import { folderKey, folderState, loadFolderDocs, useFolderDocs } from './folderDocs';
 import { kqlFrom, summaryMarks } from './spDocs';
 
 type ActIntent = Extract<Intent, { kind: 'act' }>;
@@ -51,11 +52,15 @@ export function AssistantView() {
   const app = useApp();
   const { tasks, notes, allProjects, peopleCards, itemTypes, today, activity, mentionables, releases, projectMap, editTask } = app;
   const actions = useTaskActions();
-  const [spConfig] = useSpConfig();
+  const [sources] = useSpSources();
   const extension = useExtension();
   const folderDocs = useFolderDocs();
-  // Los documentos de la carpeta se leen al entrar (y después solo los que cambian).
-  useEffect(() => { if (spConfig && extension) void loadFolderDocs(spConfig.siteUrl, spConfig.folder); }, [spConfig?.folder, extension]); // eslint-disable-line react-hooks/exhaustive-deps
+  const lista = useLista();
+  const listItems = useMemo(() => currentItems(lista), [lista]);
+  // Los documentos de cada carpeta se leen al entrar (y después solo los que cambian).
+  const sourceKeys = sources.map((c) => folderKey(c.siteUrl, c.folder)).join();
+  useEffect(() => { if (extension) for (const c of sources) void loadFolderDocs(c.siteUrl, c.folder); }, [sourceKeys, extension]); // eslint-disable-line react-hooks/exhaustive-deps
+  const allDocs = useMemo(() => sources.flatMap((c) => folderState(folderDocs, c.siteUrl, c.folder).docs), [sources, folderDocs]);
   const [entries, setEntries] = useState<Entry[]>(history);
   const [text, setText] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -66,9 +71,10 @@ export function AssistantView() {
   }, [tasks, notes, peopleCards, mentionables]);
   const index = useMemo(() => new SearchIndex(buildChunks({
     tasks, notes, projects: allProjects,
-    docs: folderDocs.docs.map((d) => ({ id: d.url, title: d.name.replace(/\.[^.]+$/, ''), body: d.text })),
+    docs: allDocs.map((d) => ({ id: d.url, title: d.name.replace(/\.[^.]+$/, ''), body: d.text })),
+    listItems,
     people: people.map((name) => peopleCards.find((c) => c.name === name) ?? { name, role: '', notes: '', email: '' }),
-  })), [tasks, notes, allProjects, people, peopleCards, folderDocs.docs]);
+  })), [tasks, notes, allProjects, people, peopleCards, allDocs, listItems]);
   const captureCtx = { today, projects: allProjects, people: mentionables, types: itemTypes, releases };
 
   const push = (question: string, answer: Answer) => {
@@ -232,11 +238,18 @@ export function AssistantView() {
       );
       case 'search': {
         const local = a.hits.filter((h) => h.chunk.source === 'doc');
+        const fromList = a.hits.filter((h) => h.chunk.source === 'list');
+        // Cada documento, en el bloque de su carpeta.
+        const folderOf = (url: string) => sources.find((c) => folderState(folderDocs, c.siteUrl, c.folder).docs.some((d) => d.url === url));
         return (
           <>
-            {local.length > 0 && <FolderHits hits={local} folderName={spConfig?.folderName ?? 'la carpeta'} />}
-            <SharePointHits query={a.query} skip={new Set(local.map((h) => h.chunk.ref))} />
-            <SearchAnswer hits={a.hits.filter((h) => h.chunk.source !== 'doc')} list={list} />
+            {sources.map((c) => {
+              const mine = local.filter((h) => folderOf(h.chunk.ref) === c);
+              return mine.length > 0 && <FolderHits key={c.id} hits={mine} folderName={c.folderName} />;
+            })}
+            {fromList.length > 0 && <ListHits hits={fromList} />}
+            {sources.map((c) => <SharePointHits key={c.id} source={c} query={a.query} skip={new Set(local.map((h) => h.chunk.ref))} />)}
+            <SearchAnswer hits={a.hits.filter((h) => h.chunk.source !== 'doc' && h.chunk.source !== 'list')} list={list} />
           </>
         );
       }
@@ -248,7 +261,7 @@ export function AssistantView() {
       <div className="min-w-0">
         <ViewHeader
           title={<span className="inline-flex items-center gap-2"><MessagesSquare className="size-5 text-indigo-600" />Asistente</span>}
-          subtitle="Pregunta o pide cosas sobre tus tareas, notas, personas y la documentación del equipo. Sin IA: entiende frases como las de los ejemplos y, si no, busca en todo."
+          subtitle="Pregunta o pide cosas sobre tus tareas, notas, personas, la Lista y la documentación del equipo en SharePoint. Sin IA: entiende frases como las de los ejemplos y, si no, busca en todo."
         />
         <form onSubmit={(e) => { e.preventDefault(); void ask(text); }} className="mb-4 flex gap-2">
           <input ref={inputRef} value={text} onChange={(e) => setText(e.target.value)} aria-label="Pregunta o petición"
@@ -344,7 +357,7 @@ function SearchAnswer({ hits, list }: { hits: Hit[]; list: (ids: string[]) => Re
       <ul className="space-y-2.5">
         {others.map((h) => {
           const c = h.chunk;
-          const icon = { doc: <BookOpen className="size-3.5" />, note: <FileText className="size-3.5" />, person: <User className="size-3.5" />, project: <FolderOpen className="size-3.5" />, task: null }[c.source];
+          const icon = { doc: <BookOpen className="size-3.5" />, note: <FileText className="size-3.5" />, person: <User className="size-3.5" />, project: <FolderOpen className="size-3.5" />, list: <ListChecks className="size-3.5" />, task: null }[c.source];
           const where = <>{icon}<span className="font-medium">{c.title}</span>{c.section && <span className="text-zinc-400">› {c.section}</span>}</>;
           return (
             <li key={c.id} className="text-sm">
@@ -363,16 +376,52 @@ function SearchAnswer({ hits, list }: { hits: Hit[]; list: (ids: string[]) => Re
   );
 }
 
-/** Dónde busca el Asistente en SharePoint (de cada persona, en este navegador). */
-interface SpConfig { siteUrl: string; siteTitle: string; folder: string; folderName: string; folderUrl: string; scope: 'site' | 'folder' }
+/** Una carpeta de documentación en SharePoint (puede ser de WPP, de La Caixa…): de cada persona, en este navegador. */
+interface SpSource { id: string; siteUrl: string; siteTitle: string; folder: string; folderName: string; folderUrl: string; scope: 'site' | 'folder' }
 
-const useSpConfig = () => usePersistentState<SpConfig | null>('asistente-sharepoint', null);
+/** Las carpetas del Asistente (la de antes, de una sola carpeta, se sigue leyendo). */
+function useSpSources(): [SpSource[], (list: SpSource[]) => void] {
+  const [list, setList] = usePersistentState<SpSource[] | null>('asistente-sharepoint-v2', null);
+  const [old] = usePersistentState<Omit<SpSource, 'id'> | null>('asistente-sharepoint', null);
+  return [list ?? (old ? [{ ...old, id: 'primera' }] : []), setList];
+}
 
 interface SpHit { title: string; url: string; summary: string; author: string; modified: string; type: string }
 
+/** Elementos de la Microsoft List que encajan (enlace a SharePoint, su estado y, si la hay, su tarea del gestor). */
+function ListHits({ hits }: { hits: Hit[] }) {
+  const lista = useLista();
+  const { tasks, editTask } = useApp();
+  const items = currentItems(lista);
+  const status = loadListaConfig().statusColumn;
+  return (
+    <section className="mb-3">
+      <Understood>En la Lista «{lista.snapshot?.title ?? 'Lista'}»</Understood>
+      <ul className="space-y-2.5">
+        {hits.slice(0, 6).map((h) => {
+          const it = items.find((x) => x.id === h.chunk.ref);
+          if (!it) return null;
+          const task = tasks.find((t) => !t.deleted_at && t.external_id === `LS-${it.id}`);
+          return (
+            <li key={h.chunk.id} className="text-sm">
+              <p className="flex flex-wrap items-center gap-1.5 text-xs">
+                <ListChecks className="size-3.5 text-teal-600" />
+                {it.url ? <a href={it.url} target="_blank" rel="noreferrer" className="font-medium text-zinc-700 hover:underline dark:text-zinc-200">{it.title}</a> : <span className="font-medium">{it.title}</span>}
+                <span className="text-zinc-400">#{it.id}</span>
+                {status && it.fields[status] && <span className="rounded-full bg-teal-50 px-1.5 text-teal-700 dark:bg-teal-950 dark:text-teal-300">{it.fields[status]}</span>}
+                {task && <button type="button" onClick={() => editTask(task)} className="text-emerald-700 hover:underline dark:text-emerald-400">En el gestor</button>}
+              </p>
+              {h.snippet && <p className="mt-0.5 text-zinc-700 dark:text-zinc-300"><Marked text={h.snippet} marks={h.marks} /></p>}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
 /** Resultados del buscador de SharePoint para la pregunta (por la extensión), en todo el sitio o en la carpeta. */
-function SharePointHits({ query, skip }: { query: string; skip: Set<string> }) {
-  const [config] = useSpConfig();
+function SharePointHits({ source: config, query, skip }: { source: SpSource; query: string; skip: Set<string> }) {
   const extension = useExtension();
   const [state, setState] = useState<{ hits: SpHit[]; loose: boolean } | { error: string } | null>(null);
   const kql = kqlFrom(query, (w) => !terms(w).length);
@@ -428,67 +477,24 @@ function toBase64(buf: ArrayBuffer): string {
   return btoa(bin);
 }
 
+const card = 'space-y-3 self-start rounded-lg border border-zinc-200 bg-white p-3 text-sm lg:sticky lg:top-4 dark:border-zinc-700 dark:bg-zinc-900';
+
 /**
- * Documentación en SharePoint: la carpeta del equipo (se pega su dirección o su enlace de «compartir»), si se busca en
- * todo el sitio o solo en ella, subir archivos a la carpeta y los más recientes. Todo por la extensión, con tu sesión.
+ * Documentación en SharePoint: una o varias carpetas (de WPP, de La Caixa…; se pega su dirección o su enlace de
+ * «compartir»), si se busca en todo su sitio o solo en ella, subir archivos y los más recientes. Todo por la extensión,
+ * con la sesión de cada SharePoint en Chrome.
  */
 function SharePointPanel() {
   const extension = useExtension();
-  const toast = useToast();
-  const [config, setConfig] = useSpConfig();
-  const [link, setLink] = useState('');
-  const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [files, setFiles] = useState<{ name: string; url: string; modified: string; size: number; folder: string }[] | null>(null);
-  const folderDocs = useFolderDocs();
-  const [dragging, setDragging] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
-
-  const loadFiles = (c = config) => {
-    if (!c || !extension) return;
-    extDocs<{ files: { name: string; url: string; modified: string; size: number; folder: string }[] }>('list', { siteUrl: c.siteUrl, folder: c.folder })
-      .then((r) => setFiles(r.files), (e: Error) => setError(e.message));
-  };
-  useEffect(() => { loadFiles(); }, [config?.folder, extension]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const connect = async () => {
-    setBusy('Buscando la carpeta…');
-    setError(null);
-    try {
-      const r = await extDocs<Omit<SpConfig, 'scope'>>('resolve', { url: link.trim() });
-      const next = { ...r, scope: config?.scope ?? 'site' } as SpConfig;
-      setConfig(next);
-      setLink('');
-      track('assistant-sharepoint', 'connect');
-      loadFiles(next);
-    } catch (e) { setError((e as Error).message); }
-    setBusy(null);
-  };
-
-  const upload = async (list: FileList | File[]) => {
-    if (!config) return;
-    for (const file of Array.from(list)) {
-      if (file.size > MAX_UPLOAD) { toast(`«${file.name}» pesa ${kb(file.size)}: desde aquí se suben hasta 15 MB. Súbelo directamente en SharePoint.`); continue; }
-      setBusy(`Subiendo ${file.name}…`);
-      try {
-        const r = await extDocs<{ name: string; url: string }>('upload', { siteUrl: config.siteUrl, folder: config.folder, name: file.name, base64: toBase64(await file.arrayBuffer()) }, 180_000);
-        track('assistant-sharepoint', 'upload');
-        toast(`«${r.name}» subido a «${config.folderName}». SharePoint tarda unos minutos en tenerlo en su buscador.`);
-      } catch (e) { toast((e as Error).message); }
-    }
-    setBusy(null);
-    loadFiles();
-    void loadFolderDocs(config.siteUrl, config.folder);
-  };
-
-  const card = 'space-y-3 self-start rounded-lg border border-zinc-200 bg-white p-3 text-sm lg:sticky lg:top-4 dark:border-zinc-700 dark:bg-zinc-900';
+  const [sources, setSources] = useSpSources();
+  const [adding, setAdding] = useState(false);
   if (!extension) {
     return (
       <aside className={card}>
         <h2 className="flex items-center gap-2 font-semibold"><BookOpen className="size-4" />Documentación en SharePoint</h2>
         <p className="text-xs text-zinc-500">
           Para buscar en los documentos del equipo (Word, PDF, PowerPoint…) y subir nuevos hace falta la extensión de Chrome «Marea · Lista», con tu
-          sesión de SharePoint. Sin ella, el Asistente busca igual en tus tareas, notas y personas.
+          sesión de SharePoint. Sin ella, el Asistente busca igual en tus tareas, notas, personas y la Lista.
         </p>
         <a href={routeHref({ view: 'lista' })} className="inline-flex items-center gap-1.5 text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">
           <Puzzle className="size-3.5" />Instalar la extensión (Lista → Conectar)
@@ -496,48 +502,135 @@ function SharePointPanel() {
       </aside>
     );
   }
+  const update = (c: SpSource) => setSources(sources.map((x) => (x.id === c.id ? c : x)));
   return (
-    <aside className={card}
-      onDragOver={(e) => { if (config) { e.preventDefault(); setDragging(true); } }} onDragLeave={() => setDragging(false)}
-      onDrop={(e) => { e.preventDefault(); setDragging(false); if (config && e.dataTransfer.files.length) void upload(e.dataTransfer.files); }}>
+    <aside className={card}>
       <h2 className="flex items-center gap-2 font-semibold"><BookOpen className="size-4" />Documentación en SharePoint</h2>
-      {config ? (
-        <>
-          <p className="text-xs">
-            <a href={config.folderUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium hover:underline">
-              <FolderOpen className="size-3.5" />{config.folderName}<ExternalLink className="size-3 text-zinc-400" />
-            </a>
-            <span className="block text-zinc-400">en el sitio {siteName(config)}</span>
-          </p>
+      {sources.map((c, i) => (
+        <SourceCard key={c.id} source={c} startOpen={i === 0} onChange={update}
+          onRemove={() => { if (confirm(`¿Dejar de usar «${c.folderName}»? En SharePoint no se borra nada.`)) setSources(sources.filter((x) => x.id !== c.id)); }} />
+      ))}
+      {(adding || sources.length === 0) ? (
+        <AddSource first={sources.length === 0} onCancel={sources.length ? () => setAdding(false) : undefined}
+          onAdd={(c) => { setSources([...sources.filter((x) => x.folderUrl !== c.folderUrl), c]); setAdding(false); }} />
+      ) : (
+        <button type="button" onClick={() => setAdding(true)} className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">
+          <Plus className="size-3.5" />Añadir otra carpeta (p. ej. de otro SharePoint)
+        </button>
+      )}
+    </aside>
+  );
+}
+
+function AddSource({ first, onAdd, onCancel }: { first: boolean; onAdd: (c: SpSource) => void; onCancel?: () => void }) {
+  const [link, setLink] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const connect = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await extDocs<Omit<SpSource, 'scope' | 'id'>>('resolve', { url: link.trim() });
+      onAdd({ ...r, id: crypto.randomUUID(), scope: 'site' });
+      track('assistant-sharepoint', 'connect');
+    } catch (e) { setError((e as Error).message); }
+    setBusy(false);
+  };
+  return (
+    <div className="space-y-2 rounded-md bg-zinc-50 p-2 dark:bg-zinc-800/60">
+      <p className="text-xs text-zinc-500">
+        {first ? 'Pega la dirección de la carpeta de documentación del equipo' : 'Pega la dirección de otra carpeta'} (la del navegador o su enlace de
+        «compartir»). Puede ser de cualquier SharePoint en el que tengas la sesión iniciada en este Chrome (WPP, La Caixa…). Se busca con el buscador
+        de SharePoint, sin descargar nada, y cada persona solo ve lo que puede abrir.
+      </p>
+      <div className="flex gap-2">
+        <input autoFocus={!first} value={link} onChange={(e) => { setLink(e.target.value); setError(null); }} onKeyDown={(e) => { if (e.key === 'Enter' && link.trim()) void connect(); }}
+          placeholder="https://….sharepoint.com/…" aria-label="Dirección de la carpeta" className={`${inputClass} min-w-0 flex-1 py-1`} />
+        <button type="button" disabled={!link.trim() || busy} onClick={() => void connect()}
+          className="rounded-md bg-indigo-600 px-3 py-1 font-medium text-white hover:bg-indigo-500 disabled:opacity-40">{busy ? '…' : 'Usar'}</button>
+      </div>
+      {error && <p className="rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-800 dark:bg-amber-950/50 dark:text-amber-200">{error}</p>}
+      {onCancel && <button type="button" onClick={onCancel} className="text-xs text-zinc-400 hover:text-zinc-700">Cancelar</button>}
+    </div>
+  );
+}
+
+/** Una carpeta: su sitio, dónde buscar, subir archivos, los últimos y cuántos documentos ha leído el Asistente. */
+function SourceCard({ source: config, startOpen, onChange, onRemove }: { source: SpSource; startOpen: boolean; onChange: (c: SpSource) => void; onRemove: () => void }) {
+  const toast = useToast();
+  const all = useFolderDocs();
+  const docs = folderState(all, config.siteUrl, config.folder);
+  const [open, setOpen] = useState(startOpen);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [files, setFiles] = useState<{ name: string; url: string; modified: string; size: number; folder: string }[] | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const host = new URL(config.siteUrl).hostname.replace('.sharepoint.com', '');
+
+  const loadFiles = () => {
+    extDocs<{ files: { name: string; url: string; modified: string; size: number; folder: string }[] }>('list', { siteUrl: config.siteUrl, folder: config.folder })
+      .then((r) => { setFiles(r.files); setError(null); }, (e: Error) => setError(e.message));
+  };
+  useEffect(() => { if (open && files === null) loadFiles(); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const upload = async (list: FileList | File[]) => {
+    for (const file of Array.from(list)) {
+      if (file.size > MAX_UPLOAD) { toast(`«${file.name}» pesa ${kb(file.size)}: desde aquí se suben hasta 15 MB. Súbelo directamente en SharePoint.`); continue; }
+      setBusy(`Subiendo ${file.name}…`);
+      try {
+        const r = await extDocs<{ name: string; url: string }>('upload', { siteUrl: config.siteUrl, folder: config.folder, name: file.name, base64: toBase64(await file.arrayBuffer()) }, 180_000);
+        track('assistant-sharepoint', 'upload');
+        toast(`«${r.name}» subido a «${config.folderName}».`);
+      } catch (e) { toast((e as Error).message); }
+    }
+    setBusy(null);
+    loadFiles();
+    void loadFolderDocs(config.siteUrl, config.folder);
+  };
+
+  return (
+    <div className={`rounded-md border p-2 ${dragging ? 'border-indigo-400 bg-indigo-50 dark:bg-indigo-950' : 'border-zinc-200 dark:border-zinc-700'}`}
+      onDragOver={(e) => { e.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)}
+      onDrop={(e) => { e.preventDefault(); setDragging(false); if (e.dataTransfer.files.length) void upload(e.dataTransfer.files); }}>
+      <div className="flex items-start gap-1">
+        <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} className="mt-0.5 rounded p-0.5 text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800">
+          {open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+        </button>
+        <p className="min-w-0 flex-1 text-xs">
+          <a href={config.folderUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium hover:underline">
+            <FolderOpen className="size-3.5" />{config.folderName}<ExternalLink className="size-3 text-zinc-400" />
+          </a>
+          <span className="block text-zinc-400">{siteName(config)} · {host}</span>
+          <span className="block text-[11px] text-zinc-400">
+            {docs.loading ? 'Leyendo sus documentos…' : docs.error ? `No se han podido leer: ${docs.error}` : `${docs.docs.length} ${docs.docs.length === 1 ? 'documento leído' : 'documentos leídos'} al momento`}
+          </span>
+        </p>
+      </div>
+      {open && (
+        <div className="mt-2 space-y-2 pl-5">
           <div className="space-y-0.5 text-xs">
-            <span className="text-zinc-500">Buscar en:</span>
-            <label className="flex items-center gap-1.5"><input type="radio" checked={config.scope === 'site'} onChange={() => setConfig({ ...config, scope: 'site' })} />todo el sitio «{siteName(config)}»</label>
-            <label className="flex items-center gap-1.5"><input type="radio" checked={config.scope === 'folder'} onChange={() => setConfig({ ...config, scope: 'folder' })} />solo la carpeta «{config.folderName}»</label>
+            <span className="text-zinc-500">Buscar con SharePoint en:</span>
+            <label className="flex items-center gap-1.5"><input type="radio" checked={config.scope === 'site'} onChange={() => onChange({ ...config, scope: 'site' })} />todo el sitio «{siteName(config)}»</label>
+            <label className="flex items-center gap-1.5"><input type="radio" checked={config.scope === 'folder'} onChange={() => onChange({ ...config, scope: 'folder' })} />solo esta carpeta</label>
           </div>
-          <div className={`rounded-md border-2 border-dashed p-3 text-center text-xs ${dragging ? 'border-indigo-400 bg-indigo-50 dark:bg-indigo-950' : 'border-zinc-200 dark:border-zinc-700'}`}>
-            <input ref={fileRef} type="file" multiple hidden onChange={(e) => { if (e.target.files?.length) void upload(e.target.files); e.target.value = ''; }} />
-            <button type="button" disabled={!!busy} onClick={() => fileRef.current?.click()}
-              className="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-3 py-1.5 font-medium text-white hover:bg-indigo-500 disabled:opacity-40">
-              <Upload className="size-4" />Subir a la carpeta
-            </button>
-            <p className="mt-1 text-zinc-400">o arrastra los archivos aquí (hasta 15 MB)</p>
-          </div>
+          <input ref={fileRef} type="file" multiple hidden onChange={(e) => { if (e.target.files?.length) void upload(e.target.files); e.target.value = ''; }} />
+          <button type="button" disabled={!!busy} onClick={() => fileRef.current?.click()}
+            className="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-indigo-500 disabled:opacity-40">
+            <Upload className="size-3.5" />Subir a la carpeta
+          </button>
+          <span className="ml-2 text-[11px] text-zinc-400">o arrastra aquí (hasta 15 MB)</span>
           {busy && <p className="text-xs text-zinc-500">{busy}</p>}
           {error && <p className="rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-800 dark:bg-amber-950/50 dark:text-amber-200">{error}</p>}
           <div>
             <p className="mb-1 flex items-center gap-2 text-xs font-semibold text-zinc-500">
               Últimos de la carpeta
               <button type="button" onClick={() => { loadFiles(); void loadFolderDocs(config.siteUrl, config.folder); }} aria-label="Volver a cargar"
-                className="rounded p-0.5 hover:bg-zinc-100 dark:hover:bg-zinc-800"><RefreshCw className={`size-3 ${folderDocs.loading ? 'animate-spin' : ''}`} /></button>
+                className="rounded p-0.5 hover:bg-zinc-100 dark:hover:bg-zinc-800"><RefreshCw className={`size-3 ${docs.loading ? 'animate-spin' : ''}`} /></button>
             </p>
-            <p className="mb-1 text-[11px] text-zinc-400">
-              {folderDocs.loading ? 'Leyendo los documentos de la carpeta…'
-                : folderDocs.error ? `No se han podido leer: ${folderDocs.error}`
-                  : `El Asistente ha leído ${folderDocs.docs.length} ${folderDocs.docs.length === 1 ? 'documento' : 'documentos'} de la carpeta (Word, texto, Markdown…) y los encuentra al momento. Los PDF y el resto del sitio los busca SharePoint, que tarda un rato en tener los nuevos.`}
-            </p>
-            {files === null && <p className="text-xs text-zinc-400">Cargando…</p>}
+            {files === null && !error && <p className="text-xs text-zinc-400">Cargando…</p>}
             {files && files.length === 0 && <p className="text-xs text-zinc-400">La carpeta está vacía.</p>}
-            <ul className="max-h-[40vh] space-y-0.5 overflow-y-auto">
+            <ul className="max-h-[30vh] space-y-0.5 overflow-y-auto">
               {files?.map((f) => (
                 <li key={f.url}>
                   <a href={f.url} target="_blank" rel="noreferrer" className="block truncate rounded px-1 py-0.5 text-xs hover:bg-zinc-50 dark:hover:bg-zinc-800" title={f.name}>
@@ -546,26 +639,11 @@ function SharePointPanel() {
                 </li>
               ))}
             </ul>
+            <p className="mt-1 text-[11px] text-zinc-400">Los Word y textos se encuentran al momento; los PDF y el resto del sitio, cuando SharePoint los tenga en su buscador (tarda un rato con los nuevos).</p>
           </div>
-          <button type="button" onClick={() => { if (confirm('¿Dejar de usar esta carpeta? En SharePoint no se borra nada.')) { setConfig(null); setFiles(null); } }}
-            className="text-xs text-zinc-400 hover:text-zinc-700">Cambiar de carpeta</button>
-        </>
-      ) : (
-        <>
-          <p className="text-xs text-zinc-500">
-            Pega la dirección de la carpeta de documentación del equipo (la del navegador o su enlace de «compartir»). El Asistente buscará con el
-            buscador de SharePoint en todo su sitio, sin descargar nada, y cada persona solo verá lo que puede abrir.
-          </p>
-          <div className="flex gap-2">
-            <input value={link} onChange={(e) => { setLink(e.target.value); setError(null); }} onKeyDown={(e) => { if (e.key === 'Enter' && link.trim()) void connect(); }}
-              placeholder="https://….sharepoint.com/…" aria-label="Dirección de la carpeta" className={`${inputClass} min-w-0 flex-1 py-1`} />
-            <button type="button" disabled={!link.trim() || !!busy} onClick={() => void connect()}
-              className="rounded-md bg-indigo-600 px-3 py-1 font-medium text-white hover:bg-indigo-500 disabled:opacity-40">Usar</button>
-          </div>
-          {busy && <p className="text-xs text-zinc-500">{busy}</p>}
-          {error && <p className="rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-800 dark:bg-amber-950/50 dark:text-amber-200">{error}</p>}
-        </>
+          <button type="button" onClick={onRemove} className="text-xs text-zinc-400 hover:text-zinc-700">Quitar esta carpeta</button>
+        </div>
       )}
-    </aside>
+    </div>
   );
 }

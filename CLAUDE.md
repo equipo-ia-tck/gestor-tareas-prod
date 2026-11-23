@@ -1085,6 +1085,12 @@ Petición de la usuaria: algo a lo que preguntar y pedir cosas sobre el proyecto
   memoria y entran en el buscador local: la respuesta enseña primero «En la carpeta» (`FolderHits`), después «En
   SharePoint» sin repetir y después «En Marea». `list` también recorre subcarpetas. La consulta a SharePoint ya no exige
   todas las palabras: si salen menos de 3, se completa con la de alguna; y verbos como «usa» o «sirve» no cuentan.
+- **Varias carpetas y la Lista** (petición de la usuaria: la Lista es del SharePoint de La Caixa y la documentación del de
+  WPP): `asistente-sharepoint-v2` guarda una lista de carpetas (`SpSource`; la de una sola carpeta de antes se sigue
+  leyendo), cada una de cualquier `*.sharepoint.com` con la sesión de ese sitio en el mismo Chrome, con su alcance, su
+  subida y sus archivos (`SourceCard`, «Añadir otra carpeta»). `folderDocs.ts` guarda los textos por carpeta (`folderKey`).
+  Cada búsqueda enseña «En la carpeta X» de cada una, «En la Lista» (los elementos de `currentItems`, con su estado, enlace
+  a SharePoint y «En el gestor» si hay tarea enlazada; chunks `source: 'list'`), «En SharePoint» de cada sitio y «En Marea».
 
 ### Más adelante
 

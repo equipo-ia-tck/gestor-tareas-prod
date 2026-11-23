@@ -114,6 +114,16 @@ Revisar las etiquetas de Adobe en todas las páginas.`;
     expect(index.search('etiquetas', { sources: ['task'] })[0].chunk.ref).toBe('t1');
     expect(index.search('de la que')).toEqual([]);
   });
+
+  it('también encuentra los elementos de la Lista, por su título o sus columnas', () => {
+    const index = new SearchIndex(buildChunks({ tasks: [], notes: [], people: [], projects: [], docs: [],
+      listItems: [
+        { id: '151', title: 'AA BANKSY', fields: { Estado: 'En curso', 'Tarea madre': 'BANKSY', Comentarios: 'pendiente de validar la medición en PRE' } },
+        { id: '152', title: 'Fuentes de tráfico', fields: { Estado: 'Backlog' } },
+      ] }));
+    expect(index.search('medicion banksy')[0].chunk).toMatchObject({ source: 'list', ref: '151' });
+    expect(index.search('trafico')[0].chunk).toMatchObject({ source: 'list', ref: '152' });
+  });
 });
 
 describe('Asistente: documentación en SharePoint', async () => {

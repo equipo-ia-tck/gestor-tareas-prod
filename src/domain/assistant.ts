@@ -221,7 +221,11 @@ export function matchTasks(tasks: Task[], query: string, onlyActive = true): Tas
 }
 
 /** Los trozos buscables de todo lo que ve la persona: tareas, notas, personas, proyectos y documentación. */
-export function buildChunks(data: { tasks: Task[]; notes: Note[]; people: Person[]; projects: Project[]; docs: Pick<KnowledgeDoc, 'id' | 'title' | 'body'>[] }): Chunk[] {
+export function buildChunks(data: {
+  tasks: Task[]; notes: Note[]; people: Person[]; projects: Project[]; docs: Pick<KnowledgeDoc, 'id' | 'title' | 'body'>[];
+  /** Elementos de la Microsoft List (pantalla Lista), con sus columnas. */
+  listItems?: { id: string; title: string; fields: Record<string, string> }[];
+}): Chunk[] {
   const out: Chunk[] = [];
   for (const t of data.tasks) {
     if (t.deleted_at) continue;
@@ -239,6 +243,9 @@ export function buildChunks(data: { tasks: Task[]; notes: Note[]; people: Person
   }
   for (const p of data.projects) out.push({ id: `project:${p.id}`, source: 'project', ref: p.id, title: p.name, text: '' });
   for (const d of data.docs) out.push(...docChunks(d));
+  for (const it of data.listItems ?? []) {
+    out.push({ id: `list:${it.id}`, source: 'list', ref: it.id, title: it.title, text: Object.entries(it.fields).map(([k, v]) => `${k}: ${v}`).join('\n') });
+  }
   return out;
 }
 
@@ -247,5 +254,5 @@ export const ASSISTANT_EXAMPLES: { group: string; items: string[] }[] = [
   { group: 'Tareas', items: ['¿Qué tengo hoy?', 'Tareas atrasadas', 'Tareas de Ana esta semana', 'Bloqueadas en #caixa', '¿Qué he hecho esta semana?', 'US1234'] },
   { group: 'Personas y notas', items: ['¿Qué dijo Diana?', 'Temas para hablar con Luis', '¿Quién es Ana?'] },
   { group: 'Hacer cosas', items: ['Crea una tarea revisar login para el viernes #caixa !1', 'Completa revisar login', 'Pon revisar login en curso', 'Mueve revisar login a mañana', 'Añade revisar login a mi día', 'Crea una nota Reunión con Ana: hablar del sprint'] },
-  { group: 'Documentación', items: ['¿Cómo se entrega una guía?', 'Proceso de etiquetado'] },
+  { group: 'Documentación y Lista', items: ['¿Cómo se entrega una guía?', 'Proceso de etiquetado', 'Medición Imagin en curso'] },
 ];

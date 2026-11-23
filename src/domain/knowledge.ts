@@ -21,13 +21,13 @@ export interface KnowledgeDoc {
   updatedAt: string;
 }
 
-export type ChunkSource = 'task' | 'note' | 'doc' | 'person' | 'project';
+export type ChunkSource = 'task' | 'note' | 'doc' | 'person' | 'project' | 'list';
 
 /** Un trozo buscable: de dónde sale, a qué apunta y su texto. */
 export interface Chunk {
   id: string;
   source: ChunkSource;
-  /** Id de la tarea, nota, documento, persona (su nombre) o proyecto. */
+  /** Id de la tarea, nota, documento, persona (su nombre), proyecto o elemento de la Lista. */
   ref: string;
   title: string;
   /** Apartado dentro del documento o la nota («Pasos > Validación»). */
