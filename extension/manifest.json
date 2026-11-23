@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Marea · Lista",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Sincroniza Marea con tu Microsoft List de SharePoint en segundo plano, con tu sesión de SharePoint.",
   "permissions": ["scripting"],
   "host_permissions": ["https://*.sharepoint.com/*"],

@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
  * Prueba la base de datos de Supabase (supabase/migrations) en un Postgres de verdad (PGlite), imitando
  * lo mínimo de Supabase: roles anon/authenticated y auth.uid()/auth.email() de la sesión.
  */
-const MIGRATION = ['001_equipo.sql', '002_baja_y_contrasenas.sql', '003_alta_sin_invitacion.sql', '004_claves_conectores.sql', '005_calendario_subido.sql', '006_feedback.sql', '007_feedback_formulario.sql', '008_feedback_bloqueado.sql', '009_analitica.sql', '010_analitica_kpis.sql', '011_rally_herramienta.sql', '012_calendario_ics.sql', '013_asistente_documentos.sql'].map((f) => readFileSync(`supabase/migrations/${f}`, 'utf8')).join('\n');
+const MIGRATION = ['001_equipo.sql', '002_baja_y_contrasenas.sql', '003_alta_sin_invitacion.sql', '004_claves_conectores.sql', '005_calendario_subido.sql', '006_feedback.sql', '007_feedback_formulario.sql', '008_feedback_bloqueado.sql', '009_analitica.sql', '010_analitica_kpis.sql', '011_rally_herramienta.sql', '012_calendario_ics.sql'].map((f) => readFileSync(`supabase/migrations/${f}`, 'utf8')).join('\n');
 let db: PGlite;
 
 const SUPABASE_STUB = `
@@ -256,34 +256,6 @@ describe('base de datos del equipo en Supabase', () => {
     await rpc(marta, 'revoke_upload_token');
     await expect(upload(second, [])).rejects.toThrow(/no válida/);
     expect(await as(marta, 'select * from connector_uploads')).toEqual([]);
-  });
-
-  it('documentación del asistente: la del equipo la ven todos; la privada, solo quien la sube; cambiar, autor o admin', async () => {
-    const marta = await newUser('marta@vml.com');
-    await rpc(marta, 'register_profile', { p_name: 'Marta García', p_code: '' });
-    const ana = await newUser('ana@vml.com');
-    await rpc(ana, 'register_profile', { p_name: 'Ana', p_code: '' });
-    const luis = await newUser('luis@vml.com');
-    await rpc(luis, 'register_profile', { p_name: 'Luis', p_code: '' });
-    const save = (u: User, id: string | null, title: string, body: string, visibility = 'team') =>
-      rpc(u, 'save_knowledge_doc', { p_id: id, p_title: title, p_kind: 'markdown', p_file_name: 'guia.md', p_body: body, p_visibility: visibility }) as Promise<{ id: string; mine: boolean; size: number; ownerName: string }>;
-    const guide = await save(ana, null, '  Guía de etiquetado ', '# Pasos\nRevisar en PRE');
-    expect(guide).toMatchObject({ mine: true, size: 22, ownerName: 'Ana' });
-    await save(ana, null, 'Mis apuntes', 'privado', 'private');
-    await expect(save(ana, null, '  ', 'x')).rejects.toThrow(/título/);
-    await expect(save(ana, null, 'Vacío', '   ')).rejects.toThrow(/texto/);
-    await expect(as(ana, 'select * from knowledge_docs')).rejects.toThrow();
-    const seen = async (u: User) => (await rpc(u, 'knowledge_docs') as { title: string; body: string }[]).map((d) => d.title).sort();
-    expect(await seen(ana)).toEqual(['Guía de etiquetado', 'Mis apuntes']);
-    expect(await seen(luis)).toEqual(['Guía de etiquetado']);
-    expect((await rpc(luis, 'knowledge_docs') as { body: string }[])[0].body).toContain('Revisar en PRE');
-    // Luis no la puede cambiar ni borrar; Marta (administradora) sí.
-    await expect(save(luis, guide.id, 'Mía', 'x')).rejects.toThrow(/no es tuyo/);
-    await expect(rpc(luis, 'delete_knowledge_doc', { p_id: guide.id })).rejects.toThrow(/no es tuyo/);
-    await save(marta, guide.id, 'Guía de etiquetado v2', 'Nuevo texto');
-    expect(await seen(luis)).toEqual(['Guía de etiquetado v2']);
-    await rpc(marta, 'delete_knowledge_doc', { p_id: guide.id });
-    expect(await seen(luis)).toEqual([]);
   });
 
   it('feedback: lo envía cualquiera, solo lo leen y gestionan los administradores', async () => {

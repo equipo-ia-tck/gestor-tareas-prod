@@ -1066,13 +1066,18 @@ Petición de la usuaria: algo a lo que preguntar y pedir cosas sobre el proyecto
   (`splitSections`: títulos Markdown, líneas en mayúsculas o terminadas en «:», párrafos de ~700 caracteres) con BM25
   (`SearchIndex`: título doble, todas las palabras y frase exacta pesan más, prefijos de 4+ letras), palabras sin tildes,
   vacías ni plurales (`terms`, `stem`) y el trozo que mejor responde con las palabras marcadas (`snippet`).
-- **Documentación** (`supabase/migrations/013_asistente_documentos.sql`, después de 001 a 012; tabla `knowledge_docs` sin
-  lectura directa; `knowledge_docs`, `save_knowledge_doc`, `delete_knowledge_doc`): del equipo (la ven todas las cuentas
-  activas) o privada; cambiar o borrar, quien la subió o un administrador; máx. 600.000 caracteres y 300 por persona; al
-  darse de baja, la del equipo se queda. Se guarda **solo el texto**, sacado en el navegador (`features/assistant/extract.ts`):
-  texto, Markdown, HTML, Word `.docx` (su XML, con `unzipEntry` sin librerías) y PDF con `pdfjs-dist` (se carga solo si hace
-  falta y no va en la caché de la PWA, `globIgnores`). Panel lateral para subir (también arrastrando o pegando un texto),
-  ver, editar y borrar. Se carga una vez por sesión (`docsStore.ts`); sin la migración, el aviso lo dice y el resto funciona.
+- **Documentación en SharePoint** (decisión de la usuaria: los documentos se quedan en Microsoft, no en Supabase; la
+  migración 013 que los guardaba en Supabase se quitó antes de aplicarse). Por la extensión «Marea · Lista» (1.3.0), con
+  la sesión de cada persona (`features/assistant/spDocs.ts`, autocontenido como `spWork`, en `background.js` como
+  `spDocs`/`pageDocs`, operaciones `resolve | search | list | upload`, mensaje `marea-ext:docs`, `extDocs` en Marea):
+  `resolve` convierte la dirección de una carpeta (o su enlace de «compartir» `/:f:/s/…`, con `/_api/v2.0/shares/u!…`) en
+  sitio y ruta; `search` usa el **buscador de SharePoint** (`/_api/search/query`, KQL con `path:"…"`: todas las palabras y,
+  si no hay nada, alguna; `kqlFrom`) en todo el sitio o solo en la carpeta, y devuelve título, enlace, autor y el resumen
+  con `<c0>` resaltado (`summaryMarks`): lee Word, PDF, PowerPoint o Excel sin descargarlos y cada persona solo ve lo que
+  puede abrir; `list` da los últimos archivos de la carpeta y `upload` sube uno (máx. 15 MB, sin sustituir). Panel lateral
+  (`SharePointPanel`): pegar la carpeta, «Buscar en: todo el sitio / solo la carpeta», subir (también arrastrando) y los
+  últimos archivos; la configuración es de cada persona (`asistente-sharepoint` en localStorage). Cada búsqueda enseña
+  «En SharePoint» (`SharePointHits`) y «En Marea». Sin la extensión, el Asistente busca solo en Marea.
 
 ### Más adelante
 

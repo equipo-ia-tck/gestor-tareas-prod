@@ -7,7 +7,7 @@ import type { MsListResult } from '../../domain/msListParse';
  */
 
 /** Versión de `extension/manifest.json` (un test comprueba que coinciden): si la instalada es anterior, se avisa. */
-export const LATEST_EXTENSION = '1.2.0';
+export const LATEST_EXTENSION = '1.3.0';
 
 /** ¿La versión instalada es anterior a la última? */
 export function isOutdated(installed: string | null): boolean {
@@ -55,5 +55,25 @@ export function extSync(listUrl: string, changes: unknown[], wantList: boolean):
     const timer = setTimeout(() => { waiting.delete(id); resolve({ error: 'La extensión no ha contestado a tiempo.' }); }, 180_000);
     waiting.set(id, { resolve, timer });
     window.postMessage({ type: 'marea-ext:sync', id, listUrl, changes, wantList }, window.location.origin);
+  });
+}
+
+/**
+ * Documentación del Asistente en SharePoint por la extensión (`resolve`, `search`, `list`, `upload`; ver
+ * `features/assistant/spDocs.ts`). Lanza el error que devuelva SharePoint.
+ */
+export function extDocs<T>(op: 'resolve' | 'search' | 'list' | 'upload', args: Record<string, unknown>, timeoutMs = 60_000): Promise<T> {
+  const id = crypto.randomUUID();
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { waiting.delete(id); reject(new Error('La extensión no ha contestado a tiempo.')); }, timeoutMs);
+    waiting.set(id, {
+      timer,
+      resolve: (r) => {
+        const res = r as ExtResult & { value?: T };
+        if (res.error) reject(new Error(res.error));
+        else resolve(res.value as T);
+      },
+    });
+    window.postMessage({ type: 'marea-ext:docs', id, op, args }, window.location.origin);
   });
 }

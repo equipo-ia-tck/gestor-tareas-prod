@@ -1,6 +1,6 @@
 // Empaqueta la extensión de Chrome «Marea · Lista» (carpeta extension/) en dist/marea-lista/ y en
 // dist/marea-lista-extension.zip, que se descarga desde la pantalla Lista. Mete en background.js el trabajo en SharePoint
-// de src/features/mslist/spWork.ts (compilado con Vite, sin minificar, para no depender de la versión de Node). Se
+// de src/features/mslist/spWork.ts y la documentación de src/features/assistant/spDocs.ts (compilados con Vite, sin minificar, para no depender de la versión de Node). Se
 // ejecuta al final de `npm run build`.
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
@@ -12,15 +12,19 @@ await build({
   logLevel: 'warn',
   publicDir: false,
   build: {
-    ssr: 'src/features/mslist/spWork.ts',
+    ssr: true,
     outDir: TMP,
     emptyOutDir: true,
     minify: false,
     target: 'node18',
-    rollupOptions: { output: { format: 'es', entryFileNames: 'spWork.mjs' } },
+    rollupOptions: {
+      input: { spWork: 'src/features/mslist/spWork.ts', spDocs: 'src/features/assistant/spDocs.ts' },
+      output: { format: 'es', entryFileNames: '[name].mjs' },
+    },
   },
 });
 const { spWork } = await import(pathToFileURL(`${TMP}/spWork.mjs`).href);
+const { spDocs } = await import(pathToFileURL(`${TMP}/spDocs.mjs`).href);
 rmSync(TMP, { recursive: true, force: true });
 
 const OUT = 'dist/marea-lista';
@@ -30,7 +34,8 @@ mkdirSync(OUT, { recursive: true });
 const files = {
   'manifest.json': readFileSync('extension/manifest.json'),
   'content.js': readFileSync('extension/content.js'),
-  'background.js': Buffer.from(readFileSync('extension/background.template.js', 'utf8').replaceAll('/*SPWORK*/', spWork.toString())),
+  'background.js': Buffer.from(readFileSync('extension/background.template.js', 'utf8')
+    .replaceAll('/*SPWORK*/', spWork.toString()).replaceAll('/*SPDOCS*/', spDocs.toString())),
   'icon.png': readFileSync('public/pwa-192.png'),
 };
 for (const [name, data] of Object.entries(files)) writeFileSync(`${OUT}/${name}`, data);

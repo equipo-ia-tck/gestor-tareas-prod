@@ -241,7 +241,8 @@ describe('Microsoft List: la extensión', () => {
   async function background(fetch: unknown) {
     const { readFileSync } = await import('node:fs');
     const { spWork } = await import('../src/features/mslist/spWork');
-    const code = readFileSync('extension/background.template.js', 'utf8').replaceAll('/*SPWORK*/', spWork.toString());
+    const { spDocs } = await import('../src/features/assistant/spDocs');
+    const code = readFileSync('extension/background.template.js', 'utf8').replaceAll('/*SPWORK*/', spWork.toString()).replaceAll('/*SPDOCS*/', spDocs.toString());
     let onMessage: ((msg: unknown, sender: unknown, reply: (r: unknown) => void) => boolean) | null = null;
     const injected: unknown[][] = [];
     const created: unknown[] = [];
@@ -310,6 +311,13 @@ describe('Microsoft List: la extensión', () => {
     expect(sp.creates[0].headers['Content-Type']).toBe('application/json;odata=verbose');
     // Después de un alta se relee la lista (para enseñarla ya con el elemento).
     expect(r.list).not.toBeNull();
+  });
+
+  it('documentación: solo operaciones conocidas y en SharePoint', async () => {
+    const ext = await background(async () => new Response(JSON.stringify({ Title: 'Equipo', Url: 'https://wpp.sharepoint.com/sites/Equipo' }), { headers: { 'content-type': 'application/json' } }));
+    expect(await ext.ask({ type: 'marea-ext:docs', op: 'borrar', args: { siteUrl: 'https://wpp.sharepoint.com/sites/Equipo' } })).toEqual({ error: 'Petición de documentación no válida.' });
+    expect(await ext.ask({ type: 'marea-ext:docs', op: 'search', args: { siteUrl: 'https://evil.es' } })).toEqual({ error: 'Petición de documentación no válida.' });
+    expect(await ext.ask({ type: 'marea-ext:docs', op: 'search', args: { siteUrl: 'https://wpp.sharepoint.com/sites/Equipo', query: 'x' } })).toEqual({ value: { hits: [], loose: false } });
   });
 
   it('rechaza lo que no es de Marea o no es una lista de SharePoint', async () => {

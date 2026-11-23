@@ -1,28 +1,27 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { BookOpen, CornerDownLeft, ExternalLink, FileText, FolderOpen, Lock, MessagesSquare, Trash2, Upload, User, Users, X } from 'lucide-react';
+import { BookOpen, CornerDownLeft, ExternalLink, FileText, FolderOpen, MessagesSquare, Puzzle, RefreshCw, Upload, User, X } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
 import { useWideLayout } from '../../app/Layout';
 import { routeHref } from '../../app/router';
-import { Modal } from '../../components/Modal';
 import { TaskList } from '../../components/TaskList';
 import { useToast } from '../../components/Toast';
 import { inputClass } from '../../components/ui/styles';
 import { repo } from '../../data/services';
-import { useSync } from '../../data/sync';
 import { ASSISTANT_EXAMPLES, buildChunks, matchTasks, parseIntent, queryTasks, type Intent } from '../../domain/assistant';
 import { formatDay } from '../../domain/dates';
-import { SearchIndex, type Hit, type KnowledgeDoc } from '../../domain/knowledge';
+import { SearchIndex, terms, type Hit } from '../../domain/knowledge';
 import { mentionsOf, type Mention } from '../../domain/notes';
 import { peopleDirectory } from '../../domain/people';
 import { TOPIC_TYPE_ID, type ActivityEntry, type Task } from '../../domain/types';
 import { findType, stateForCategory } from '../../domain/workflows';
+import { usePersistentState } from '../../hooks/usePersistentState';
 import { useTaskActions } from '../../hooks/useTaskActions';
 import { parseCapture } from '../../parser/parseCapture';
 import { submitCapture } from '../capture/submitCapture';
 import { track } from '../usage/track';
 import { ViewHeader } from '../views/ViewHeader';
-import { deleteDoc, loadDocs, saveDoc, useDocs } from './docsStore';
-import { extractText } from './extract';
+import { extDocs, useExtension } from '../mslist/extension';
+import { kqlFrom, summaryMarks } from './spDocs';
 
 type ActIntent = Extract<Intent, { kind: 'act' }>;
 
@@ -50,13 +49,9 @@ export function AssistantView() {
   useWideLayout(true);
   const app = useApp();
   const { tasks, notes, allProjects, peopleCards, itemTypes, today, activity, mentionables, releases, projectMap, editTask } = app;
-  const { isAdmin } = useSync();
-  const toast = useToast();
   const actions = useTaskActions();
-  const docs = useDocs();
   const [entries, setEntries] = useState<Entry[]>(history);
   const [text, setText] = useState('');
-  const [viewing, setViewing] = useState<{ doc: KnowledgeDoc; find?: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const people = useMemo(() => {
@@ -64,9 +59,9 @@ export function AssistantView() {
     return [...new Set([...dir, ...mentionables])];
   }, [tasks, notes, peopleCards, mentionables]);
   const index = useMemo(() => new SearchIndex(buildChunks({
-    tasks, notes, projects: allProjects, docs: docs.docs,
+    tasks, notes, projects: allProjects, docs: [],
     people: people.map((name) => peopleCards.find((c) => c.name === name) ?? { name, role: '', notes: '', email: '' }),
-  })), [tasks, notes, allProjects, docs.docs, people, peopleCards]);
+  })), [tasks, notes, allProjects, people, peopleCards]);
   const captureCtx = { today, projects: allProjects, people: mentionables, types: itemTypes, releases };
 
   const push = (question: string, answer: Answer) => {
@@ -136,7 +131,7 @@ export function AssistantView() {
           }
           return push(q, { kind: 'choose', act: intent, ids: found.slice(0, 10).map((t) => t.id) });
         }
-        case 'search': return push(q, { kind: 'search', query: q, hits: index.search(q, { limit: 14, sources: intent.sources }) });
+        case 'search': return push(q, { kind: 'search', query: q, hits: index.search(q, { limit: 14 }) });
       }
     } catch (e) {
       push(q, { kind: 'message', tone: 'warn', text: (e as Error).message });
@@ -228,7 +223,7 @@ export function AssistantView() {
           </ul>
         </>
       );
-      case 'search': return <SearchAnswer hits={a.hits} list={list} onOpenDoc={(doc, find) => setViewing({ doc, find })} docs={docs.docs} />;
+      case 'search': return <><SharePointHits query={a.query} /><SearchAnswer hits={a.hits} list={list} /></>;
     }
   };
 
@@ -261,8 +256,7 @@ export function AssistantView() {
           ))}
         </div>
       </div>
-      <DocsPanel isAdmin={isAdmin} onOpen={(doc) => setViewing({ doc })} />
-      {viewing && <DocViewer doc={viewing.doc} find={viewing.find} onClose={() => setViewing(null)} onSaved={(d) => { setViewing({ doc: d }); toast('Documento guardado'); }} />}
+      <SharePointPanel />
     </div>
   );
 }
@@ -300,26 +294,22 @@ function Marked({ text, marks }: { text: string; marks: [number, number][] }) {
   return <>{parts}</>;
 }
 
-function SearchAnswer({ hits, list, docs, onOpenDoc }: {
-  hits: Hit[]; list: (ids: string[]) => ReactNode; docs: KnowledgeDoc[]; onOpenDoc: (doc: KnowledgeDoc, find: string) => void;
-}) {
-  if (!hits.length) return <p className="text-sm text-zinc-400">No encuentro nada. Prueba con otras palabras o con una de las frases de ejemplo («ayuda»).</p>;
+function SearchAnswer({ hits, list }: { hits: Hit[]; list: (ids: string[]) => ReactNode }) {
+  if (!hits.length) return <p className="text-sm text-zinc-400">En Marea no encuentro nada. Prueba con otras palabras o con una de las frases de ejemplo («ayuda»).</p>;
   const taskIds = [...new Set(hits.filter((h) => h.chunk.source === 'task').map((h) => h.chunk.ref))];
   const others = hits.filter((h) => h.chunk.source !== 'task');
   return (
     <>
-      <Understood>Lo que mejor encaja</Understood>
+      {others.length > 0 && <Understood>En Marea</Understood>}
       <ul className="space-y-2.5">
         {others.map((h) => {
           const c = h.chunk;
-          const doc = c.source === 'doc' ? docs.find((d) => d.id === c.ref) : undefined;
           const icon = { doc: <BookOpen className="size-3.5" />, note: <FileText className="size-3.5" />, person: <User className="size-3.5" />, project: <FolderOpen className="size-3.5" />, task: null }[c.source];
           const where = <>{icon}<span className="font-medium">{c.title}</span>{c.section && <span className="text-zinc-400">› {c.section}</span>}</>;
           return (
             <li key={c.id} className="text-sm">
               <p className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-300">
-                {c.source === 'doc' && doc ? <button type="button" onClick={() => onOpenDoc(doc, h.snippet.replace(/^…|…$/g, '').slice(0, 60))} className="inline-flex items-center gap-1.5 hover:underline">{where}</button>
-                  : c.source === 'note' ? <a href={routeHref({ view: 'notes', id: c.ref })} className="inline-flex items-center gap-1.5 hover:underline">{where}</a>
+                {c.source === 'note' ? <a href={routeHref({ view: 'notes', id: c.ref })} className="inline-flex items-center gap-1.5 hover:underline">{where}</a>
                     : c.source === 'person' ? <a href={routeHref({ view: 'person', name: c.ref })} className="inline-flex items-center gap-1.5 hover:underline">{where}</a>
                       : <a href={routeHref({ view: 'project', id: c.ref })} className="inline-flex items-center gap-1.5 hover:underline">{where}</a>}
               </p>
@@ -333,157 +323,199 @@ function SearchAnswer({ hits, list, docs, onOpenDoc }: {
   );
 }
 
-const KIND_LABEL: Record<KnowledgeDoc['kind'], string> = { text: 'Texto', markdown: 'Markdown', pdf: 'PDF', word: 'Word', other: 'Web' };
-const size = (n: number) => (n < 1000 ? `${n} car.` : `${Math.round(n / 1000)} mil car.`);
+/** Dónde busca el Asistente en SharePoint (de cada persona, en este navegador). */
+interface SpConfig { siteUrl: string; siteTitle: string; folder: string; folderName: string; folderUrl: string; scope: 'site' | 'folder' }
 
-/** Documentación del equipo: subir archivos o pegar texto, verla y borrar la propia (o cualquiera, si eres admin). */
-function DocsPanel({ isAdmin, onOpen }: { isAdmin: boolean; onOpen: (doc: KnowledgeDoc) => void }) {
-  const docs = useDocs();
+const useSpConfig = () => usePersistentState<SpConfig | null>('asistente-sharepoint', null);
+
+interface SpHit { title: string; url: string; summary: string; author: string; modified: string; type: string }
+
+/** Resultados del buscador de SharePoint para la pregunta (por la extensión), en todo el sitio o en la carpeta. */
+function SharePointHits({ query }: { query: string }) {
+  const [config] = useSpConfig();
+  const extension = useExtension();
+  const [state, setState] = useState<{ hits: SpHit[]; loose: boolean } | { error: string } | null>(null);
+  const kql = kqlFrom(query, (w) => !terms(w).length);
+  const scope = config ? (config.scope === 'folder' ? config.folderUrl : config.siteUrl) : '';
+  useEffect(() => {
+    if (!config || !extension || !kql) return;
+    let alive = true;
+    extDocs<{ hits: SpHit[]; loose: boolean }>('search', { siteUrl: config.siteUrl, scope, query: kql.query, orQuery: kql.orQuery, limit: 8 })
+      .then((r) => { if (alive) setState(r); }, (e: Error) => { if (alive) setState({ error: e.message }); });
+    return () => { alive = false; };
+  }, [query, scope, extension]); // eslint-disable-line react-hooks/exhaustive-deps -- kql sale de query
+  if (!config || !kql) return null;
+  const where = config.scope === 'folder' ? `la carpeta «${config.folderName}»` : `el sitio «${config.siteTitle}»`;
+  if (!extension) return <p className="mb-3 text-xs text-zinc-400">Para buscar también en {where} de SharePoint hace falta la extensión «Marea · Lista».</p>;
+  return (
+    <section className="mb-3">
+      <Understood>En SharePoint · {where}</Understood>
+      {!state && <p className="text-sm text-zinc-400">Buscando en SharePoint…</p>}
+      {state && 'error' in state && <p className="text-sm text-amber-700 dark:text-amber-300">{state.error}</p>}
+      {state && 'hits' in state && state.hits.length === 0 && <p className="text-sm text-zinc-400">No hay documentos que encajen.</p>}
+      {state && 'hits' in state && state.loose && state.hits.length > 0 && <p className="mb-1 text-xs text-zinc-400">Ninguno tiene todas las palabras; estos tienen alguna.</p>}
+      {state && 'hits' in state && (
+        <ul className="space-y-2.5">
+          {state.hits.map((h) => {
+            const sum = summaryMarks(h.summary);
+            return (
+              <li key={h.url} className="text-sm">
+                <a href={h.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-700 hover:underline dark:text-zinc-200">
+                  <FileText className="size-3.5" />{h.title || h.url.split('/').pop()}
+                  {h.type && <span className="rounded bg-zinc-100 px-1 text-[10px] uppercase text-zinc-500 dark:bg-zinc-800">{h.type}</span>}
+                  <ExternalLink className="size-3 text-zinc-400" />
+                </a>
+                {sum.text && <p className="mt-0.5 text-zinc-700 dark:text-zinc-300"><Marked text={sum.text} marks={sum.marks} /></p>}
+                <p className="text-[11px] text-zinc-400">{[h.author.split(';')[0], h.modified ? new Date(h.modified).toLocaleDateString('es') : ''].filter(Boolean).join(' · ')}</p>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+const MAX_UPLOAD = 15 * 1024 * 1024;
+const kb = (n: number) => (n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1048576).toFixed(1).replace('.', ',')} MB`);
+
+function toBase64(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
+/**
+ * Documentación en SharePoint: la carpeta del equipo (se pega su dirección o su enlace de «compartir»), si se busca en
+ * todo el sitio o solo en ella, subir archivos a la carpeta y los más recientes. Todo por la extensión, con tu sesión.
+ */
+function SharePointPanel() {
+  const extension = useExtension();
   const toast = useToast();
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [visibility, setVisibility] = useState<KnowledgeDoc['visibility']>('team');
+  const [config, setConfig] = useSpConfig();
+  const [link, setLink] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
-  const [pasting, setPasting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [files, setFiles] = useState<{ name: string; url: string; modified: string; size: number }[] | null>(null);
   const [dragging, setDragging] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
-  const upload = async (files: FileList | File[]) => {
-    for (const file of Array.from(files)) {
-      setBusy(`Leyendo ${file.name}…`);
-      try {
-        const x = await extractText(file);
-        setBusy(`Guardando ${file.name}…`);
-        await saveDoc({ title: x.title, kind: x.kind, fileName: file.name, body: x.body, visibility });
-        track('assistant-doc', x.kind);
-        toast(`«${x.title}» añadido a la documentación`);
-      } catch (e) {
-        toast((e as Error).message);
-      }
-    }
+  const loadFiles = (c = config) => {
+    if (!c || !extension) return;
+    extDocs<{ files: { name: string; url: string; modified: string; size: number }[] }>('list', { siteUrl: c.siteUrl, folder: c.folder })
+      .then((r) => setFiles(r.files), (e: Error) => setError(e.message));
+  };
+  useEffect(() => { loadFiles(); }, [config?.folder, extension]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const connect = async () => {
+    setBusy('Buscando la carpeta…');
+    setError(null);
+    try {
+      const r = await extDocs<Omit<SpConfig, 'scope'>>('resolve', { url: link.trim() });
+      const next = { ...r, scope: config?.scope ?? 'site' } as SpConfig;
+      setConfig(next);
+      setLink('');
+      track('assistant-sharepoint', 'connect');
+      loadFiles(next);
+    } catch (e) { setError((e as Error).message); }
     setBusy(null);
   };
 
-  return (
-    <aside className="space-y-3 self-start rounded-lg border border-zinc-200 bg-white p-3 text-sm lg:sticky lg:top-4 dark:border-zinc-700 dark:bg-zinc-900"
-      onDragOver={(e) => { e.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)}
-      onDrop={(e) => { e.preventDefault(); setDragging(false); if (e.dataTransfer.files.length) void upload(e.dataTransfer.files); }}>
-      <h2 className="flex items-center gap-2 font-semibold"><BookOpen className="size-4" />Documentación <span className="font-normal text-zinc-400">{docs.docs.length}</span></h2>
-      <p className="text-xs text-zinc-500">Guías, procesos, PDFs o Word para que el Asistente busque en ellos. Se guarda solo el texto.</p>
-      <div className={`rounded-md border-2 border-dashed p-3 text-center text-xs ${dragging ? 'border-indigo-400 bg-indigo-50 dark:bg-indigo-950' : 'border-zinc-200 dark:border-zinc-700'}`}>
-        <input ref={fileRef} type="file" multiple hidden accept=".pdf,.docx,.md,.markdown,.txt,.html,.htm,.csv,.json"
-          onChange={(e) => { if (e.target.files?.length) void upload(e.target.files); e.target.value = ''; }} />
-        <button type="button" disabled={!!busy} onClick={() => fileRef.current?.click()}
-          className="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-3 py-1.5 font-medium text-white hover:bg-indigo-500 disabled:opacity-40">
-          <Upload className="size-4" />Subir archivos
-        </button>
-        <p className="mt-1 text-zinc-400">o arrástralos aquí · PDF, Word, Markdown, texto</p>
-        <button type="button" onClick={() => setPasting(true)} className="mt-1 text-indigo-600 hover:underline dark:text-indigo-400">o pega un texto</button>
-      </div>
-      <div className="flex items-center gap-2 text-xs">
-        <span className="text-zinc-500">Al subir:</span>
-        {(['team', 'private'] as const).map((v) => (
-          <label key={v} className="inline-flex items-center gap-1">
-            <input type="radio" checked={visibility === v} onChange={() => setVisibility(v)} />{v === 'team' ? 'para todo el equipo' : 'solo para mí'}
-          </label>
-        ))}
-      </div>
-      {busy && <p className="text-xs text-zinc-500">{busy}</p>}
-      {docs.error && <p className="rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-800 dark:bg-amber-950/50 dark:text-amber-200">{docs.error}</p>}
-      <ul className="max-h-[50vh] space-y-1 overflow-y-auto">
-        {docs.docs.map((d) => (
-          <li key={d.id} className="group flex items-start gap-2 rounded-md px-1 py-1 hover:bg-zinc-50 dark:hover:bg-zinc-800">
-            <button type="button" onClick={() => onOpen(d)} className="min-w-0 flex-1 text-left">
-              <span className="flex items-center gap-1 font-medium">
-                {d.visibility === 'private' ? <Lock className="size-3 shrink-0 text-zinc-400" /> : <Users className="size-3 shrink-0 text-zinc-400" />}
-                <span className="truncate">{d.title}</span>
-              </span>
-              <span className="block text-xs text-zinc-400">{KIND_LABEL[d.kind]} · {size(d.size)} · {d.ownerName || '—'}</span>
-            </button>
-            {(d.mine || isAdmin) && (
-              <button type="button" aria-label={`Borrar ${d.title}`} className="rounded p-1 text-zinc-300 opacity-0 group-hover:opacity-100 hover:text-red-600"
-                onClick={() => { if (confirm(`¿Borrar «${d.title}» de la documentación${d.visibility === 'team' ? ' del equipo' : ''}?`)) void deleteDoc(d.id).catch((e: Error) => toast(e.message)); }}>
-                <Trash2 className="size-3.5" />
-              </button>
-            )}
-          </li>
-        ))}
-        {docs.loaded && !docs.error && docs.docs.length === 0 && <li className="text-xs text-zinc-400">Aún no hay documentos.</li>}
-      </ul>
-      {docs.loaded && <button type="button" onClick={() => loadDocs(true)} className="text-xs text-zinc-400 hover:text-zinc-700">Volver a cargar</button>}
-      {pasting && <PasteDoc visibility={visibility} onClose={() => setPasting(false)} />}
-    </aside>
-  );
-}
-
-function PasteDoc({ visibility, onClose }: { visibility: KnowledgeDoc['visibility']; onClose: () => void }) {
-  const toast = useToast();
-  const [title, setTitle] = useState('');
-  const [body, setBody] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const save = async () => {
-    try {
-      await saveDoc({ title: title.trim(), kind: 'markdown', fileName: '', body, visibility });
-      track('assistant-doc', 'paste');
-      toast(`«${title.trim()}» añadido a la documentación`);
-      onClose();
-    } catch (e) { setError((e as Error).message); }
+  const upload = async (list: FileList | File[]) => {
+    if (!config) return;
+    for (const file of Array.from(list)) {
+      if (file.size > MAX_UPLOAD) { toast(`«${file.name}» pesa ${kb(file.size)}: desde aquí se suben hasta 15 MB. Súbelo directamente en SharePoint.`); continue; }
+      setBusy(`Subiendo ${file.name}…`);
+      try {
+        const r = await extDocs<{ name: string; url: string }>('upload', { siteUrl: config.siteUrl, folder: config.folder, name: file.name, base64: toBase64(await file.arrayBuffer()) }, 180_000);
+        track('assistant-sharepoint', 'upload');
+        toast(`«${r.name}» subido a «${config.folderName}». SharePoint tarda unos minutos en tenerlo en su buscador.`);
+      } catch (e) { toast((e as Error).message); }
+    }
+    setBusy(null);
+    loadFiles();
   };
-  return (
-    <Modal title="Pegar un texto" onClose={onClose} wide>
-      <div className="space-y-2 text-sm">
-        <input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Título (p. ej. Guía de entrega)" className={inputClass} />
-        <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={14} placeholder={'Pega aquí el texto. Los títulos con «# » separan los apartados.'}
-          className={`${inputClass} resize-y font-mono text-xs`} />
-        {error && <p className="text-xs text-red-600">{error}</p>}
-        <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="rounded-md px-3 py-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800">Cancelar</button>
-          <button type="button" disabled={!title.trim() || !body.trim()} onClick={() => void save()}
-            className="rounded-md bg-indigo-600 px-3 py-1.5 font-medium text-white hover:bg-indigo-500 disabled:opacity-40">Guardar</button>
-        </div>
-      </div>
-    </Modal>
-  );
-}
 
-/** Ver un documento (y, si es tuyo o eres admin, cambiarle el título o el texto); con `find`, se va a ese trozo. */
-function DocViewer({ doc, find, onClose, onSaved }: { doc: KnowledgeDoc; find?: string; onClose: () => void; onSaved: (d: KnowledgeDoc) => void }) {
-  const { isAdmin } = useSync();
-  const [editing, setEditing] = useState(false);
-  const [title, setTitle] = useState(doc.title);
-  const [body, setBody] = useState(doc.body);
-  const [error, setError] = useState<string | null>(null);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!find || !ref.current) return;
-    const el = [...ref.current.querySelectorAll('p')].find((p) => p.textContent?.replace(/\s+/g, ' ').includes(find.slice(0, 40)));
-    if (el) { el.scrollIntoView({ block: 'center' }); el.classList.add('bg-amber-50', 'dark:bg-amber-950/40'); }
-  }, [find]);
-  const canEdit = doc.mine || isAdmin;
+  const card = 'space-y-3 self-start rounded-lg border border-zinc-200 bg-white p-3 text-sm lg:sticky lg:top-4 dark:border-zinc-700 dark:bg-zinc-900';
+  if (!extension) {
+    return (
+      <aside className={card}>
+        <h2 className="flex items-center gap-2 font-semibold"><BookOpen className="size-4" />Documentación en SharePoint</h2>
+        <p className="text-xs text-zinc-500">
+          Para buscar en los documentos del equipo (Word, PDF, PowerPoint…) y subir nuevos hace falta la extensión de Chrome «Marea · Lista», con tu
+          sesión de SharePoint. Sin ella, el Asistente busca igual en tus tareas, notas y personas.
+        </p>
+        <a href={routeHref({ view: 'lista' })} className="inline-flex items-center gap-1.5 text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">
+          <Puzzle className="size-3.5" />Instalar la extensión (Lista → Conectar)
+        </a>
+      </aside>
+    );
+  }
   return (
-    <Modal title={doc.title} onClose={onClose} wide>
-      <p className="mb-2 flex items-center gap-2 text-xs text-zinc-500">
-        {KIND_LABEL[doc.kind]}{doc.fileName ? ` · ${doc.fileName}` : ''} · {doc.visibility === 'team' ? 'para todo el equipo' : 'solo para ti'} · de {doc.ownerName || '—'}
-        {canEdit && !editing && <button type="button" onClick={() => setEditing(true)} className="ml-auto font-medium text-indigo-600 hover:underline dark:text-indigo-400">Editar</button>}
-      </p>
-      {editing ? (
-        <div className="space-y-2 text-sm">
-          <input value={title} onChange={(e) => setTitle(e.target.value)} className={inputClass} aria-label="Título" />
-          <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={18} className={`${inputClass} resize-y font-mono text-xs`} aria-label="Texto" />
-          {error && <p className="text-xs text-red-600">{error}</p>}
-          <div className="flex justify-end gap-2">
-            <button type="button" onClick={() => setEditing(false)} className="rounded-md px-3 py-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800">Cancelar</button>
-            <button type="button" onClick={() => void saveDoc({ id: doc.id, title, kind: doc.kind, fileName: doc.fileName, body, visibility: doc.visibility }).then(onSaved, (e: Error) => setError(e.message))}
-              className="rounded-md bg-indigo-600 px-3 py-1.5 font-medium text-white hover:bg-indigo-500">Guardar</button>
+    <aside className={card}
+      onDragOver={(e) => { if (config) { e.preventDefault(); setDragging(true); } }} onDragLeave={() => setDragging(false)}
+      onDrop={(e) => { e.preventDefault(); setDragging(false); if (config && e.dataTransfer.files.length) void upload(e.dataTransfer.files); }}>
+      <h2 className="flex items-center gap-2 font-semibold"><BookOpen className="size-4" />Documentación en SharePoint</h2>
+      {config ? (
+        <>
+          <p className="text-xs">
+            <a href={config.folderUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium hover:underline">
+              <FolderOpen className="size-3.5" />{config.folderName}<ExternalLink className="size-3 text-zinc-400" />
+            </a>
+            <span className="block text-zinc-400">en el sitio {config.siteTitle}</span>
+          </p>
+          <div className="space-y-0.5 text-xs">
+            <span className="text-zinc-500">Buscar en:</span>
+            <label className="flex items-center gap-1.5"><input type="radio" checked={config.scope === 'site'} onChange={() => setConfig({ ...config, scope: 'site' })} />todo el sitio «{config.siteTitle}»</label>
+            <label className="flex items-center gap-1.5"><input type="radio" checked={config.scope === 'folder'} onChange={() => setConfig({ ...config, scope: 'folder' })} />solo la carpeta «{config.folderName}»</label>
           </div>
-        </div>
+          <div className={`rounded-md border-2 border-dashed p-3 text-center text-xs ${dragging ? 'border-indigo-400 bg-indigo-50 dark:bg-indigo-950' : 'border-zinc-200 dark:border-zinc-700'}`}>
+            <input ref={fileRef} type="file" multiple hidden onChange={(e) => { if (e.target.files?.length) void upload(e.target.files); e.target.value = ''; }} />
+            <button type="button" disabled={!!busy} onClick={() => fileRef.current?.click()}
+              className="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-3 py-1.5 font-medium text-white hover:bg-indigo-500 disabled:opacity-40">
+              <Upload className="size-4" />Subir a la carpeta
+            </button>
+            <p className="mt-1 text-zinc-400">o arrastra los archivos aquí (hasta 15 MB)</p>
+          </div>
+          {busy && <p className="text-xs text-zinc-500">{busy}</p>}
+          {error && <p className="rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-800 dark:bg-amber-950/50 dark:text-amber-200">{error}</p>}
+          <div>
+            <p className="mb-1 flex items-center gap-2 text-xs font-semibold text-zinc-500">
+              Últimos de la carpeta
+              <button type="button" onClick={() => loadFiles()} aria-label="Volver a cargar" className="rounded p-0.5 hover:bg-zinc-100 dark:hover:bg-zinc-800"><RefreshCw className="size-3" /></button>
+            </p>
+            {files === null && <p className="text-xs text-zinc-400">Cargando…</p>}
+            {files && files.length === 0 && <p className="text-xs text-zinc-400">La carpeta está vacía.</p>}
+            <ul className="max-h-[40vh] space-y-0.5 overflow-y-auto">
+              {files?.map((f) => (
+                <li key={f.url}>
+                  <a href={f.url} target="_blank" rel="noreferrer" className="block truncate rounded px-1 py-0.5 text-xs hover:bg-zinc-50 dark:hover:bg-zinc-800" title={f.name}>
+                    {f.name} <span className="text-zinc-400">· {kb(f.size)}</span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <button type="button" onClick={() => { if (confirm('¿Dejar de usar esta carpeta? En SharePoint no se borra nada.')) { setConfig(null); setFiles(null); } }}
+            className="text-xs text-zinc-400 hover:text-zinc-700">Cambiar de carpeta</button>
+        </>
       ) : (
-        <div ref={ref} className="max-h-[65vh] space-y-2 overflow-y-auto text-sm leading-relaxed">
-          {doc.body.split(/\n{2,}/).map((block, i) => {
-            const h = /^(#{1,6})\s+(.+)$/.exec(block.trim());
-            return h ? <h3 key={i} className="pt-2 font-semibold">{h[2]}</h3> : <p key={i} className="rounded px-1 whitespace-pre-wrap">{block}</p>;
-          })}
-        </div>
+        <>
+          <p className="text-xs text-zinc-500">
+            Pega la dirección de la carpeta de documentación del equipo (la del navegador o su enlace de «compartir»). El Asistente buscará con el
+            buscador de SharePoint en todo su sitio, sin descargar nada, y cada persona solo verá lo que puede abrir.
+          </p>
+          <div className="flex gap-2">
+            <input value={link} onChange={(e) => { setLink(e.target.value); setError(null); }} onKeyDown={(e) => { if (e.key === 'Enter' && link.trim()) void connect(); }}
+              placeholder="https://….sharepoint.com/…" aria-label="Dirección de la carpeta" className={`${inputClass} min-w-0 flex-1 py-1`} />
+            <button type="button" disabled={!link.trim() || !!busy} onClick={() => void connect()}
+              className="rounded-md bg-indigo-600 px-3 py-1 font-medium text-white hover:bg-indigo-500 disabled:opacity-40">Usar</button>
+          </div>
+          {busy && <p className="text-xs text-zinc-500">{busy}</p>}
+          {error && <p className="rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-800 dark:bg-amber-950/50 dark:text-amber-200">{error}</p>}
+        </>
       )}
-      {!editing && doc.kind === 'pdf' && <p className="mt-2 flex items-center gap-1 text-xs text-zinc-400"><ExternalLink className="size-3" />Es el texto sacado del PDF (sin imágenes ni formato).</p>}
-    </Modal>
+    </aside>
   );
 }

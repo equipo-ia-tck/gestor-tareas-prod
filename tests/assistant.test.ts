@@ -116,31 +116,77 @@ Revisar las etiquetas de Adobe en todas las páginas.`;
   });
 });
 
-describe('Asistente: leer un Word (.docx) sin librerías', () => {
-  /** ZIP mínimo con un archivo, comprimido (deflate) o sin comprimir. */
-  async function zipWith(path: string, text: string, deflate: boolean): Promise<Uint8Array> {
-    const { deflateRawSync, crc32 } = await import('node:zlib');
-    const raw = Buffer.from(text);
-    const data = deflate ? deflateRawSync(raw) : raw;
-    const name = Buffer.from(path);
-    const local = Buffer.alloc(30);
-    local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(deflate ? 8 : 0, 8); local.writeUInt32LE(crc32(raw), 14);
-    local.writeUInt32LE(data.length, 18); local.writeUInt32LE(raw.length, 22); local.writeUInt16LE(name.length, 26);
-    const dir = Buffer.alloc(46);
-    dir.writeUInt32LE(0x02014b50, 0); dir.writeUInt16LE(deflate ? 8 : 0, 10); dir.writeUInt32LE(crc32(raw), 16);
-    dir.writeUInt32LE(data.length, 20); dir.writeUInt32LE(raw.length, 24); dir.writeUInt16LE(name.length, 28); dir.writeUInt32LE(0, 42);
-    const end = Buffer.alloc(22);
-    const dirStart = local.length + name.length + data.length;
-    end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(1, 8); end.writeUInt16LE(1, 10); end.writeUInt32LE(dir.length + name.length, 12); end.writeUInt32LE(dirStart, 16);
-    return new Uint8Array(Buffer.concat([local, name, data, dir, name, end]));
+describe('Asistente: documentación en SharePoint', async () => {
+  const { spDocs, kqlFrom, summaryMarks } = await import('../src/features/assistant/spDocs');
+  const SITE = 'https://wpp.sharepoint.com/sites/Equipo';
+  const FOLDER = '/sites/Equipo/Shared Documents/Marea';
+  const json = (v: unknown) => new Response(JSON.stringify(v), { headers: { 'content-type': 'application/json;odata=nometadata' } });
+
+  function fakeSp() {
+    const calls: { url: string; init?: RequestInit }[] = [];
+    const fetch = async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      const u = decodeURIComponent(url);
+      if (u.includes('/_api/v2.0/shares/u!')) return json({ name: 'Marea', webUrl: `https://wpp.sharepoint.com${encodeURI(FOLDER)}` });
+      if (u.endsWith('/_api/web?$select=Title,Url')) return json({ Title: 'Equipo', Url: SITE });
+      if (u.includes('GetFolderByServerRelativePath') && u.includes('/Files/AddUsingPath')) return json({ Name: 'guía.pdf', ServerRelativeUrl: `${FOLDER}/guía.pdf` });
+      if (u.includes('GetFolderByServerRelativePath') && u.includes('/Files?')) return json({ value: [{ Name: 'a.docx', ServerRelativeUrl: `${FOLDER}/a.docx`, TimeLastModified: '2026-11-20T10:00:00Z', Length: '2048' }] });
+      if (u.includes('GetFolderByServerRelativePath')) return json({ Name: 'Marea', ServerRelativeUrl: FOLDER });
+      if (u.endsWith('/_api/contextinfo')) return json({ FormDigestValue: 'dg' });
+      if (u.includes('/_api/search/query')) {
+        const or = u.includes(' OR ');
+        return json({ PrimaryQueryResult: { RelevantResults: { Table: { Rows: or ? [{ Cells: [
+          { Key: 'Title', Value: 'Guía de entrega' }, { Key: 'Path', Value: `${SITE}/Shared Documents/guia.docx` },
+          { Key: 'HitHighlightedSummary', Value: 'Se <c0>valida</c0> en <c1>PRE</c1> &amp; PRO<ddd/>' }, { Key: 'Author', Value: 'Ana;Luis' }, { Key: 'FileType', Value: 'docx' },
+        ] }] : [] } } } });
+      }
+      return new Response('no', { status: 404 });
+    };
+    return { fetch, calls };
   }
 
-  it('saca el archivo pedido del ZIP, comprimido o no', async () => {
-    const { unzipEntry } = await import('../src/features/assistant/extract');
-    const xml = '<w:document><w:body><w:p><w:r><w:t>Hola equipo</w:t></w:r></w:p></w:body></w:document>';
-    expect(await unzipEntry(await zipWith('word/document.xml', xml, true), 'word/document.xml')).toBe(xml);
-    expect(await unzipEntry(await zipWith('word/document.xml', xml, false), 'word/document.xml')).toBe(xml);
-    expect(await unzipEntry(await zipWith('otra/cosa.xml', xml, true), 'word/document.xml')).toBeNull();
-    expect(await unzipEntry(new Uint8Array([1, 2, 3]), 'word/document.xml')).toBeNull();
+  async function withFetch<T>(f: typeof fetch, run: () => Promise<T>): Promise<T> {
+    const real = globalThis.fetch;
+    globalThis.fetch = f;
+    try { return await run(); } finally { globalThis.fetch = real; }
+  }
+
+  it('resuelve la carpeta desde la dirección del navegador o un enlace de «compartir»', async () => {
+    const sp = fakeSp();
+    const out = { siteUrl: SITE, siteTitle: 'Equipo', folder: FOLDER, folderName: 'Marea', folderUrl: `https://wpp.sharepoint.com${encodeURI(FOLDER)}` };
+    await withFetch(sp.fetch as typeof fetch, async () => {
+      expect(await spDocs('resolve', { url: `${SITE}/Shared%20Documents/Forms/AllItems.aspx?id=${encodeURIComponent(FOLDER)}&viewid=x` })).toEqual(out);
+      expect(await spDocs('resolve', { url: 'https://wpp.sharepoint.com/:f:/s/Equipo/AbCdEf?e=1' })).toEqual(out);
+      await expect(spDocs('resolve', { url: 'https://evil.es/x' })).rejects.toThrow(/no es de SharePoint/);
+    });
+    expect(sp.calls.some((c) => c.url.includes('/_api/v2.0/shares/u!'))).toBe(true);
+  });
+
+  it('busca con el buscador de SharePoint (todas las palabras y, si no, alguna) en el alcance elegido', async () => {
+    const sp = fakeSp();
+    const kql = kqlFrom('¿Cómo se valida en PRE la guía?', (w) => ['como', 'cómo', 'se', 'en', 'la'].includes(w.toLowerCase()))!;
+    expect(kql).toEqual({ query: 'valida PRE guía', orQuery: 'valida OR PRE OR guía' });
+    const r = await withFetch(sp.fetch as typeof fetch, () => spDocs('search', { siteUrl: SITE, scope: `${SITE}/Shared Documents`, ...kql, limit: 5 }));
+    expect(r.loose).toBe(true);
+    expect(r.hits).toEqual([{ title: 'Guía de entrega', url: `${SITE}/Shared Documents/guia.docx`, summary: 'Se <c0>valida</c0> en <c1>PRE</c1> &amp; PRO<ddd/>', author: 'Ana;Luis', modified: '', type: 'docx' }]);
+    const first = decodeURIComponent(sp.calls[0].url);
+    expect(first).toContain(`querytext='valida PRE guía path:"${SITE}/Shared Documents"'`);
+    expect(first).toContain('rowlimit=5');
+    const s = summaryMarks(r.hits[0].summary);
+    expect(s.text).toBe('Se valida en PRE & PRO…');
+    expect(s.marks.map(([a, b]) => s.text.slice(a, b))).toEqual(['valida', 'PRE']);
+  });
+
+  it('lista la carpeta y sube archivos sin sustituir los que ya hay', async () => {
+    const sp = fakeSp();
+    await withFetch(sp.fetch as typeof fetch, async () => {
+      expect(await spDocs('list', { siteUrl: SITE, folder: FOLDER })).toEqual({ files: [{ name: 'a.docx', url: `https://wpp.sharepoint.com${encodeURI(FOLDER)}/a.docx`, modified: '2026-11-20T10:00:00Z', size: 2048 }] });
+      const up = await spDocs('upload', { siteUrl: SITE, folder: FOLDER, name: 'guía.pdf', base64: btoa('hola') });
+      expect(up).toEqual({ name: 'guía.pdf', url: `https://wpp.sharepoint.com${encodeURI(`${FOLDER}/guía.pdf`)}` });
+    });
+    const call = sp.calls.find((c) => c.url.includes('AddUsingPath'))!;
+    expect(decodeURIComponent(call.url)).toContain("overwrite=false)?@n='guía.pdf'&@p='/sites/Equipo/Shared Documents/Marea'");
+    expect((call.init!.headers as Record<string, string>)['X-RequestDigest']).toBe('dg');
+    expect(new TextDecoder().decode(call.init!.body as Uint8Array)).toBe('hola');
   });
 });
