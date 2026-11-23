@@ -1,6 +1,6 @@
 import { MareaLogo } from '../components/ui/MareaLogo';
 import { useState, type FormEvent, type ReactNode } from 'react';
-import { BarChart3, Calendar, ChevronDown, ChevronRight, ClipboardCheck, FolderOpen, History, MessageSquarePlus, Plus, Inbox, KanbanSquare, Layers, ListChecks, NotebookPen, Settings, Sun, Users, type LucideIcon } from 'lucide-react';
+import { BarChart3, Calendar, ChevronDown, ChevronRight, ClipboardCheck, FolderOpen, History, MessageSquarePlus, Plus, Inbox, KanbanSquare, Layers, ListChecks, MessagesSquare, NotebookPen, Settings, Sun, Users, type LucideIcon } from 'lucide-react';
 import { Avatar } from '../components/ui/Badges';
 import { useApp } from './AppContext';
 import { repo } from '../data/services';
@@ -146,6 +146,7 @@ export function Sidebar({ route }: { route: Route }) {
       <NavItem icon={KanbanSquare} href={routeHref({ view: 'board' })} active={is('board') || is('all')}>Tablero</NavItem>
       <NavItem icon={Calendar} href={routeHref({ view: 'calendar' })} active={is('calendar') || is('week')}>Calendario</NavItem>
       <NavItem icon={NotebookPen} href={routeHref({ view: 'notes' })} active={is('notes')}>Notas</NavItem>
+      <NavItem icon={MessagesSquare} href={routeHref({ view: 'asistente' })} active={is('asistente')}>Asistente</NavItem>
       <NavItem icon={Layers} href={routeHref({ view: 'rally' })} active={is('rally')}>Rally</NavItem>
       <NavItem icon={ListChecks} href={routeHref({ view: 'lista' })} active={is('lista')}>Lista</NavItem>
       </section>

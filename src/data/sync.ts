@@ -7,6 +7,7 @@ import type { TasksDB } from './db';
 import type { UsageKind, UsageReport } from '../domain/usage';
 import type { ToolEventKind, ToolReport } from '../domain/rallyActivity';
 import type { Feedback, FeedbackImpact, FeedbackKind, FeedbackStatus } from '../domain/feedback';
+import type { KnowledgeDoc } from '../domain/knowledge';
 
 /**
  * Sincronización con la base de datos del equipo en Supabase (supabase/migrations/001_equipo.sql).
@@ -83,6 +84,8 @@ function friendly(message: string): string {
     return 'Falta actualizar el feedback en Supabase: un administrador tiene que ejecutar supabase/migrations/007_feedback_formulario.sql.';
   if (/could not find the function public\.admin_usage/i.test(message))
     return 'Falta preparar la analítica en Supabase: un administrador tiene que ejecutar supabase/migrations/009_analitica.sql y 010_analitica_kpis.sql.';
+  if (/could not find the function public\.(knowledge_docs|save_knowledge_doc|delete_knowledge_doc)\b|relation "?(public\.)?knowledge_docs"? does not exist/i.test(message))
+    return 'Falta preparar la documentación del Asistente en Supabase: un administrador tiene que ejecutar supabase/migrations/013_asistente_documentos.sql.';
   if (/feedback_status_check/i.test(message))
     return 'Falta el estado «Bloqueado» del feedback en Supabase: un administrador tiene que ejecutar supabase/migrations/008_feedback_bloqueado.sql.';
   return message;
@@ -278,6 +281,15 @@ export class SyncClient {
   adminFeedback = () => this.rpc<Feedback[]>('admin_feedback');
   updateFeedback = (id: string, patch: { status?: FeedbackStatus; taskId?: string }) =>
     this.rpc<Feedback>('admin_update_feedback', { p_id: id, p_status: patch.status ?? null, p_task_id: patch.taskId ?? null });
+
+  // ---------- Documentación del Asistente (migración 013): la del equipo la ven todos; la privada, quien la sube ----------
+
+  knowledgeDocs = () => this.rpc<KnowledgeDoc[]>('knowledge_docs');
+  saveKnowledgeDoc = (d: { id?: string | null; title: string; kind: KnowledgeDoc['kind']; fileName: string; body: string; visibility: KnowledgeDoc['visibility'] }) =>
+    this.rpc<Omit<KnowledgeDoc, 'body'>>('save_knowledge_doc', {
+      p_id: d.id ?? null, p_title: d.title, p_kind: d.kind, p_file_name: d.fileName, p_body: d.body, p_visibility: d.visibility,
+    });
+  deleteKnowledgeDoc = (id: string) => this.rpc<void>('delete_knowledge_doc', { p_id: id });
 
   // ---------- Analítica de uso (migración 009): la apunta la app; la leen solo los administradores ----------
 

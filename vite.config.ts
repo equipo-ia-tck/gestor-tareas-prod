@@ -33,6 +33,8 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,webmanifest}'],
+        // El lector de PDF (Asistente → subir documentos) solo se descarga si hace falta: no va en la caché.
+        globIgnores: ['**/pdf-*.js', '**/pdf.worker*'],
         // Rutas por hash: cualquier navegación sirve index.html desde la caché.
         navigateFallback: 'index.html',
         // La API del servidor (conectores) nunca se sirve desde la caché.

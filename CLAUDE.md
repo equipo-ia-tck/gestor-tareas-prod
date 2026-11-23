@@ -1050,6 +1050,30 @@ API de SharePoint no admite CORS, así que lo hace un **marcador del navegador**
   `LATEST_EXTENSION` en `features/mslist/extension.ts` (un test comprueba que coinciden); si la instalada es anterior, la
   pantalla Lista avisa y explica cómo actualizarla (descargar, sustituir la carpeta y recargar en `chrome://extensions`).
 
+## Fase 35: Asistente sin IA (rama `dev`, nov 2026)
+
+Petición de la usuaria: algo a lo que preguntar y pedir cosas sobre el proyecto, para todo el equipo y **sin gastar tokens**
+(un MCP siempre pasa por una IA, así que se hizo un asistente propio). Pantalla `#/asistente` («Asistente», debajo de Notas).
+
+- **Intérprete** (`domain/assistant.ts`, `parseIntent`, con tests): tareas con periodo (hoy, atrasadas, mañana, esta semana,
+  la que viene, próximos 7 días, sin fecha, Mi día), persona (`findPerson`: nombre completo o de pila, con o sin @), proyecto
+  (`findProject`: nombre o `#token`, con subproyectos) y estado (bloqueadas, en curso, hechas); IDs (`US1234`); lo hecho
+  (hoy, ayer, esta semana, la pasada, este mes, del registro); «qué dijo X» (`mentionsOf`), «temas para hablar con X»,
+  «quién es X». **Órdenes**: «crea una tarea …» (pasa por `parseCapture` y `submitCapture`: fechas, #proyecto, @persona,
+  !1…), «recuérdame …», «crea una nota Título: texto», «completa / reabre / pon X en curso / mueve X a mañana / pospón X /
+  añade X a mi día» (`matchTasks` por título; si hay varias, se elige; todo con «Deshacer»). Lo demás, a buscar.
+- **Buscador** (`domain/knowledge.ts`): trozos de tareas, notas (por apartados), personas, proyectos y documentos
+  (`splitSections`: títulos Markdown, líneas en mayúsculas o terminadas en «:», párrafos de ~700 caracteres) con BM25
+  (`SearchIndex`: título doble, todas las palabras y frase exacta pesan más, prefijos de 4+ letras), palabras sin tildes,
+  vacías ni plurales (`terms`, `stem`) y el trozo que mejor responde con las palabras marcadas (`snippet`).
+- **Documentación** (`supabase/migrations/013_asistente_documentos.sql`, después de 001 a 012; tabla `knowledge_docs` sin
+  lectura directa; `knowledge_docs`, `save_knowledge_doc`, `delete_knowledge_doc`): del equipo (la ven todas las cuentas
+  activas) o privada; cambiar o borrar, quien la subió o un administrador; máx. 600.000 caracteres y 300 por persona; al
+  darse de baja, la del equipo se queda. Se guarda **solo el texto**, sacado en el navegador (`features/assistant/extract.ts`):
+  texto, Markdown, HTML, Word `.docx` (su XML, con `unzipEntry` sin librerías) y PDF con `pdfjs-dist` (se carga solo si hace
+  falta y no va en la caché de la PWA, `globIgnores`). Panel lateral para subir (también arrastrando o pegando un texto),
+  ver, editar y borrar. Se carga una vez por sesión (`docsStore.ts`); sin la migración, el aviso lo dice y el resto funciona.
+
 ### Más adelante
 
 - **Electron**: la app es web estática con rutas por hash y datos en IndexedDB, así que se puede empaquetar sin cambios

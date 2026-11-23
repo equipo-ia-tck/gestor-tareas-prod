@@ -12,6 +12,7 @@ import { AnalystPrompt } from '../features/rally/AnalystPrompt';
 import { RallySync } from '../features/rally/RallySync';
 import { ListaBridge } from '../features/mslist/ListaBridge';
 import { ListaView } from '../features/mslist/ListaView';
+import { AssistantView } from '../features/assistant/AssistantView';
 import { LogView } from '../features/log/LogView';
 import { ReviewView } from '../features/review/ReviewView';
 import { FeedbackButton } from '../features/feedback/FeedbackButton';
@@ -49,6 +50,7 @@ function View({ route }: { route: Route }) {
     case 'calendar': return <CalendarView />;
     case 'rally': return <RallyView />;
     case 'lista': return <ListaView />;
+    case 'asistente': return <AssistantView />;
     case 'projects': return <ProjectsView />; // el título «Proyectos» de la barra lateral, como el de Grupos
     case 'inbox': return <InboxView />;
     case 'project': return <ProjectView key={route.id} id={route.id} />;
