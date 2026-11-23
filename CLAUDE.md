@@ -1092,6 +1092,23 @@ Petición de la usuaria: algo a lo que preguntar y pedir cosas sobre el proyecto
   Cada búsqueda enseña «En la carpeta X» de cada una, «En la Lista» (los elementos de `currentItems`, con su estado, enlace
   a SharePoint y «En el gestor» si hay tarea enlazada; chunks `source: 'list'`), «En SharePoint» de cada sitio y «En Marea».
 
+## Fase 36: pantallas de cada cuenta (rama `dev`, nov 2026)
+
+Petición de la usuaria: que los administradores elijan qué pantallas ve cada persona.
+
+- **Supabase** (`supabase/migrations/013_pantallas.sql`, después de 001 a 012): `profiles.hidden_screens` (null = las del
+  equipo por defecto) y `app_settings` `default_hidden_screens`. `me()` devuelve `hiddenScreens` ya resuelto (`screens_of`);
+  `admin_users()` el de cada cuenta y `admin_overview()` `defaultHiddenScreens`. Solo administradores: `admin_set_screens`
+  (varias cuentas a la vez; null = volver al defecto) y `admin_set_default_screens`. Claves validadas (`clean_screens`).
+- **Catálogo** (`domain/screens.ts`, `SCREENS`): Bandeja, Tablero, Calendario, Notas, Asistente, Rally, Lista, Proyectos,
+  Grupos y personas, Revisión semanal, Registro y Buscar. Hoy y Ajustes siempre se ven; Feedback y Analítica ya son de
+  administradores. `screenOf` lleva cada ruta a su pantalla (`week` → calendario, `project` → proyectos, `person` →
+  personas…). La app lo recibe en `SyncState.hiddenScreens` (cada consulta a `me`, como mucho 30 s) y la barra lateral quita
+  las entradas y secciones; `View` enseña «Esta pantalla no está activada para tu cuenta» si se abre por enlace. **Es para
+  simplificar la app, no es seguridad**: no cambia qué datos ve nadie.
+- **Ajustes → Pantallas** (`ScreensCard`, solo administradores): tabla con una fila por cuenta activa y una columna por
+  pantalla (ojo abierto/cerrado), fila «Por defecto» con «Aplicar a todas», y «Por defecto» en cada cuenta elegida a mano.
+
 ### Más adelante
 
 - **Electron**: la app es web estática con rutas por hash y datos en IndexedDB, así que se puede empaquetar sin cambios

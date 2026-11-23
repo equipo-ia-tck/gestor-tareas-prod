@@ -5,6 +5,7 @@ import { Avatar } from '../components/ui/Badges';
 import { useApp } from './AppContext';
 import { repo } from '../data/services';
 import { useSync } from '../data/sync';
+import { isHiddenRoute } from '../domain/screens';
 import { useTaskActions } from '../hooks/useTaskActions';
 import { usePersistentState } from '../hooks/usePersistentState';
 import { projectTree, withDescendants, type ProjectNode } from '../domain/projects';
@@ -107,9 +108,11 @@ function ProjectNav({ node, route }: { node: ProjectNode; route: Route }) {
 /** Vistas de uso ocasional, plegadas para no ocupar sitio. */
 function MoreSection({ route }: { route: Route }) {
   const [open, setOpen] = usePersistentState('sidebar-more', false);
-  const { isAdmin } = useSync();
+  const { isAdmin, hiddenScreens } = useSync();
   const active = ['log', 'review', 'feedback', 'analytics'].includes(route.view);
   const show = open || active;
+  const see = (v: Route['view']) => !isHiddenRoute(v, hiddenScreens);
+  if (!isAdmin && !see('review') && !see('log')) return null;
   return (
     <>
       <button type="button" onClick={() => setOpen(!open)}
@@ -118,8 +121,8 @@ function MoreSection({ route }: { route: Route }) {
       </button>
       {show && (
         <>
-          <NavItem icon={ClipboardCheck} href={routeHref({ view: 'review' })} active={route.view === 'review'}>Revisión semanal</NavItem>
-          <NavItem icon={History} href={routeHref({ view: 'log' })} active={route.view === 'log'}>Registro</NavItem>
+          {see('review') && <NavItem icon={ClipboardCheck} href={routeHref({ view: 'review' })} active={route.view === 'review'}>Revisión semanal</NavItem>}
+          {see('log') && <NavItem icon={History} href={routeHref({ view: 'log' })} active={route.view === 'log'}>Registro</NavItem>}
           {isAdmin && <NavItem icon={MessageSquarePlus} href={routeHref({ view: 'feedback' })} active={route.view === 'feedback'}>Feedback</NavItem>}
           {isAdmin && <NavItem icon={BarChart3} href={routeHref({ view: 'analytics' })} active={route.view === 'analytics'}>Analítica</NavItem>}
         </>
@@ -133,6 +136,9 @@ export function Sidebar({ route }: { route: Route }) {
   const [addingProject, setAddingProject] = useState(false);
   const is = (v: Route['view']) => route.view === v;
   const { moveIds } = useTaskActions();
+  // Pantallas que un administrador ha ocultado a esta cuenta (Ajustes → Pantallas).
+  const { hiddenScreens } = useSync();
+  const see = (v: Route['view']) => !isHiddenRoute(v, hiddenScreens);
   return (
     <nav className="mr-sidebar flex h-full flex-col overflow-y-auto p-3">
       <div className="mb-3 flex items-center gap-2 px-2 pt-1">
@@ -141,17 +147,17 @@ export function Sidebar({ route }: { route: Route }) {
       <section className="mr-side-section" aria-label="Vistas">
       <NavItem icon={Sun} href={routeHref({ view: 'today' })} active={is('today')} count={new Set([...tasksDueOn(tasks, today), ...overdueTasks(tasks, today), ...myDayTasks(tasks, today)].map((t) => t.id)).size}
         onDropTasks={(ids) => void moveIds(ids, { due_date: today }, 'Movida a hoy')}>Hoy</NavItem>
-      <NavItem icon={Inbox} href={routeHref({ view: 'inbox' })} active={is('inbox')} count={inboxTasks(tasks).length}
-        onDropTasks={(ids) => void moveIds(ids, { due_date: null, project_id: null }, 'Movida a la bandeja')}>Bandeja</NavItem>
-      <NavItem icon={KanbanSquare} href={routeHref({ view: 'board' })} active={is('board') || is('all')}>Tablero</NavItem>
-      <NavItem icon={Calendar} href={routeHref({ view: 'calendar' })} active={is('calendar') || is('week')}>Calendario</NavItem>
-      <NavItem icon={NotebookPen} href={routeHref({ view: 'notes' })} active={is('notes')}>Notas</NavItem>
-      <NavItem icon={MessagesSquare} href={routeHref({ view: 'asistente' })} active={is('asistente')}>Asistente</NavItem>
-      <NavItem icon={Layers} href={routeHref({ view: 'rally' })} active={is('rally')}>Rally</NavItem>
-      <NavItem icon={ListChecks} href={routeHref({ view: 'lista' })} active={is('lista')}>Lista</NavItem>
+      {see('inbox') && <NavItem icon={Inbox} href={routeHref({ view: 'inbox' })} active={is('inbox')} count={inboxTasks(tasks).length}
+        onDropTasks={(ids) => void moveIds(ids, { due_date: null, project_id: null }, 'Movida a la bandeja')}>Bandeja</NavItem>}
+      {see('board') && <NavItem icon={KanbanSquare} href={routeHref({ view: 'board' })} active={is('board') || is('all')}>Tablero</NavItem>}
+      {see('calendar') && <NavItem icon={Calendar} href={routeHref({ view: 'calendar' })} active={is('calendar') || is('week')}>Calendario</NavItem>}
+      {see('notes') && <NavItem icon={NotebookPen} href={routeHref({ view: 'notes' })} active={is('notes')}>Notas</NavItem>}
+      {see('asistente') && <NavItem icon={MessagesSquare} href={routeHref({ view: 'asistente' })} active={is('asistente')}>Asistente</NavItem>}
+      {see('rally') && <NavItem icon={Layers} href={routeHref({ view: 'rally' })} active={is('rally')}>Rally</NavItem>}
+      {see('lista') && <NavItem icon={ListChecks} href={routeHref({ view: 'lista' })} active={is('lista')}>Lista</NavItem>}
       </section>
 
-      <section className="mr-side-section" aria-label="Proyectos">
+      {see('projects') && <section className="mr-side-section" aria-label="Proyectos">
 
       <Heading href={routeHref({ view: 'projects' })} action={
         <button type="button" onClick={() => setAddingProject(true)} title="Nuevo proyecto" className="rounded p-0.5 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-700">
@@ -162,11 +168,11 @@ export function Sidebar({ route }: { route: Route }) {
       {projectTree(projects).map((node) => <ProjectNav key={node.project.id} node={node} route={route} />)}
       {projects.length === 0 && <p className="px-2 text-xs text-zinc-400">Crea uno con el +</p>}
       {projects.length === 0 && <a href={routeHref({ view: 'projects' })} className="px-2 text-xs text-zinc-400 hover:underline">+ Crear proyecto</a>}
-      </section>
+      </section>}
 
-      <section className="mr-side-section" aria-label="Grupos">
+      {see('people') && <section className="mr-side-section" aria-label="Grupos">
         <PeopleGroups route={route} />
-      </section>
+      </section>}
 
       <section className="mr-side-section" aria-label="Más">
         <MoreSection route={route} />

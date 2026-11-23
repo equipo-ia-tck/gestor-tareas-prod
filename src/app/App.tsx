@@ -28,6 +28,8 @@ import { HistoryBridge } from '../features/history/HistoryBridge';
 import { BulkBar } from '../features/selection/BulkBar';
 import { SelectionProvider, useSelection } from '../features/selection/SelectionContext';
 import { SearchView } from '../features/views/SearchView';
+import { isHiddenRoute } from '../domain/screens';
+import { useSync } from '../data/sync';
 import { BackupReminder } from '../features/backup/BackupReminder';
 import { SettingsView } from '../features/backup/SettingsView';
 import { InboxView } from '../features/views/InboxView';
@@ -36,7 +38,19 @@ import { ProjectView } from '../features/project/ProjectPage';
 import { ProjectsView } from '../features/views/ProjectsView';
 import { TodayView } from '../features/views/TodayView';
 
+function HiddenScreen() {
+  return (
+    <div className="mx-auto max-w-md py-16 text-center text-sm text-zinc-500">
+      <p className="mb-1 font-medium text-zinc-700 dark:text-zinc-300">Esta pantalla no está activada para tu cuenta</p>
+      <p>La eligen los administradores en Ajustes → Pantallas. <a href="#/today" className="font-medium text-indigo-600 hover:underline dark:text-indigo-400">Ir a Hoy</a></p>
+    </div>
+  );
+}
+
 function View({ route }: { route: Route }) {
+  const { hiddenScreens } = useSync();
+  // Una pantalla que un administrador ha ocultado a esta cuenta no se abre ni con un enlace.
+  if (isHiddenRoute(route.view, hiddenScreens)) return <HiddenScreen />;
   switch (route.view) {
     case 'today': return <TodayView />;
     case 'week': return <CalendarView initial="week" />;

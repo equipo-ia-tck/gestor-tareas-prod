@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
  * Prueba la base de datos de Supabase (supabase/migrations) en un Postgres de verdad (PGlite), imitando
  * lo mínimo de Supabase: roles anon/authenticated y auth.uid()/auth.email() de la sesión.
  */
-const MIGRATION = ['001_equipo.sql', '002_baja_y_contrasenas.sql', '003_alta_sin_invitacion.sql', '004_claves_conectores.sql', '005_calendario_subido.sql', '006_feedback.sql', '007_feedback_formulario.sql', '008_feedback_bloqueado.sql', '009_analitica.sql', '010_analitica_kpis.sql', '011_rally_herramienta.sql', '012_calendario_ics.sql'].map((f) => readFileSync(`supabase/migrations/${f}`, 'utf8')).join('\n');
+const MIGRATION = ['001_equipo.sql', '002_baja_y_contrasenas.sql', '003_alta_sin_invitacion.sql', '004_claves_conectores.sql', '005_calendario_subido.sql', '006_feedback.sql', '007_feedback_formulario.sql', '008_feedback_bloqueado.sql', '009_analitica.sql', '010_analitica_kpis.sql', '011_rally_herramienta.sql', '012_calendario_ics.sql', '013_pantallas.sql'].map((f) => readFileSync(`supabase/migrations/${f}`, 'utf8')).join('\n');
 let db: PGlite;
 
 const SUPABASE_STUB = `
@@ -38,6 +38,8 @@ const rpc = async (u: User, fn: string, args: Record<string, unknown> = {}) => {
   const names = Object.keys(args);
   const rows = await as<{ r: unknown }>(u, `select public.${fn}(${names.map((k, i) => `${k} => $${i + 1}`).join(', ')}) as r`, names.map((k) => {
     const v = args[k];
+    // Listas de textos (uuid[], text[]) tal cual; objetos y listas de objetos, como JSON.
+    if (Array.isArray(v) && v.every((x) => typeof x === 'string')) return v;
     return v !== null && typeof v === 'object' ? JSON.stringify(v) : v;
   }));
   return rows[0].r as never;
@@ -256,6 +258,35 @@ describe('base de datos del equipo en Supabase', () => {
     await rpc(marta, 'revoke_upload_token');
     await expect(upload(second, [])).rejects.toThrow(/no válida/);
     expect(await as(marta, 'select * from connector_uploads')).toEqual([]);
+  });
+
+  it('pantallas de cada cuenta: las eligen los administradores; sin elegir, las del equipo por defecto', async () => {
+    const marta = await newUser('marta@vml.com');
+    await rpc(marta, 'register_profile', { p_name: 'Marta García', p_code: '' });
+    const ana = await newUser('ana@vml.com');
+    await rpc(ana, 'register_profile', { p_name: 'Ana', p_code: '' });
+    const luis = await newUser('luis@vml.com');
+    await rpc(luis, 'register_profile', { p_name: 'Luis', p_code: '' });
+    const hidden = async (u: User) => (await rpc(u, 'me') as { hiddenScreens: string[] }).hiddenScreens;
+    expect(await hidden(ana)).toEqual([]);
+    // Ana no administra: no puede cambiar las de nadie.
+    await expect(rpc(ana, 'admin_set_screens', { p_users: [ana.id], p_hidden: [] })).rejects.toThrow(/administra/);
+    await expect(rpc(ana, 'admin_set_default_screens', { p_hidden: [] })).rejects.toThrow(/administra/);
+    // Por defecto para el equipo: Rally y Lista ocultas.
+    expect(await rpc(marta, 'admin_set_default_screens', { p_hidden: ['rally', 'lista', 'rally'] })).toEqual(['rally', 'lista']);
+    expect(await hidden(ana)).toEqual(['rally', 'lista']);
+    // A Luis, las suyas (incluso ninguna).
+    const users = await rpc(marta, 'admin_set_screens', { p_users: [luis.id], p_hidden: [] }) as { name: string; hiddenScreens: string[] | null }[];
+    expect(users.find((u) => u.name === 'Luis')!.hiddenScreens).toEqual([]);
+    expect(users.find((u) => u.name === 'Ana')!.hiddenScreens).toBeNull();
+    expect(await hidden(luis)).toEqual([]);
+    await rpc(marta, 'admin_set_screens', { p_users: [ana.id, luis.id], p_hidden: ['asistente'] });
+    expect(await hidden(ana)).toEqual(['asistente']);
+    // Volver al defecto del equipo.
+    await rpc(marta, 'admin_set_screens', { p_users: [luis.id], p_hidden: null });
+    expect(await hidden(luis)).toEqual(['rally', 'lista']);
+    expect((await rpc(marta, 'admin_overview') as { defaultHiddenScreens: string[] }).defaultHiddenScreens).toEqual(['rally', 'lista']);
+    await expect(rpc(marta, 'admin_set_screens', { p_users: [ana.id], p_hidden: ['Rally; drop'] })).rejects.toThrow(/no válida/);
   });
 
   it('feedback: lo envía cualquiera, solo lo leen y gestionan los administradores', async () => {

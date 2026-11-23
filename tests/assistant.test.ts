@@ -251,3 +251,21 @@ describe('Asistente: documentación en SharePoint', async () => {
     expect(hits[0].snippet).toContain('La evar 69 es para el login');
   });
 });
+
+describe('Pantallas de cada cuenta', () => {
+  it('cada ruta pertenece a su pantalla; Hoy, Ajustes y las de administración siempre se ven', async () => {
+    const { isHiddenRoute, screenOf, SCREEN_IDS } = await import('../src/domain/screens');
+    expect(screenOf('week')).toBe('calendar');
+    expect(screenOf('all')).toBe('board');
+    expect(screenOf('project')).toBe('projects');
+    expect(screenOf('person')).toBe('people');
+    expect(screenOf('today')).toBeNull();
+    expect(screenOf('settings')).toBeNull();
+    expect(screenOf('analytics')).toBeNull();
+    expect(isHiddenRoute('project', ['projects'])).toBe(true);
+    expect(isHiddenRoute('today', SCREEN_IDS)).toBe(false);
+    expect(isHiddenRoute('rally', [])).toBe(false);
+    // Las claves cumplen lo que exige Supabase (clean_screens).
+    expect(SCREEN_IDS.every((id) => /^[a-z][a-z-]{0,29}$/.test(id))).toBe(true);
+  });
+});

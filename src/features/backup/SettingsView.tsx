@@ -9,6 +9,7 @@ import { sync, useSync } from '../../data/sync';
 import { SpacesCard } from './SpacesCard';
 import { OutlookSettings } from '../calendar/Meetings';
 import { AdminCard } from './AdminCard';
+import { ScreensCard } from './ScreensCard';
 import type { AutosaveState } from '../../data/fsAutosave';
 import { ViewHeader } from '../views/ViewHeader';
 import { useInstall } from '../../app/install';
@@ -68,6 +69,7 @@ export function SettingsView() {
       <ViewHeader title="Copias y ajustes" />
 
       {isAdmin && <AdminCard />}
+      {isAdmin && <ScreensCard />}
 
       <SpacesCard />
 
