@@ -30,6 +30,19 @@ export interface MsListField {
   format?: 'date' | 'datetime';
 }
 
+/** Una vista de la lista en SharePoint (las pestañas de arriba: «Seguimiento Track», «Todos los elementos»…). */
+export interface MsListView {
+  id: string;
+  title: string;
+  isDefault: boolean;
+  /** Columnas que enseña, por nombre visible y en su orden. */
+  columns: string[];
+  /** Columna por la que agrupa, si agrupa. */
+  groupBy: string | null;
+  /** Elementos que salen en la vista, en su orden (SharePoint aplica su filtro y su orden). */
+  ids: string[];
+}
+
 /** La lista entera, como la ha leído el marcador la última vez. */
 export interface MsListSnapshot {
   title: string;
@@ -37,6 +50,7 @@ export interface MsListSnapshot {
   url: string;
   fields: MsListField[];
   items: MsListItem[];
+  views: MsListView[];
   /** Cuándo la leyó el marcador. */
   at: string;
 }
@@ -112,7 +126,22 @@ export function parseSnapshot(data: unknown): MsListSnapshot | null {
       modified: typeof o.modified === 'string' ? o.modified.slice(0, 40) : null,
     });
   }
-  return { title: str(d.title, 200).trim() || 'Lista', url, fields, items, at: str(d.at, 40) || new Date().toISOString() };
+  const views: MsListView[] = [];
+  for (const v of Array.isArray(d.views) ? d.views.slice(0, 30) : []) {
+    if (!v || typeof v !== 'object') continue;
+    const o = v as Record<string, unknown>;
+    const title = str(o.title, 200).trim();
+    if (!title || !Array.isArray(o.ids)) continue;
+    views.push({
+      id: str(o.id, 100) || title,
+      title,
+      isDefault: o.isDefault === true,
+      columns: Array.isArray(o.columns) ? o.columns.slice(0, 50).map((c) => str(c, 200)).filter(Boolean) : [],
+      groupBy: typeof o.groupBy === 'string' && o.groupBy ? o.groupBy.slice(0, 200) : null,
+      ids: o.ids.slice(0, MAX_ITEMS).map((x) => str(x, 20)).filter((x) => /^\d+$/.test(x)),
+    });
+  }
+  return { title: str(d.title, 200).trim() || 'Lista', url, fields, items, views, at: str(d.at, 40) || new Date().toISOString() };
 }
 
 /** Valor actual de una columna en un elemento (el título va aparte). */

@@ -73,12 +73,19 @@ export async function spWork(listUrl: string, changes: Any[], wantList: boolean,
     return ok;
   });
 
+  let digestValue = '';
+  const getDigest = async () => {
+    if (digestValue) return digestValue;
+    const ctx = await fetch(web + '/_api/contextinfo', { method: 'POST', headers: { Accept: J }, credentials: 'include' });
+    if (!ctx.ok) throw fail(ctx.status, 'escribir en la lista');
+    digestValue = (await ctx.json()).FormDigestValue;
+    return digestValue;
+  };
+
   const results: Any[] = [];
   if (changes.length) {
     say('Aplicando ' + changes.length + (changes.length === 1 ? ' cambio…' : ' cambios…'));
-    const ctx = await fetch(web + '/_api/contextinfo', { method: 'POST', headers: { Accept: J }, credentials: 'include' });
-    if (!ctx.ok) throw fail(ctx.status, 'escribir en la lista');
-    const digest = (await ctx.json()).FormDigestValue;
+    const digest = await getDigest();
     for (const c of changes) {
       const key = c.id + '|' + c.field;
       const f = c.field === 'Título' ? fields.find((x) => x.InternalName === 'Title') : fields.find((x) => x.Title === c.field);
@@ -130,6 +137,36 @@ export async function spWork(listUrl: string, changes: Any[], wantList: boolean,
     url = r['odata.nextLink'];
     say('Leyendo la lista… ' + rows.length + ' elementos');
   }
+  // Las vistas de la lista (las pestañas de SharePoint): con su propio filtro y orden, se pregunta a SharePoint qué
+  // elementos salen y en qué orden (`GetItems` con el CAML de la vista), y se guardan sus columnas y su agrupación.
+  const labelOf = (name: string) => (/^(Title|LinkTitle|LinkTitleNoMenu)$/.test(name) ? 'Título'
+    : (fields.find((f) => f.InternalName === name) || {}).Title || null);
+  const views: Any[] = [];
+  try {
+    const vs: Any[] = (await get(api('/views?$filter=Hidden eq false&$select=Id,Title,DefaultView,ListViewXml'))).value;
+    for (const v of vs.slice(0, 30)) {
+      const xml = String(v.ListViewXml || '');
+      const viewXml = xml.replace(/<RowLimit[^>]*>[\s\S]*?<\/RowLimit>/gi, '').replace(/<\/View>\s*$/i, '<RowLimit Paged="TRUE">5000</RowLimit></View>');
+      const r = await fetch(api('/GetItems?$select=Id'), {
+        method: 'POST',
+        credentials: 'include',
+        headers: { Accept: J, 'Content-Type': 'application/json;odata=verbose', 'X-RequestDigest': await getDigest() },
+        body: JSON.stringify({ query: { __metadata: { type: 'SP.CamlQuery' }, ViewXml: viewXml } }),
+      });
+      if (!r.ok) continue;
+      const ids = ((await r.json()).value || []).map((x: Any) => String(x.Id));
+      const fieldsXml = (/<ViewFields>([\s\S]*?)<\/ViewFields>/i.exec(xml) || [])[1] || '';
+      const columns: string[] = [];
+      const re = /<FieldRef[^>]*Name="([^"]+)"/gi;
+      let fm: Any;
+      while ((fm = re.exec(fieldsXml))) { const l = labelOf(fm[1]); if (l && columns.indexOf(l) < 0) columns.push(l); }
+      const group = /<GroupBy[^>]*>\s*<FieldRef[^>]*Name="([^"]+)"/i.exec(xml);
+      views.push({ id: String(v.Id), title: String(v.Title), isDefault: v.DefaultView === true, columns, groupBy: group ? labelOf(group[1]) : null, ids });
+    }
+  } catch {
+    // Sin vistas no pasa nada: se ve la lista entera.
+  }
+
   const base = u.origin + listPath;
   return {
     results,
@@ -137,6 +174,7 @@ export async function spWork(listUrl: string, changes: Any[], wantList: boolean,
       title: info.Title,
       url: base,
       at: new Date().toISOString(),
+      views,
       fields: fields.map((f) => ({
         name: f.InternalName,
         label: f.InternalName === 'Title' ? 'Título' : f.Title,

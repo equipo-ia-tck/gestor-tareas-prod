@@ -96,6 +96,7 @@ describe('Microsoft List: en el gestor', () => {
 function fakeSharePoint() {
   const merges: { url: string; body: unknown; headers: Record<string, string> }[] = [];
   const calls: string[] = [];
+  const viewQueries: { query: { ViewXml: string } }[] = [];
   const fields = [
     { InternalName: 'Title', Title: 'Title', TypeAsString: 'Text', ReadOnlyField: false },
     { InternalName: 'Estado', Title: 'Estado', TypeAsString: 'Choice', Choices: ['Pendiente', 'En curso', 'Hecho'], ReadOnlyField: false },
@@ -113,6 +114,14 @@ function fakeSharePoint() {
       return new Response(null, { status: 204 });
     }
     if (url.includes('/fields?')) return json({ value: fields });
+    if (url.includes('/views?')) {
+      return json({ value: [{ Id: 'v1', Title: 'Seguimiento Track', DefaultView: false,
+        ListViewXml: '<View Name="v1"><Query><GroupBy Collapse="TRUE"><FieldRef Name="Estado" /></GroupBy><OrderBy><FieldRef Name="ID" Ascending="FALSE" /></OrderBy></Query><ViewFields><FieldRef Name="LinkTitle" /><FieldRef Name="Estado" /><FieldRef Name="Horas" /><FieldRef Name="Inventada" /></ViewFields><RowLimit Paged="TRUE">30</RowLimit></View>' }] });
+    }
+    if (url.includes('/GetItems?')) {
+      viewQueries.push(JSON.parse(init.body!));
+      return json({ value: [{ Id: 8 }, { Id: 7 }] });
+    }
     if (url.includes('/items?') && url.includes('page=2')) return json({ value: [{ Id: 8, Title: 'Preparar demo', Estado: 'Pendiente', Responsable: null }] });
     if (url.includes('/items?')) {
       return json({
@@ -123,7 +132,7 @@ function fakeSharePoint() {
     if (url.includes('GetList(@u)?$select=Title')) return json({ Title: 'Contratos' });
     return new Response('no', { status: 404 });
   };
-  return { fetch, merges, calls };
+  return { fetch, merges, calls, viewQueries };
 }
 
 describe('Microsoft List: el marcador', () => {
@@ -173,6 +182,10 @@ describe('Microsoft List: el marcador', () => {
     expect((sent.data.results as { ok: boolean }[]).map((r) => r.ok)).toEqual([true, true, true, false]);
     const snapshot = parseSnapshot(sent.data.list)!;
     expect(snapshot.title).toBe('Contratos');
+    expect(snapshot.views).toEqual([{ id: 'v1', title: 'Seguimiento Track', isDefault: false, columns: ['Título', 'Estado', 'Horas'], groupBy: 'Estado', ids: ['8', '7'] }]);
+    // La vista se pide entera (sin su tope de 30 por página) y con su filtro y orden.
+    expect(sp.viewQueries[0].query.ViewXml).toContain('<RowLimit Paged="TRUE">5000</RowLimit></View>');
+    expect(sp.viewQueries[0].query.ViewXml).not.toContain('>30<');
     expect(snapshot.url).toBe(LIST);
     expect(snapshot.fields.map((f) => [f.label, f.editable])).toEqual([
       ['Título', true], ['Estado', true], ['Responsable', false], ['Fecha límite', true], ['Horas', true],
@@ -200,7 +213,7 @@ describe('Microsoft List: conexión con el marcador', () => {
   it('conectado si ha preguntado hace poco; la lista entera, cada 2 minutos', async () => {
     const { isConnected, wantsList, CONTACT_MS, LIST_EVERY_MS } = await import('../src/features/mslist/listaStore');
     const now = Date.parse('2026-11-23T10:00:00Z');
-    const snapshot = { title: 'L', url: LIST, fields: [], items: [], at: new Date(now - 60_000).toISOString() };
+    const snapshot = { title: 'L', url: LIST, fields: [], items: [], views: [], at: new Date(now - 60_000).toISOString() };
     expect(isConnected({ snapshot, pending: [], errors: {}, contactAt: now - 5000, listUrl: null, ext: { okAt: 0, error: null } }, now)).toBe(true);
     expect(isConnected({ snapshot, pending: [], errors: {}, contactAt: now - CONTACT_MS - 1, listUrl: null, ext: { okAt: 0, error: null } }, now)).toBe(false);
     expect(wantsList({ snapshot, pending: [], errors: {}, contactAt: 0, listUrl: null, ext: { okAt: 0, error: null } }, now)).toBe(false);
@@ -280,4 +293,71 @@ describe('Microsoft List: la extensión', () => {
     expect(await ext.ask({ type: 'marea-ext:sync', listUrl: LIST }, { id: 'otra', tab: { id: 1 } })).toBeUndefined();
     expect(await ext.ask({ type: 'marea-ext:sync', listUrl: 'https://evil.es/x/Lists/Y' })).toEqual({ error: 'Esa dirección no es de una lista de SharePoint.' });
   });
+});
+
+describe('Microsoft List: buscar, filtrar, agrupar y ordenar', async () => {
+  const {
+    activeFilters, facetValues, filterableColumns, groupItems, itemsInView, matchesFilters, matchesText, sortItems,
+  } = await import('../src/domain/msListView');
+  const fields = [
+    { name: 'Title', label: 'Título', type: 'Text', choices: [], editable: true },
+    { name: 'Estado', label: 'Estado', type: 'Choice', choices: ['En curso', 'Dependencia', 'Backlog', 'Completada'], editable: true },
+    { name: 'Equipo', label: 'Equipo responsable', type: 'MultiChoice', choices: ['Omniexperiencia', 'DS&A'], editable: true },
+    { name: 'Fecha', label: 'Fecha estimada', type: 'DateTime', choices: [], editable: true, format: 'date' as const },
+    { name: 'Prio', label: 'Prioridad Tarea', type: 'Number', choices: [], editable: true },
+    { name: 'Coment', label: 'Comentarios', type: 'Note', choices: [], editable: true },
+  ];
+  const rows = [
+    item('1', 'Medición Imagin', { Estado: 'Backlog', 'Equipo responsable': 'DS&A', 'Fecha estimada': '2026-12-01', 'Prioridad Tarea': '2' }),
+    item('2', 'Banksy', { Estado: 'En curso', 'Equipo responsable': 'Omniexperiencia, DS&A', 'Fecha estimada': '2026-11-20', 'Prioridad Tarea': '1' }),
+    item('3', 'Incidencia login', { Estado: 'En curso', 'Prioridad Tarea': '10', Comentarios: 'pendiente de validación en PRE' }),
+    item('4', 'Fuentes de tráfico', { Estado: 'Completada', 'Equipo responsable': 'Omniexperiencia' }),
+  ];
+
+  it('columnas para filtrar y sus valores con recuento, en el orden de las opciones', () => {
+    expect(filterableColumns(fields, rows).map((f) => f.label)).toEqual(['Estado', 'Equipo responsable', 'Fecha estimada', 'Prioridad Tarea']);
+    expect(facetValues(rows, fields[1])).toEqual([{ value: 'En curso', count: 2 }, { value: 'Backlog', count: 1 }, { value: 'Completada', count: 1 }]);
+    // Varias opciones: cada una cuenta por separado; sin valor, «(Vacío)» al final.
+    expect(facetValues(rows, fields[2])).toEqual([{ value: 'Omniexperiencia', count: 2 }, { value: 'DS&A', count: 2 }, { value: '', count: 1 }]);
+    expect(facetValues(rows, fields[4]).map((f) => f.value)).toEqual(['1', '2', '10', '']);
+  });
+
+  it('filtros: misma columna = cualquiera; columnas distintas = todas; fechas por rango; vacío', () => {
+    const pass = (f: Parameters<typeof matchesFilters>[1]) => rows.filter((it) => matchesFilters(it, f, fields)).map((it) => it.id);
+    expect(pass({ Estado: { values: ['En curso', 'Backlog'] } })).toEqual(['1', '2', '3']);
+    expect(pass({ Estado: { values: ['En curso'] }, 'Equipo responsable': { values: ['DS&A'] } })).toEqual(['2']);
+    expect(pass({ 'Equipo responsable': { values: [''] } })).toEqual(['3']);
+    expect(pass({ 'Fecha estimada': { from: '2026-11-25' } })).toEqual(['1']);
+    expect(pass({ 'Fecha estimada': { to: '2026-11-30' } })).toEqual(['2']);
+    expect(activeFilters({ Estado: { values: [] }, 'Fecha estimada': { from: '2026-01-01' } })).toBe(1);
+    expect(rows.filter((it) => matchesText(it, 'validacion pre')).map((it) => it.id)).toEqual(['3']);
+  });
+
+  it('agrupar y ordenar como en SharePoint', () => {
+    expect(groupItems(rows, 'Estado', fields).map((g) => [g.value, g.items.map((it) => it.id)])).toEqual([
+      ['En curso', ['2', '3']], ['Backlog', ['1']], ['Completada', ['4']],
+    ]);
+    expect(groupItems(rows, 'Fecha estimada', fields).map((g) => g.value)).toEqual(['2026-11-20', '2026-12-01', '']);
+    expect(sortItems(rows, 'Prioridad Tarea', 'asc', fields).map((it) => it.id)).toEqual(['2', '1', '3', '4']);
+    expect(sortItems(rows, 'Prioridad Tarea', 'desc', fields).map((it) => it.id)).toEqual(['3', '1', '2', '4']);
+    expect(sortItems(rows, 'Estado', 'asc', fields).map((it) => it.id)).toEqual(['2', '3', '1', '4']);
+    expect(sortItems(rows, 'ID', 'desc', fields).map((it) => it.id)).toEqual(['4', '3', '2', '1']);
+    expect(sortItems([rows[2], rows[0]], '', 'asc', fields, true).map((it) => it.id)).toEqual(['3', '1']);
+  });
+
+  it('una vista deja sus elementos en su orden', () => {
+    const view = { id: 'v', title: 'Seguimiento Track', isDefault: false, columns: ['Estado'], groupBy: null, ids: ['3', '1', '99'] };
+    expect(itemsInView(rows, view).map((it) => it.id)).toEqual(['3', '1']);
+    expect(itemsInView(rows, null)).toBe(rows);
+  });
+});
+
+it('la versión de la extensión que conoce Marea es la del manifiesto', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { LATEST_EXTENSION, isOutdated } = await import('../src/features/mslist/extension');
+  expect(JSON.parse(readFileSync('extension/manifest.json', 'utf8')).version).toBe(LATEST_EXTENSION);
+  expect(isOutdated('1.0.0')).toBe(true);
+  expect(isOutdated(LATEST_EXTENSION)).toBe(false);
+  expect(isOutdated('9.0.0')).toBe(false);
+  expect(isOutdated(null)).toBe(false);
 });

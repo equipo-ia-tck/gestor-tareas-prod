@@ -1018,6 +1018,18 @@ API de SharePoint no admite CORS, así que lo hace un **marcador del navegador**
   cada 20 s). Una sola pestaña sincroniza (`navigator.locks`, `marea-lista-sync`). `lista-ext` guarda cuándo fue bien y el
   último error; «Sincronizada» = bien hace menos de 5 min (`extensionOk`). El marcador sigue como alternativa.
 
+- **Buscar como en SharePoint** (`domain/msListView.ts`, funciones puras con tests): **vistas** de la lista
+  (`MsListSnapshot.views`: `spWork` lee `/views` y, para cada una, pide a SharePoint sus elementos con `GetItems` y el CAML de
+  la vista sin su tope de página, así filtro y orden (también `[Me]`, `[Today]`…) los aplica SharePoint; guarda sus columnas
+  y su agrupación) en pestañas, «Todos» = sin vista; **Filtros** (`FiltersPanel`: casillas con recuento por valor en
+  opciones, búsquedas, personas, sí/no y texto o número con hasta 25 valores; desde/hasta en fechas; «(Vacío)»; misma
+  columna = o, distintas = y); **Agrupar** (plegable, en el orden de las opciones; por defecto, el de la vista) y
+  **Ordenar** (por defecto, el de la vista o por ID; vacíos al final). Búsqueda por todas las palabras sin tildes. Se
+  recuerdan en `lista-view`, `lista-filters`, `lista-group` y `lista-sort`. Las listas leídas antes no traen vistas.
+- **Versión de la extensión**: al cambiar `spWork` o la extensión, sube `version` en `extension/manifest.json` y
+  `LATEST_EXTENSION` en `features/mslist/extension.ts` (un test comprueba que coinciden); si la instalada es anterior, la
+  pantalla Lista avisa y explica cómo actualizarla (descargar, sustituir la carpeta y recargar en `chrome://extensions`).
+
 ### Más adelante
 
 - **Electron**: la app es web estática con rutas por hash y datos en IndexedDB, así que se puede empaquetar sin cambios

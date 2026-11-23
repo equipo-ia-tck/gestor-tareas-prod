@@ -6,6 +6,18 @@ import type { MsListChange, MsListResult } from '../../domain/msListParse';
  * contesta por `postMessage` (mismo origen). Con ella, Marea sincroniza la lista sin tener SharePoint abierto.
  */
 
+/** Versión de `extension/manifest.json` (un test comprueba que coinciden): si la instalada es anterior, se avisa. */
+export const LATEST_EXTENSION = '1.1.0';
+
+/** ¿La versión instalada es anterior a la última? */
+export function isOutdated(installed: string | null): boolean {
+  if (!installed) return false;
+  const a = installed.split('.').map(Number);
+  const b = LATEST_EXTENSION.split('.').map(Number);
+  for (let i = 0; i < 3; i++) if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) < (b[i] ?? 0);
+  return false;
+}
+
 let version: string | null = null;
 const listeners = new Set<() => void>();
 const waiting = new Map<string, { resolve: (r: ExtResult) => void; timer: ReturnType<typeof setTimeout> }>();
