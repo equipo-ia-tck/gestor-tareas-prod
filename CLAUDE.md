@@ -991,6 +991,16 @@ de proveedor externo). Son documentos del cliente, así que **nada de su conteni
   de esa pestaña** (`sharepointStore.ts`): ni Supabase, ni IndexedDB, ni localStorage. «Guardar en mis carpetas» guarda solo
   el enlace. Si la página no deja usar marcadores, «Copiar el código» para la consola. Tests en `tests/sharepoint.test.ts`
   (el marcador se ejecuta suelto; comprobado también minificado).
+- **Navegar y vista previa dentro de Marea** (misma rama): la pestaña de SharePoint donde se pulsó el marcador se queda de
+  **puente** mientras siga abierta. Marea (`sharepointStore.ts`: `openFolder`, `loadFile`, `handleBridgeMessage`) le pide otra
+  carpeta (`marea-sp:list`) o un archivo (`marea-sp:file`) con un número de petición; solo vale la respuesta del puente
+  conectado y el puente solo atiende a Marea (origen y ventana) y **solo dentro del sitio** de la carpeta inicial (`inSite`).
+  Migas de pan desde la biblioteca (`breadcrumbs`). **Vista previa** solo de PDF e imágenes hasta 20 MB (`previewType`,
+  `MAX_PREVIEW_BYTES`, comprobado en los dos lados): el archivo llega como `ArrayBuffer`, se enseña como `blob:` de la pestaña
+  (PDF en un iframe, imágenes en `<img>`) y la URL se libera al cerrar la vista previa. Nada se guarda. Word, Excel y
+  PowerPoint se siguen abriendo en SharePoint (Office web no se deja incrustar; el inicio de sesión de Microsoft responde
+  `X-Frame-Options: DENY`). **Pendiente**: el visto bueno de José a la vista previa (trae contenido de documentos de
+  CaixaBank a la pestaña) antes de pasarla a `main`.
 
 ### Más adelante
 

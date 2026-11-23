@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fileSize, folderNameFromUrl, isSharePointOrigin, isSharePointUrl, parseSnapshot } from '../src/domain/sharepoint';
+import { breadcrumbs, fileSize, folderNameFromUrl, isSharePointOrigin, isSharePointUrl, parseSnapshot, previewType } from '../src/domain/sharepoint';
+import { handleBridgeMessage, openFolder, sharePointState } from '../src/features/sharepoint/sharepointStore';
 import { bookmarkletCode } from '../src/features/sharepoint/bookmarklet';
 import { newFolder } from '../src/features/sharepoint/folders';
 
@@ -32,10 +33,11 @@ describe('SharePoint: enlaces', () => {
     const snap = parseSnapshot({
       url: `${SITE}/sites/Etiquetado/Shared%20Documents/Gu%C3%ADas`, path: '/sites/Etiquetado/Shared Documents/Guías',
       entries: [
-        { kind: 'file', name: 'b.docx', url: `${SITE}/sites/Etiquetado/b.docx?web=1`, size: 2048, modified: '2026-11-20T10:00:00Z' },
-        { kind: 'folder', name: 'Z', url: `${SITE}/sites/Etiquetado/Z`, size: 3, modified: null },
-        { kind: 'file', name: 'malo', url: 'javascript:alert(1)', size: 1 },
-        { kind: 'otro', name: 'x', url: `${SITE}/x` },
+        { kind: 'file', name: 'b.docx', path: '/sites/Etiquetado/b.docx', url: `${SITE}/sites/Etiquetado/b.docx?web=1`, size: 2048, modified: '2026-11-20T10:00:00Z' },
+        { kind: 'folder', name: 'Z', path: '/sites/Etiquetado/Z', url: `${SITE}/sites/Etiquetado/Z`, size: 3, modified: null },
+        { kind: 'file', name: 'malo', path: '/sites/x', url: 'javascript:alert(1)', size: 1 },
+        { kind: 'file', name: 'sin ruta', url: `${SITE}/x` },
+        { kind: 'otro', name: 'x', path: '/x', url: `${SITE}/x` },
       ],
     })!;
     expect(snap.entries.map((e) => e.name)).toEqual(['Z', 'b.docx']); // carpetas primero
@@ -43,6 +45,13 @@ describe('SharePoint: enlaces', () => {
     expect(parseSnapshot({ url: 'https://evil.com', entries: [] })).toBeNull();
     expect(parseSnapshot(null)).toBeNull();
     expect(fileSize(2048)).toBe('2 KB');
+  });
+
+  it('migas de pan desde la biblioteca y qué se puede ver dentro', () => {
+    expect(breadcrumbs('/sites/E/Shared Documents/Guías/App', '/sites/E').map((c) => c.name)).toEqual(['Shared Documents', 'Guías', 'App']);
+    expect(breadcrumbs('/sites/E/Shared Documents/Guías', '/sites/E')[1].path).toBe('/sites/E/Shared Documents/Guías');
+    expect(breadcrumbs('/sites/Otro/A', '/sites/E')).toEqual([]);
+    expect(['a.PDF', 'b.jpg', 'c.docx', 'd.webp'].map(previewType)).toEqual(['application/pdf', 'image/jpeg', null, 'image/webp']);
   });
 });
 
@@ -67,10 +76,15 @@ describe('SharePoint: marcador', () => {
     const loc = new URL(href);
     const fetch = async (url: string) => {
       requests.push(url);
+      if (url.includes('GetFileByServerRelativePath')) {
+        const buf = new ArrayBuffer(8);
+        return { ok: true, status: 200, headers: { get: () => '8' }, arrayBuffer: async () => buf };
+      }
       return { ok: true, status: 200, json: async () => ({ value: url.includes('/Folders?') ? folders : files }) };
     };
     new Function('window', 'document', 'location', 'fetch', bookmarkletCode(app))(win, doc, loc, fetch);
-    return { app, sent, requests, opened, marea, reply: () => listener?.({ origin: app, source: marea, data: { type: 'marea-sp:ready' } }) };
+    const send = (data: unknown, from: unknown = marea, origin = app) => listener?.({ origin, source: from, data });
+    return { app, sent, requests, opened, marea, send, reply: () => send({ type: 'marea-sp:ready' }) };
   }
 
   it('lee la carpeta abierta con la sesión y se la manda solo a Marea', async () => {
@@ -93,11 +107,56 @@ describe('SharePoint: marcador', () => {
     expect(snap.entries.map((e) => [e.kind, e.name])).toEqual([['folder', 'Sub'], ['file', 'Guía #1.docx']]);
     expect(snap.entries[1].url).toBe('https://caixa.sharepoint.com/sites/Etiquetado/Shared%20Documents/Gu%C3%ADas/App/Gu%C3%ADa%20%231.docx?web=1');
     expect(snap.entries[1].size).toBe(1200);
+    expect(snap.site).toBe('/sites/Etiquetado');
+
+    // Se queda de puente: otra carpeta del mismo sitio, sí; de otro sitio o de otra web, no.
+    r.send({ type: 'marea-sp:list', path: '/sites/Etiquetado/Shared Documents/Guías', request: 7 });
+    await vi.runAllTimersAsync();
+    expect(r.sent.at(-1)!.msg).toMatchObject({ type: 'marea-sp:folder', request: 7, path: '/sites/Etiquetado/Shared Documents/Guías' });
+    r.send({ type: 'marea-sp:list', path: '/sites/Otro/Shared Documents', request: 8 });
+    await vi.runAllTimersAsync();
+    expect(r.sent.at(-1)!.msg).toMatchObject({ type: 'marea-sp:error', request: 8 });
+    const before = r.sent.length;
+    r.send({ type: 'marea-sp:list', path: '/sites/Etiquetado/x', request: 9 }, {}, 'https://evil.com');
+    await vi.runAllTimersAsync();
+    expect(r.sent.length).toBe(before);
+
+    // Archivos: solo PDF e imágenes.
+    r.send({ type: 'marea-sp:file', path: '/sites/Etiquetado/Shared Documents/a.pdf', request: 10 });
+    await vi.runAllTimersAsync();
+    expect(r.sent.at(-1)!.msg).toMatchObject({ type: 'marea-sp:filedata', request: 10 });
+    expect(r.sent.at(-1)!.msg.buffer).toBeInstanceOf(ArrayBuffer);
+    r.send({ type: 'marea-sp:file', path: '/sites/Etiquetado/Shared Documents/a.docx', request: 11 });
+    await vi.runAllTimersAsync();
+    expect(r.sent.at(-1)!.msg).toMatchObject({ type: 'marea-sp:error', request: 11 });
   });
 
   it('fuera de una biblioteca no lee nada ni abre Marea', () => {
     const r = run(`${SITE}/_layouts/15/sharepoint.aspx`, [], []);
     expect(r.opened).toEqual([]);
     expect(r.requests).toEqual([]);
+  });
+});
+
+describe('SharePoint: Marea habla con el puente', () => {
+  it('solo acepta mensajes de *.sharepoint.com y las respuestas del puente conectado', async () => {
+    const posted: unknown[] = [];
+    const sp = { closed: false, postMessage: (m: unknown) => posted.push(m) } as unknown as Window;
+    handleBridgeMessage({ origin: 'https://evil.com', source: sp, data: { type: 'marea-sp:hello' } } as MessageEvent);
+    expect(posted).toEqual([]);
+    handleBridgeMessage({ origin: SITE, source: sp, data: { type: 'marea-sp:hello' } } as MessageEvent);
+    expect(posted).toEqual([{ type: 'marea-sp:ready' }]);
+
+    const going = openFolder('/sites/E/Shared Documents/B');
+    const req = posted.at(-1) as { type: string; path: string; request: number };
+    expect(req).toMatchObject({ type: 'marea-sp:list', path: '/sites/E/Shared Documents/B' });
+    const answer = { type: 'marea-sp:folder', request: req.request, path: '/sites/E/Shared Documents/B', site: '/sites/E',
+      url: `${SITE}/sites/E/Shared%20Documents/B`, entries: [] };
+    // Una respuesta de otra ventana se ignora; la del puente, vale.
+    handleBridgeMessage({ origin: SITE, source: {} as Window, data: answer } as MessageEvent);
+    expect(sharePointState().loading).toBe(true);
+    handleBridgeMessage({ origin: SITE, source: sp, data: answer } as MessageEvent);
+    await going;
+    expect(sharePointState()).toMatchObject({ loading: false, error: null, connected: true, snapshot: { path: '/sites/E/Shared Documents/B', site: '/sites/E' } });
   });
 });

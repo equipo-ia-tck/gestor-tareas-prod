@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { Bookmark, Check, Copy, ExternalLink, FileText, Folder, FolderPlus, Pencil, Search, ShieldCheck, Trash2, X } from 'lucide-react';
+import { Bookmark, Check, ChevronRight, Copy, ExternalLink, FileText, Folder, FolderPlus, Loader2, Pencil, Search, ShieldCheck, Trash2, X } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
 import { ViewHeader } from '../views/ViewHeader';
 import { ProjectOptions } from '../../components/ui/ProjectOptions';
 import { inputClass } from '../../components/ui/styles';
-import { fileSize, isSharePointOrigin, isSharePointUrl, parseSnapshot, type SharePointFolder } from '../../domain/sharepoint';
+import { breadcrumbs, fileSize, isSharePointOrigin, isSharePointUrl, MAX_PREVIEW_BYTES, previewType, type SharePointEntry, type SharePointFolder } from '../../domain/sharepoint';
 import { formatDay } from '../../domain/dates';
 import { fold } from '../../domain/text';
 import { track } from '../usage/track';
 import { bookmarkletCode, bookmarkletHref } from './bookmarklet';
 import { foldersOf, newFolder, saveFolders } from './folders';
-import { setSnapshot, setSnapshotError, useSharePointSnapshot } from './sharepointStore';
+import { handleBridgeMessage, loadFile, openFolder, setSnapshot, useSharePointSnapshot } from './sharepointStore';
 
 const card = 'rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900';
 const title = 'mb-3 flex items-center gap-2 text-sm font-semibold';
@@ -38,21 +38,13 @@ export function SharePointView() {
   );
 }
 
-/** Contesta al marcador (solo a páginas https de *.sharepoint.com) y recibe lo que manda. */
+/** Contesta al marcador (solo a páginas https de *.sharepoint.com) y recibe lo que manda (`handleBridgeMessage`). */
 function useBookmarkletBridge() {
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
-      if (!isSharePointOrigin(e.origin) || !e.data || typeof e.data !== 'object') return;
-      const data = e.data as { type?: unknown; message?: unknown };
-      if (data.type === 'marea-sp:hello') {
-        (e.source as Window | null)?.postMessage({ type: 'marea-sp:ready' }, e.origin);
-      } else if (data.type === 'marea-sp:folder') {
-        const snap = parseSnapshot(e.data);
-        if (snap) { setSnapshot(snap); track('sharepoint', 'snapshot', snap.entries.length); }
-        else setSnapshotError('Lo que ha llegado de SharePoint no es válido.');
-      } else if (data.type === 'marea-sp:error') {
-        setSnapshotError(typeof data.message === 'string' ? data.message.slice(0, 300) : 'Error al leer la carpeta.');
-      }
+      const before = e.data && typeof e.data === 'object' ? (e.data as { type?: unknown }).type : null;
+      handleBridgeMessage(e);
+      if (before === 'marea-sp:folder' && isSharePointOrigin(e.origin)) track('sharepoint', 'snapshot');
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
@@ -175,13 +167,15 @@ export function FolderRow({ folder, projectId }: { folder: SharePointFolder; pro
 // ───────────────────────────── Contenido (marcador) ─────────────────────────────
 
 function FolderContents() {
-  const { snapshot, error } = useSharePointSnapshot();
+  const { snapshot, error, loading, connected } = useSharePointSnapshot();
   const { projects, settings, today } = useApp();
   const [q, setQ] = useState('');
   const [saved, setSaved] = useState(false);
+  const [preview, setPreview] = useState<SharePointEntry | null>(null);
   useEffect(() => { setSaved(false); setQ(''); }, [snapshot]);
   const shown = useMemo(() => (snapshot?.entries ?? []).filter((e) => !q.trim() || fold(e.name).includes(fold(q.trim()))), [snapshot, q]);
-  const folderName = snapshot ? snapshot.path.split('/').filter(Boolean).pop() ?? 'Carpeta' : '';
+  const crumbs = snapshot ? breadcrumbs(snapshot.path, snapshot.site) : [];
+  const folderName = crumbs[crumbs.length - 1]?.name ?? snapshot?.path.split('/').filter(Boolean).pop() ?? 'Carpeta';
   const alreadySaved = !!snapshot && settings.sharepoint_folders.concat(projects.flatMap((p) => p.folders ?? [])).some((f) => f.url === snapshot.url);
 
   const save = async () => {
@@ -192,53 +186,126 @@ function FolderContents() {
     setSaved(true);
     track('sharepoint', 'save-snapshot');
   };
+  const go = (path: string) => { track('sharepoint', 'navigate'); void openFolder(path); };
 
   return (
     <section className={card}>
       <h2 className={title}><Bookmark className="size-4 text-[var(--marc)]" />Ver lo que hay en una carpeta</h2>
-      <BookmarkletSetup />
+      {!snapshot && <BookmarkletSetup />}
       {error && <p className="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{error}</p>}
       {snapshot && (
-        <div className="mt-4">
-          <div className="mb-2 flex flex-wrap items-center gap-2">
+        <div>
+          <nav className="mb-2 flex flex-wrap items-center gap-1 text-sm" aria-label="Carpetas">
             <Folder className="size-4 text-amber-500" />
-            <span className="min-w-0 flex-1 truncate text-sm font-semibold" title={snapshot.path}>{snapshot.path}</span>
-            <a href={snapshot.url} target="_blank" rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-600 dark:hover:bg-zinc-800">
-              <ExternalLink className="size-3.5" />Abrir en SharePoint
-            </a>
-            <button type="button" disabled={alreadySaved || saved} onClick={() => void save()}
-              className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:hover:bg-zinc-800">
-              {alreadySaved || saved ? <><Check className="size-3.5" />En mis carpetas</> : <><FolderPlus className="size-3.5" />Guardar en mis carpetas</>}
-            </button>
-            <button type="button" onClick={() => setSnapshot(null)} title="Dejar de verla" aria-label="Dejar de ver la carpeta"
-              className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800"><X className="size-4" /></button>
-          </div>
+            {crumbs.map((c, i) => (
+              <span key={c.path} className="inline-flex items-center gap-1">
+                {i > 0 && <ChevronRight className="size-3.5 text-zinc-400" />}
+                {i === crumbs.length - 1
+                  ? <span className="font-semibold">{c.name}</span>
+                  : <button type="button" disabled={!connected || loading} onClick={() => go(c.path)} className="text-indigo-700 hover:underline disabled:text-zinc-500 disabled:no-underline dark:text-indigo-300">{c.name}</button>}
+              </span>
+            ))}
+            {!crumbs.length && <span className="font-semibold">{snapshot.path}</span>}
+            {loading && <Loader2 className="ml-1 size-4 animate-spin text-zinc-400" />}
+            <span className="ml-auto flex flex-wrap gap-1.5">
+              <a href={snapshot.url} target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-600 dark:hover:bg-zinc-800">
+                <ExternalLink className="size-3.5" />Abrir en SharePoint
+              </a>
+              <button type="button" disabled={alreadySaved || saved} onClick={() => void save()}
+                className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:hover:bg-zinc-800">
+                {alreadySaved || saved ? <><Check className="size-3.5" />En mis carpetas</> : <><FolderPlus className="size-3.5" />Guardar en mis carpetas</>}
+              </button>
+              <button type="button" onClick={() => { setSnapshot(null); setPreview(null); }} title="Dejar de verla" aria-label="Dejar de ver la carpeta"
+                className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800"><X className="size-4" /></button>
+            </span>
+          </nav>
           <p className="mb-2 text-xs text-zinc-500">
-            {snapshot.entries.length} elementos · leída a las {new Date(snapshot.at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
-            {snapshot.truncated && ' · hay más de los que se ven: ábrela en SharePoint'} · solo en esta pestaña, no se guarda
+            {snapshot.entries.length} elementos{snapshot.truncated && ' (hay más: ábrela en SharePoint)'} · solo en esta pestaña, no se guarda ·{' '}
+            {connected
+              ? <span className="text-emerald-700 dark:text-emerald-400">conectado con SharePoint: entra en las carpetas desde aquí (deja abierta su pestaña)</span>
+              : <span>para moverte por las carpetas desde aquí, vuelve a pulsar el marcador</span>}
           </p>
           <div className={`mb-2 flex items-center gap-1.5 ${inputClass}`}>
             <Search className="size-4 text-zinc-400" />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filtrar por nombre…" aria-label="Filtrar archivos" className="w-full bg-transparent outline-none" />
           </div>
-          <ul className="max-h-[60vh] divide-y divide-zinc-100 overflow-y-auto rounded-lg border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
-            {shown.map((e) => (
-              <li key={e.url}>
-                <a href={e.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/60">
-                  {e.kind === 'folder' ? <Folder className="size-4 shrink-0 text-amber-500" /> : <FileText className="size-4 shrink-0 text-zinc-400" />}
-                  <span className="min-w-0 flex-1 truncate">{e.name}</span>
-                  <span className="shrink-0 text-xs text-zinc-400">{e.kind === 'folder' ? (e.size !== null ? `${e.size} elementos` : '') : fileSize(e.size)}</span>
-                  <span className="hidden w-24 shrink-0 text-right text-xs text-zinc-400 sm:inline">{e.modified ? formatDay(e.modified.slice(0, 10), today) : ''}</span>
-                </a>
-              </li>
-            ))}
-            {!shown.length && <li className="px-3 py-3 text-sm text-zinc-400">{q ? 'Nada con ese nombre.' : 'La carpeta está vacía.'}</li>}
-          </ul>
-          <p className="mt-2 text-xs text-zinc-500">Para entrar en una subcarpeta, ábrela en SharePoint y vuelve a pulsar el marcador.</p>
+          <div className={`grid gap-3 ${preview ? 'lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]' : ''}`}>
+            <ul className={`max-h-[65vh] divide-y divide-zinc-100 overflow-y-auto rounded-lg border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800 ${loading ? 'opacity-60' : ''}`}>
+              {shown.map((e) => {
+                const canPreview = e.kind === 'file' && connected && !!previewType(e.name) && (e.size ?? 0) <= MAX_PREVIEW_BYTES;
+                const inside = e.kind === 'folder' && connected;
+                const rowClass = `flex min-w-0 flex-1 items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/60 ${preview?.path === e.path ? 'bg-indigo-50 dark:bg-indigo-950/40' : ''}`;
+                const body = (
+                  <>
+                    {e.kind === 'folder' ? <Folder className="size-4 shrink-0 text-amber-500" /> : <FileText className="size-4 shrink-0 text-zinc-400" />}
+                    <span className="min-w-0 flex-1 truncate">{e.name}</span>
+                    <span className="shrink-0 text-xs text-zinc-400">{e.kind === 'folder' ? (e.size !== null ? `${e.size} elementos` : '') : fileSize(e.size)}</span>
+                    <span className="hidden w-24 shrink-0 text-right text-xs text-zinc-400 sm:inline">{e.modified ? formatDay(e.modified.slice(0, 10), today) : ''}</span>
+                  </>
+                );
+                return (
+                  <li key={e.path} className="group flex items-center">
+                    {inside || canPreview
+                      ? <button type="button" disabled={loading} className={rowClass} title={inside ? 'Entrar en la carpeta' : 'Ver aquí'}
+                          onClick={() => (inside ? go(e.path) : (track('sharepoint', 'preview'), setPreview(e)))}>{body}</button>
+                      : <a href={e.url} target="_blank" rel="noopener noreferrer" className={rowClass} title="Abrir en SharePoint">{body}</a>}
+                    <a href={e.url} target="_blank" rel="noopener noreferrer" title="Abrir en SharePoint" aria-label={`Abrir ${e.name} en SharePoint`}
+                      className="mr-1 shrink-0 rounded p-1 text-zinc-400 opacity-0 group-hover:opacity-100 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800">
+                      <ExternalLink className="size-3.5" /></a>
+                  </li>
+                );
+              })}
+              {!shown.length && <li className="px-3 py-3 text-sm text-zinc-400">{q ? 'Nada con ese nombre.' : 'La carpeta está vacía.'}</li>}
+            </ul>
+            {preview && <Preview key={preview.path} entry={preview} onClose={() => setPreview(null)} />}
+          </div>
+          <details className="mt-3 text-xs text-zinc-500">
+            <summary className="cursor-pointer">El marcador</summary>
+            <div className="mt-2"><BookmarkletSetup /></div>
+          </details>
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * Vista previa de un PDF o una imagen dentro de Marea: el archivo llega del puente y vive solo como `blob:` de esta pestaña;
+ * al cerrar la vista previa (o cambiar de archivo) se libera.
+ */
+function Preview({ entry, onClose }: { entry: SharePointEntry; onClose: () => void }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const type = previewType(entry.name);
+  useEffect(() => {
+    let live = true;
+    let made: string | null = null;
+    if (!type) { setError('Este tipo de archivo se abre en SharePoint.'); return; }
+    loadFile(entry.path, type, MAX_PREVIEW_BYTES).then(
+      (u) => { made = u; if (live) setUrl(u); else URL.revokeObjectURL(u); },
+      (e: Error) => { if (live) setError(e.message); },
+    );
+    return () => { live = false; if (made) URL.revokeObjectURL(made); };
+  }, [entry.path, type]);
+  return (
+    <div className="flex max-h-[65vh] min-h-80 flex-col overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-800">
+      <div className="flex items-center gap-2 border-b border-zinc-200 px-3 py-1.5 text-sm dark:border-zinc-800">
+        <FileText className="size-4 shrink-0 text-zinc-400" />
+        <span className="min-w-0 flex-1 truncate font-medium" title={entry.name}>{entry.name}</span>
+        <a href={entry.url} target="_blank" rel="noopener noreferrer" title="Abrir en SharePoint" aria-label="Abrir en SharePoint"
+          className="rounded p-1 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"><ExternalLink className="size-3.5" /></a>
+        <button type="button" onClick={onClose} title="Cerrar la vista previa" aria-label="Cerrar la vista previa"
+          className="rounded p-1 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"><X className="size-4" /></button>
+      </div>
+      <div className="min-h-0 flex-1 bg-zinc-50 dark:bg-zinc-950">
+        {error && <p className="m-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{error}</p>}
+        {!url && !error && <p className="flex items-center gap-2 p-3 text-sm text-zinc-500"><Loader2 className="size-4 animate-spin" />Trayendo el archivo de SharePoint…</p>}
+        {url && type === 'application/pdf' && <iframe src={url} title={entry.name} className="h-full min-h-[60vh] w-full" />}
+        {url && type !== 'application/pdf' && <img src={url} alt={entry.name} className="mx-auto max-h-[60vh] max-w-full object-contain p-2" />}
+      </div>
+      <p className="border-t border-zinc-200 px-3 py-1 text-[11px] text-zinc-500 dark:border-zinc-800">Solo en esta pestaña: al cerrar la vista previa se borra.</p>
+    </div>
   );
 }
 
@@ -254,7 +321,7 @@ function BookmarkletSetup() {
       <ol className="mb-3 list-decimal space-y-1 pl-5 text-zinc-600 dark:text-zinc-300">
         <li>Arrastra el botón <b>Marea · Carpeta</b> a la barra de marcadores del navegador (solo la primera vez).</li>
         <li>Abre en SharePoint la carpeta que quieras ver, con tu cuenta de CaixaBank.</li>
-        <li>Pulsa el marcador: Marea se abre aquí con lo que hay en esa carpeta.</li>
+        <li>Pulsa el marcador: Marea se abre aquí con lo que hay en esa carpeta. Deja abierta la pestaña de SharePoint y podrás entrar en las subcarpetas y ver PDF e imágenes desde aquí.</li>
       </ol>
       <div className="flex flex-wrap items-center gap-2">
         <a ref={ref} draggable onClick={(e) => { e.preventDefault(); window.alert('Arrástralo a la barra de marcadores y púlsalo estando en una carpeta de SharePoint.'); }}
@@ -267,7 +334,7 @@ function BookmarkletSetup() {
         </button>
         <span className="text-xs text-zinc-500">Si la página no deja usar marcadores, pega el código en la consola (F12) estando en la carpeta.</span>
       </div>
-      <p className="mt-2 text-xs text-zinc-500">El marcador solo lee nombres, fechas y tamaños de esa carpeta, con tu sesión. No abre ni copia el contenido de los documentos.</p>
+      <p className="mt-2 text-xs text-zinc-500">El marcador lee con tu sesión nombres, fechas y tamaños de las carpetas de ese sitio. Solo trae un archivo cuando pides verlo (PDF o imagen, hasta 20 MB), y se queda en esta pestaña sin guardarse.</p>
     </div>
   );
 }

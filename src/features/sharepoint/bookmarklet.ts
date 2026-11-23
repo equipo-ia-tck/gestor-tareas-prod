@@ -6,6 +6,8 @@
  * 1. Lee la carpeta abierta: sus subcarpetas y archivos (nombre, enlace, tamaño y fecha). Nada de su contenido.
  * 2. Abre Marea (`#/sharepoint`) y le dice «hola» hasta que contesta (con la sesión iniciada).
  * 3. Le manda la lista. Marea la enseña y no la guarda: al cerrar la pestaña desaparece.
+ * 4. Se queda de puente mientras su pestaña siga abierta: Marea le pide otra carpeta del mismo sitio (navegar sin salir de
+ *    Marea) o un PDF o una imagen de hasta 20 MB para verlo (solo en la memoria de la pestaña de Marea).
  *
  * `bridge` se convierte en texto con `toString()`: no puede usar nada de fuera de la función.
  */
@@ -45,11 +47,13 @@ function bridge(app: string) {
   const web = location.origin + site;
   // Cada tramo codificado: un nombre con # o ? no rompe el enlace.
   const link = (serverRelative: string) => location.origin + serverRelative.split('/').map(encodeURIComponent).join('/');
+  // Solo se lee dentro del sitio de la carpeta en la que se pulsó el marcador.
+  const inSite = (p: unknown): p is string => typeof p === 'string' && p.indexOf(site + '/') === 0 && p.indexOf('..') < 0 && p.length < 1000;
+  const at = (p: string) => "@u='" + encodeURIComponent(p.replace(/'/g, "''")) + "'";
 
-  async function read() {
+  async function read(folder: string) {
     const sel = '$select=Name,ServerRelativeUrl,ItemCount,TimeLastModified,Length';
-    const q = (part: string) => web + "/_api/web/GetFolderByServerRelativePath(decodedurl=@u)/" + part + '?' + sel
-      + '&$top=' + (MAX + 1) + "&@u='" + encodeURIComponent(path.replace(/'/g, "''")) + "'";
+    const q = (part: string) => web + '/_api/web/GetFolderByServerRelativePath(decodedurl=@u)/' + part + '?' + sel + '&$top=' + (MAX + 1) + '&' + at(folder);
     const get = async (url: string) => {
       const r = await fetch(url, { headers: { Accept: J }, credentials: 'include' });
       if (!r.ok) throw new Error(r.status === 404 ? 'No se encuentra la carpeta.' : 'SharePoint respondió ' + r.status + '.');
@@ -57,11 +61,25 @@ function bridge(app: string) {
     };
     const [folders, files] = await Promise.all([get(q('Folders')), get(q('Files'))]);
     const entries = [
-      ...folders.filter((f) => f.Name !== 'Forms').map((f) => ({ kind: 'folder', name: f.Name, url: link(f.ServerRelativeUrl), size: f.ItemCount ?? null, modified: f.TimeLastModified ?? null })),
+      ...folders.filter((f) => f.Name !== 'Forms').map((f) => ({ kind: 'folder', name: f.Name, path: f.ServerRelativeUrl, url: link(f.ServerRelativeUrl), size: f.ItemCount ?? null, modified: f.TimeLastModified ?? null })),
       // ?web=1: los documentos de Office se abren en el navegador.
-      ...files.map((f) => ({ kind: 'file', name: f.Name, url: link(f.ServerRelativeUrl) + '?web=1', size: Number(f.Length) || 0, modified: f.TimeLastModified ?? null })),
+      ...files.map((f) => ({ kind: 'file', name: f.Name, path: f.ServerRelativeUrl, url: link(f.ServerRelativeUrl) + '?web=1', size: Number(f.Length) || 0, modified: f.TimeLastModified ?? null })),
     ];
-    return { type: 'marea-sp:folder', path, url: link(path), entries: entries.slice(0, MAX), truncated: entries.length > MAX };
+    return { type: 'marea-sp:folder', path: folder, site, url: link(folder), entries: entries.slice(0, MAX), truncated: entries.length > MAX };
+  }
+
+  // Vista previa: solo PDF e imágenes, hasta 20 MB. Se manda el archivo a la pestaña de Marea (no se guarda en ningún sitio).
+  const PREVIEW = /\.(pdf|png|jpe?g|gif|webp)$/i;
+  const MAX_FILE = 20 * 1024 * 1024;
+  async function file(p: string) {
+    if (!PREVIEW.test(p)) throw new Error('Solo se pueden ver aquí PDF e imágenes.');
+    const r = await fetch(web + '/_api/web/GetFileByServerRelativePath(decodedurl=@u)/$value?' + at(p), { credentials: 'include' });
+    if (!r.ok) throw new Error('SharePoint respondió ' + r.status + ' al abrir el archivo.');
+    const size = Number(r.headers.get('content-length') || 0);
+    if (size > MAX_FILE) throw new Error('El archivo pesa más de 20 MB: ábrelo en SharePoint.');
+    const buffer = await r.arrayBuffer();
+    if (buffer.byteLength > MAX_FILE) throw new Error('El archivo pesa más de 20 MB: ábrelo en SharePoint.');
+    return buffer;
   }
 
   const win = window.open(app + '/#/sharepoint', 'marea-sharepoint');
@@ -71,26 +89,44 @@ function bridge(app: string) {
   const hello = setInterval(() => { try { win.postMessage({ type: 'marea-sp:hello' }, app); } catch { /* aún cargando */ } }, 700);
   const giveUp = setTimeout(() => {
     clearInterval(hello);
-    window.removeEventListener('message', onMessage);
-    if (!started) say('Marea no ha contestado. ¿Has iniciado sesión? Vuelve a pulsar el marcador.', true);
+    if (!started) { window.removeEventListener('message', onMessage); say('Marea no ha contestado. ¿Has iniciado sesión? Vuelve a pulsar el marcador.', true); }
   }, 120000);
 
+  // Después del primer envío, esta pestaña hace de puente: Marea le pide otras carpetas del sitio o un archivo para verlo.
   async function onMessage(e: MessageEvent) {
     const data: Any = e.data;
-    if (started || e.origin !== app || e.source !== win || !data || data.type !== 'marea-sp:ready') return;
-    started = true;
-    clearInterval(hello);
-    clearTimeout(giveUp);
-    window.removeEventListener('message', onMessage);
-    try {
-      say('Leyendo la carpeta…');
-      const snapshot = await read();
-      win!.postMessage(snapshot, app);
-      say(snapshot.entries.length + ' elementos enviados a Marea (solo se ven, no se guardan).', true);
-    } catch (err: Any) {
-      const message = String(err?.message ?? err);
-      win!.postMessage({ type: 'marea-sp:error', message }, app);
-      say('Error: ' + message, true);
+    if (e.origin !== app || e.source !== win || !data) return;
+    if (data.type === 'marea-sp:ready' && !started) {
+      started = true;
+      clearInterval(hello);
+      clearTimeout(giveUp);
+      try {
+        say('Leyendo la carpeta…');
+        const snapshot = await read(path);
+        win!.postMessage(snapshot, app);
+        say('Conectado con Marea. Deja esta pestaña abierta para moverte por las carpetas desde Marea.');
+      } catch (err: Any) {
+        win!.postMessage({ type: 'marea-sp:error', message: String(err?.message ?? err) }, app);
+        say('Error: ' + String(err?.message ?? err), true);
+      }
+      return;
+    }
+    if (!started) return;
+    if (data.type === 'marea-sp:list') {
+      try {
+        if (!inSite(data.path)) throw new Error('Esa carpeta no es de este sitio de SharePoint.');
+        win!.postMessage({ ...(await read(data.path)), request: data.request }, app);
+      } catch (err: Any) {
+        win!.postMessage({ type: 'marea-sp:error', message: String(err?.message ?? err), request: data.request }, app);
+      }
+    } else if (data.type === 'marea-sp:file') {
+      try {
+        if (!inSite(data.path)) throw new Error('Ese archivo no es de este sitio de SharePoint.');
+        const buffer = await file(data.path);
+        win!.postMessage({ type: 'marea-sp:filedata', request: data.request, path: data.path, buffer }, app, [buffer]);
+      } catch (err: Any) {
+        win!.postMessage({ type: 'marea-sp:error', message: String(err?.message ?? err), request: data.request }, app);
+      }
     }
   }
   window.addEventListener('message', onMessage);
