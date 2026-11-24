@@ -13,6 +13,7 @@ export const SCREENS: { id: string; label: string; hint?: string }[] = [
   { id: 'asistente', label: 'Asistente' },
   { id: 'rally', label: 'Rally' },
   { id: 'lista', label: 'Lista' },
+  { id: 'sharepoint', label: 'SharePoint', hint: 'carpetas de SharePoint' },
   { id: 'projects', label: 'Proyectos', hint: 'la sección de la barra lateral y cada proyecto' },
   { id: 'people', label: 'Grupos y personas', hint: 'la sección de la barra lateral y las fichas' },
   { id: 'review', label: 'Revisión semanal' },

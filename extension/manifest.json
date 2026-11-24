@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Marea · Lista",
-  "version": "1.4.0",
-  "description": "Sincroniza Marea con tu Microsoft List de SharePoint en segundo plano, con tu sesión de SharePoint.",
+  "version": "1.5.0",
+  "description": "Sincroniza Marea con tu Microsoft List y tus carpetas de SharePoint en segundo plano, con tu sesión de SharePoint.",
   "permissions": ["scripting"],
   "host_permissions": ["https://*.sharepoint.com/*"],
   "background": { "service_worker": "background.js" },
@@ -12,7 +12,8 @@
         "http://localhost/*",
         "http://127.0.0.1/*",
         "https://gestor-tareas-prod.vercel.app/*",
-        "https://gestor-tareas-prod-git-dev-ia-geeks.vercel.app/*"
+        "https://gestor-tareas-prod-git-dev-ia-geeks.vercel.app/*",
+        "https://gestor-tareas-prod-git-sharepoint-carpetas-ia-geeks.vercel.app/*"
       ],
       "js": ["content.js"],
       "run_at": "document_start"

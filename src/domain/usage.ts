@@ -37,6 +37,7 @@ export const SCREENS: { id: string; label: string }[] = [
   { id: 'calendar', label: 'Calendario' },
   { id: 'notes', label: 'Notas' },
   { id: 'rally', label: 'Rally' },
+  { id: 'sharepoint', label: 'SharePoint' },
   { id: 'project', label: 'Proyecto' },
   { id: 'people', label: 'Grupos' },
   { id: 'person', label: 'Persona' },

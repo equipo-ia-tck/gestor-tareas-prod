@@ -1124,6 +1124,57 @@ Petición de la usuaria: que los administradores elijan qué pantallas ve cada p
 - **Ajustes → Pantallas** (`ScreensCard`, solo administradores): tabla con una fila por cuenta activa y una columna por
   pantalla (ojo abierto/cerrado), fila «Por defecto» con «Aplicar a todas», y «Por defecto» en cada cuenta elegida a mano.
 
+## Fase 37: carpetas de SharePoint de CaixaBank (rama `sharepoint-carpetas`, nov 2026)
+
+Petición de la usuaria: tener a mano las carpetas del SharePoint de CaixaBank (se abre en el navegador del Mac con la cuenta
+de proveedor externo). Son documentos del cliente, así que **nada de su contenido sale de SharePoint**: sin Power Automate
+(copiaría de su tenant a uno de WPP) ni Graph (no hay app en Entra ID).
+
+
+- **Con la extensión de Chrome** (lo recomendado; misma extensión «Marea · Lista» de Marc, versión **1.5.0**): dos operaciones
+  más en `features/assistant/spDocs.ts`, `folder` (un nivel: subcarpetas y archivos con tamaño y fecha, sin `Forms` ni las
+  ocultas, en el formato de `parseSnapshot`) y `file` (PDF o imagen hasta 10 MB en base64), en `DOC_OPS` de
+  `background.template.js` y en `extDocs`. En `sharepointStore.ts`, `openWithExtension(url)` (`resolve` + `folder`) y, con
+  `via: 'extension'`, `openFolder` y `loadFile` van por la extensión: sin pestaña de SharePoint, sin marcador y sin guardar
+  nada. `openSaved` prueba en este orden: extensión (`extensionReady`: 1.5.0 o posterior) y, sin ella, el marcador. La pantalla enseña el estado de la extensión (instalar, actualizar o «Abrir aquí» un enlace) y deja el
+  marcador como alternativa. `content.js` también se mete en la vista previa de esta rama.
+- **Paso 1, accesos** (`domain/sharepoint.ts`, `features/sharepoint/folders.ts`): nombre y enlace (solo https de
+  `*.sharepoint.com`, `isSharePointUrl`; nombre propuesto con `folderNameFromUrl`). Personales en
+  `settings.sharepoint_folders` y de proyecto en `Project.folders` (los ve quien ve el proyecto, con «Deshacer»); sin
+  migración (zod los deja opcionales o vacíos). Pantalla `#/sharepoint` («SharePoint» debajo de Rally) y fila «Carpetas» en la
+  página del proyecto (`ProjectFolders`). Se abren en SharePoint con la sesión de la persona.
+- **Paso 2, ver el contenido** (`features/sharepoint/bookmarklet.ts`, como el de la Lista de Marc en `dev`): marcador «Marea ·
+  Carpeta» que, en una carpeta de una biblioteca (`?id=` de la vista o la ruta), **solo lee** nombre, enlace, tamaño y fecha de
+  sus subcarpetas y archivos (`GetFolderByServerRelativePath`, máx. 2.000; sin la carpeta interna `Forms`; nombres codificados
+  por tramo y `?web=1` para abrir Office en el navegador) y se los pasa a Marea por `postMessage`. Marea solo contesta a orígenes
+  https de `*.sharepoint.com` (`isSharePointOrigin`) y valida todo con `parseSnapshot`. Lo recibido se queda **solo en memoria
+  de esa pestaña** (`sharepointStore.ts`): ni Supabase, ni IndexedDB, ni localStorage. «Guardar en mis carpetas» guarda solo
+  el enlace. Si la página no deja usar marcadores, «Copiar el código» para la consola. Tests en `tests/sharepoint.test.ts`
+  (el marcador se ejecuta suelto; comprobado también minificado).
+- **Navegar y vista previa dentro de Marea** (misma rama): la pestaña de SharePoint donde se pulsó el marcador se queda de
+  **puente** mientras siga abierta. Marea (`sharepointStore.ts`: `openFolder`, `loadFile`, `handleBridgeMessage`) le pide otra
+  carpeta (`marea-sp:list`) o un archivo (`marea-sp:file`) con un número de petición; solo vale la respuesta del puente
+  conectado y el puente solo atiende a Marea (origen y ventana) y **solo dentro del sitio** de la carpeta inicial (`inSite`).
+  Migas de pan desde la biblioteca (`breadcrumbs`). **Vista previa** solo de PDF e imágenes hasta 20 MB (`previewType`,
+  `MAX_PREVIEW_BYTES`, comprobado en los dos lados): el archivo llega como `ArrayBuffer`, se enseña como `blob:` de la pestaña
+  (PDF en un iframe, imágenes en `<img>`) y la URL se libera al cerrar la vista previa. Nada se guarda. Word, Excel y
+  PowerPoint se siguen abriendo en SharePoint (Office web no se deja incrustar; el inicio de sesión de Microsoft responde
+  `X-Frame-Options: DENY`). **Pendiente**: el visto bueno de José a la vista previa (trae contenido de documentos de
+  CaixaBank a la pestaña) antes de pasarla a `main`.
+- **Carpetas guardadas dentro de Marea** (misma rama): pulsar un acceso (pantalla o fila «Carpetas» del proyecto,
+  `openSaved`) lo enseña en Marea. `folderLocation` saca dominio y ruta del enlace (`?id=`, `/:f:/r/…` o la ruta; los enlaces
+  de compartir con código no se pueden: se abren en SharePoint). Con puente de ese dominio, `openFolder` al momento; si no,
+  `waitingFor` y la tarjeta «Conecta con SharePoint»: «Abrir en SharePoint» abre la carpeta **sin `noopener`**
+  (`openForBridge`) para que el marcador, pulsado allí, hable con esta misma pestaña (`window.opener`, con `postMessage` al
+  origen de Marea; si no contesta en 2,5 s abre Marea en otra) y, al llegar su primera carpeta, se abre la pedida. El puente
+  lee cualquier sitio (`/sites/…` o `/teams/…`) del mismo dominio de SharePoint, con la sesión de la persona. Si SharePoint
+  bloquea los marcadores, el código se pega en la consola.
+- **Versión del marcador** (`BRIDGE_VERSION`, `v` en el «hola»): el código de un marcador se queda como estaba al
+  arrastrarlo, así que Marea no se conecta con uno antiguo y pide volver a arrastrarlo (`OLD_BOOKMARKLET`). Si se cambia
+  el protocolo del puente, hay que subir la versión en los dos sitios. El marcador lleva dentro la dirección de Marea desde
+  la que se arrastró: en producción hay que arrastrarlo desde la app publicada.
+- **Power Automate** (se probó en esta rama: flujo que escribía `Gestor/sharepoint.json`, subida desde el Mac y migración 014): **quitado** al llegar la extensión, que lo hace al momento y sin guardar la lista en Supabase.
+
 ### Más adelante
 
 - **Electron**: la app es web estática con rutas por hash y datos en IndexedDB, así que se puede empaquetar sin cambios

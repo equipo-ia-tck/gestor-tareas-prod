@@ -7,6 +7,8 @@
  *   trozo con las palabras resaltadas. Lee Word, PDF, PowerPoint, Excel… sin descargar nada.
  * - `list`: los archivos más recientes de la carpeta.
  * - `upload`: sube un archivo a la carpeta (sin sustituir uno que ya exista).
+ * - `folder`: un nivel de una carpeta (subcarpetas y archivos con tamaño y fecha) para navegarla en la pantalla SharePoint.
+ * - `file`: un PDF o una imagen (hasta 10 MB) en base64, para verlo dentro de Marea.
  *
  * Se convierte en texto con `toString()` (como `spWork`): no puede usar nada de fuera de la función ni este archivo
  * puede tener imports.
@@ -210,6 +212,42 @@ export async function spDocs(op: string, args: Any): Promise<Any> {
     }
     const f = await r.json();
     return { name: f.Name, url: new URL(site).origin + encodeURI(f.ServerRelativeUrl) };
+  }
+
+  // Una carpeta, un nivel, para navegarla desde Marea (pantalla SharePoint): subcarpetas y archivos con tamaño y fecha.
+  // Nada del contenido de los documentos.
+  if (op === 'folder') {
+    const site = String(args.siteUrl);
+    sp(site);
+    const folder = String(args.folder);
+    const origin = new URL(site).origin;
+    const link = (p: string) => origin + p.split('/').map(encodeURIComponent).join('/');
+    const sel = '?$select=Name,ServerRelativeUrl,ItemCount,TimeLastModified,Length&$top=2001';
+    const [ds, fs] = await Promise.all([get(folderApi(site, folder, '/Folders' + sel)), get(folderApi(site, folder, '/Files' + sel))]);
+    const entries = [
+      ...(ds.value || []).filter((d: Any) => d.Name !== 'Forms' && d.Name.charAt(0) !== '_').map((d: Any) => ({
+        kind: 'folder', name: d.Name, path: d.ServerRelativeUrl, url: link(d.ServerRelativeUrl), size: d.ItemCount ?? null, modified: d.TimeLastModified ?? null })),
+      // ?web=1: los documentos de Office se abren en el navegador.
+      ...(fs.value || []).map((f: Any) => ({
+        kind: 'file', name: f.Name, path: f.ServerRelativeUrl, url: link(f.ServerRelativeUrl) + '?web=1', size: Number(f.Length) || 0, modified: f.TimeLastModified ?? null })),
+    ];
+    return { path: folder, site: new URL(site).pathname.replace(/\/+$/, ''), url: link(folder), entries: entries.slice(0, 2000), truncated: entries.length > 2000 };
+  }
+
+  // Un PDF o una imagen (hasta 10 MB) para verlo dentro de Marea, en base64. Solo esos tipos.
+  if (op === 'file') {
+    const site = String(args.siteUrl);
+    sp(site);
+    const path = String(args.path);
+    if (!/\.(pdf|png|jpe?g|gif|webp)$/i.test(path)) throw new Error('Solo se pueden ver aquí PDF e imágenes.');
+    const r = await fetch(site + "/_api/web/GetFileByServerRelativePath(decodedurl=@f)/$value?@f='" + q(path) + "'", { credentials: 'include' });
+    if (r.status === 401 || r.status === 403) throw fail(r.status, 'SharePoint no deja abrirlo (' + r.status + '): ¿has iniciado sesión en SharePoint en Chrome?');
+    if (!r.ok) throw fail(r.status, 'SharePoint respondió ' + r.status + ' al abrir el archivo.');
+    const buf = new Uint8Array(await r.arrayBuffer());
+    if (buf.byteLength > 10 * 1024 * 1024) throw new Error('El archivo pesa más de 10 MB: ábrelo en SharePoint.');
+    let bin = '';
+    for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+    return { base64: btoa(bin), size: buf.byteLength };
   }
 
   throw new Error('Operación desconocida.');
