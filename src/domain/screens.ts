@@ -24,9 +24,9 @@ export const SCREEN_IDS = SCREENS.map((s) => s.id);
 
 /**
  * Pantallas ocultas para todo el mundo, administradores incluidos, además de lo que diga Ajustes → Pantallas. Para
- * apagar una pantalla sin tocar Supabase (p. ej. mientras no esté lista). El Asistente, a petición de la usuaria (nov 2026).
+ * apagar una pantalla sin tocar Supabase (p. ej. mientras no esté lista). Vacía: lo decide Ajustes → Pantallas.
  */
-export const HIDDEN_FOR_ALL: string[] = ['asistente'];
+export const HIDDEN_FOR_ALL: string[] = [];
 
 /** La pantalla (del catálogo) a la que pertenece una ruta; null = siempre visible (Hoy, Ajustes, las de administración). */
 export function screenOf(view: Route['view']): string | null {

@@ -265,8 +265,9 @@ describe('Pantallas de cada cuenta', () => {
     expect(isHiddenRoute('project', ['projects'])).toBe(true);
     expect(isHiddenRoute('today', SCREEN_IDS)).toBe(false);
     expect(isHiddenRoute('rally', [])).toBe(false);
-    // El Asistente está apagado para todo el mundo desde el código (HIDDEN_FOR_ALL).
-    expect(isHiddenRoute('asistente', [])).toBe(true);
+    // Nada apagado desde el código: el Asistente lo ve quien Ajustes → Pantallas diga.
+    expect(isHiddenRoute('asistente', [])).toBe(false);
+    expect(isHiddenRoute('asistente', ['asistente'])).toBe(true);
     // Las claves cumplen lo que exige Supabase (clean_screens).
     expect(SCREEN_IDS.every((id) => /^[a-z][a-z-]{0,29}$/.test(id))).toBe(true);
   });

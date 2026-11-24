@@ -1107,8 +1107,8 @@ Petición de la usuaria: que los administradores elijan qué pantallas ve cada p
   las entradas y secciones; `View` enseña «Esta pantalla no está activada para tu cuenta» si se abre por enlace. **Es para
   simplificar la app, no es seguridad**: no cambia qué datos ve nadie.
 - **Apagadas para todos desde el código** (`HIDDEN_FOR_ALL` en `domain/screens.ts`, se suma a lo de Supabase, administradores
-  incluidos; Ajustes → Pantallas lo avisa): ahora, el **Asistente** (petición de la usuaria, nov 2026). Para volver a
-  enseñarlo, se quita de esa lista.
+  incluidos; Ajustes → Pantallas lo avisa). Estuvo el Asistente hasta aplicar la migración 013 (24 nov 2026); ahora está
+  vacía y todo lo decide Ajustes → Pantallas.
 - **Ajustes → Pantallas** (`ScreensCard`, solo administradores): tabla con una fila por cuenta activa y una columna por
   pantalla (ojo abierto/cerrado), fila «Por defecto» con «Aplicar a todas», y «Por defecto» en cada cuenta elegida a mano.
 
