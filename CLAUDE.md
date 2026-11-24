@@ -1132,8 +1132,7 @@ de proveedor externo). Son documentos del cliente, así que **nada de su conteni
   ocultas, en el formato de `parseSnapshot`) y `file` (PDF o imagen hasta 10 MB en base64), en `DOC_OPS` de
   `background.template.js` y en `extDocs`. En `sharepointStore.ts`, `openWithExtension(url)` (`resolve` + `folder`) y, con
   `via: 'extension'`, `openFolder` y `loadFile` van por la extensión: sin pestaña de SharePoint, sin marcador y sin guardar
-  nada. `openSaved` prueba en este orden: extensión (`extensionReady`: 1.5.0 o posterior), lo sincronizado con Power Automate
-  y el marcador. La pantalla enseña el estado de la extensión (instalar, actualizar o «Abrir aquí» un enlace) y deja el
+  nada. `openSaved` prueba en este orden: extensión (`extensionReady`: 1.5.0 o posterior) y, sin ella, el marcador. La pantalla enseña el estado de la extensión (instalar, actualizar o «Abrir aquí» un enlace) y deja el
   marcador como alternativa. `content.js` también se mete en la vista previa de esta rama.
 - **Paso 1, accesos** (`domain/sharepoint.ts`, `features/sharepoint/folders.ts`): nombre y enlace (solo https de
   `*.sharepoint.com`, `isSharePointUrl`; nombre propuesto con `folderNameFromUrl`). Personales en
@@ -1170,19 +1169,7 @@ de proveedor externo). Son documentos del cliente, así que **nada de su conteni
   arrastrarlo, así que Marea no se conecta con uno antiguo y pide volver a arrastrarlo (`OLD_BOOKMARKLET`). Si se cambia
   el protocolo del puente, hay que subir la versión en los dos sitios. El marcador lleva dentro la dirección de Marea desde
   la que se arrastró: en producción hay que arrastrarlo desde la app publicada.
-- **Sincronizado con Power Automate** (misma rama; sin Premium, como el calendario; migración `014_sharepoint_subido.sql`
-  después de 001 a 013): CaixaBank no registra apps, así que un flujo programado (pasos en `docs/sharepoint-power-automate.md`:
-  «Obtener archivos (solo propiedades)» con elementos anidados + «Seleccionar» + «Redactar») escribe
-  `OneDrive/Gestor/sharepoint.json`. El programa de subida del Mac (`scripts/subir-onedrive.ts`, también la versión suelta) lo
-  vigila si existe (`GESTOR_SHAREPOINT` lo cambia; sus errores no paran el calendario) y lo sube recortado
-  (`trimSharePointExport` en `domain/sharepointSync.ts`, sin imports: nombre, ruta, enlace, si es carpeta y fecha; máx. 20.000)
-  a `connector_uploads` con `kind = 'sharepoint'` y la misma clave de subida. **Esto sí guarda la lista en Supabase** (cada
-  persona la suya, RLS); nunca contenido. En Marea, «Carpetas sincronizadas» (`SyncedFolders`, `sharepointCloud.ts`,
-  `parseSyncedRoots` revalida al leer): migas, entrar en subcarpetas, buscar en todo (`searchSynced`) y abrir cada archivo en
-  SharePoint. Una carpeta guardada que está sincronizada (`findSynced`) se abre ahí, sin marcador; si no, el puente.
-
-### Más adelante
-
+- **Power Automate** (se probó en esta rama: flujo que escribía `Gestor/sharepoint.json`, subida desde el Mac y migración 014): **quitado** al llegar la extensión, que lo hace al momento y sin guardar la lista en Supabase.
 - **Electron**: la app es web estática con rutas por hash y datos en IndexedDB, así que se puede empaquetar sin cambios
   (cargando `dist/`). Ojo: Electron tendrá su propio IndexedDB, y los datos se pasan con exportar e importar.
 

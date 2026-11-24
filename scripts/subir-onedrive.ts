@@ -21,8 +21,7 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { trimOutlookEvents } from '../src/domain/outlookEvents.ts';
-import { trimSharePointExport } from '../src/domain/sharepointSync.ts';
-import { findGestorFile, findOutlookFile } from '../servidor/calendar.ts';
+import { findOutlookFile } from '../servidor/calendar.ts';
 
 /** Configuración de Supabase que lleva dentro la versión suelta (null en el repositorio). */
 const EMBEDDED = (globalThis as { GESTOR_EMBEDDED?: { url: string; key: string } }).GESTOR_EMBEDDED ?? null;
@@ -82,37 +81,6 @@ export async function uploadCalendar(
   return { count: events.length, account: typeof body === 'string' ? body : '' };
 }
 
-/**
- * Sube la lista de carpetas de SharePoint (`Gestor/sharepoint.json`, si el flujo existe), recortada: nombre, ruta,
- * enlace, si es carpeta y fecha. Nunca contenido de documentos.
- */
-export async function uploadSharePoint(
-  opts: { url: string; key: string; token: string; text: string; fileAt: Date },
-  fetcher: Fetch = fetch,
-): Promise<{ folders: number; items: number }> {
-  let json: unknown;
-  try {
-    json = JSON.parse(opts.text.replace(/^\uFEFF/, ''));
-  } catch {
-    throw new Error('sharepoint.json no es JSON válido (¿el flujo lo está escribiendo en este momento?).');
-  }
-  const roots = trimSharePointExport(json);
-  const res = await fetcher(`${opts.url}/rest/v1/rpc/upload_connector_file`, {
-    method: 'POST',
-    headers: { apikey: opts.key, Authorization: `Bearer ${opts.key}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ p_token: opts.token, p_kind: 'sharepoint', p_data: roots, p_file_at: opts.fileAt.toISOString() }),
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => null) as { message?: string } | null;
-    const msg = body?.message ?? `Supabase ha respondido con un error (${res.status}).`;
-    throw new Error(/no admitido|kind_check/.test(msg) ? 'Falta aplicar en Supabase la migración 014_sharepoint_subido.sql.' : msg);
-  }
-  return { folders: roots.length, items: roots.reduce((n, r) => n + r.items.length, 0) };
-}
-
-/** Archivo de carpetas de SharePoint: `GESTOR_SHAREPOINT` o `Gestor/sharepoint.json` en OneDrive (opcional). */
-const findSharePointFile = () => findGestorFile('sharepoint.json', 'GESTOR_SHAREPOINT');
-
 function savedToken(): string | null {
   try {
     return (JSON.parse(readFileSync(TOKEN_FILE, 'utf8')) as { token?: string }).token ?? null;
@@ -133,27 +101,7 @@ async function watch(token: string, once: boolean) {
   const config = supabaseConfig();
   let lastMtime = 0;
   let lastError = '';
-  let spMtime = 0;
-  let spError = '';
-  // SharePoint es opcional: si no hay archivo no pasa nada, y sus errores no paran el calendario.
-  const tickSharePoint = async () => {
-    const path = findSharePointFile();
-    if (!path) return;
-    try {
-      const { mtime } = await stat(path);
-      if (mtime.getTime() === spMtime) return;
-      const done = await uploadSharePoint({ ...config, token, text: await readFile(path, 'utf8'), fileAt: mtime });
-      spMtime = mtime.getTime();
-      spError = '';
-      log(`SharePoint: subidas ${done.folders} carpetas con ${done.items} elementos (archivo del ${mtime.toLocaleString('es-ES')}).`);
-    } catch (e) {
-      const msg = (e as Error).message;
-      if (msg !== spError) log(`SharePoint: ${msg}`);
-      spError = msg;
-    }
-  };
   const tick = async () => {
-    await tickSharePoint();
     const path = findOutlookFile();
     if (!path) throw new Error('No encuentro Gestor/calendario.json en tu OneDrive (¿el flujo se ha ejecutado y OneDrive está sincronizado?).');
     const { mtime } = await stat(path);

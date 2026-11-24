@@ -17,14 +17,10 @@ interface State {
   waitingFor: (SharePointFolder & { origin: string; path: string }) | null;
   /** De dónde sale la carpeta que se ve: la extensión de Chrome (sin pestaña de SharePoint) o el marcador. */
   via: 'extension' | 'bridge' | null;
-  /** Carpeta sincronizada (Power Automate) que se quiere ver: sitio y ruta dentro del sitio. */
-  syncedTarget: { site: string; path: string; at: number } | null;
 }
-let state: State = { snapshot: null, error: null, loading: false, connected: false, waitingFor: null, syncedTarget: null, via: null };
+let state: State = { snapshot: null, error: null, loading: false, connected: false, waitingFor: null, via: null };
 /** Sitio (dirección completa) de la carpeta abierta con la extensión. */
 let extSite: string | null = null;
-
-export const showSynced = (site: string, path: string) => set({ syncedTarget: { site, path, at: Date.now() }, waitingFor: null });
 const listeners = new Set<() => void>();
 const set = (patch: Partial<State>) => { state = { ...state, ...patch }; for (const l of listeners) l(); };
 const subscribe = (l: () => void) => { listeners.add(l); return () => { listeners.delete(l); }; };

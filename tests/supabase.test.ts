@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
  * Prueba la base de datos de Supabase (supabase/migrations) en un Postgres de verdad (PGlite), imitando
  * lo mínimo de Supabase: roles anon/authenticated y auth.uid()/auth.email() de la sesión.
  */
-const MIGRATION = ['001_equipo.sql', '002_baja_y_contrasenas.sql', '003_alta_sin_invitacion.sql', '004_claves_conectores.sql', '005_calendario_subido.sql', '006_feedback.sql', '007_feedback_formulario.sql', '008_feedback_bloqueado.sql', '009_analitica.sql', '010_analitica_kpis.sql', '011_rally_herramienta.sql', '012_calendario_ics.sql', '013_pantallas.sql', '014_sharepoint_subido.sql'].map((f) => readFileSync(`supabase/migrations/${f}`, 'utf8')).join('\n');
+const MIGRATION = ['001_equipo.sql', '002_baja_y_contrasenas.sql', '003_alta_sin_invitacion.sql', '004_claves_conectores.sql', '005_calendario_subido.sql', '006_feedback.sql', '007_feedback_formulario.sql', '008_feedback_bloqueado.sql', '009_analitica.sql', '010_analitica_kpis.sql', '011_rally_herramienta.sql', '012_calendario_ics.sql', '013_pantallas.sql'].map((f) => readFileSync(`supabase/migrations/${f}`, 'utf8')).join('\n');
 let db: PGlite;
 
 const SUPABASE_STUB = `
@@ -235,18 +235,13 @@ describe('base de datos del equipo en Supabase', () => {
     expect(await rpc(marta, 'upload_token_info')).toMatchObject({ hasToken: true });
 
     // El proceso del Mac llama sin sesión (anon).
-    const upload = async (t: string, data: unknown, kind = 'calendario') => {
+    const upload = async (t: string, data: unknown) => {
       await db.exec("reset role; select set_config('test.uid', '', false); set role anon;");
-      return (await db.query<{ r: string }>('select public.upload_connector_file($1, $2, $3, $4) as r', [t, kind, JSON.stringify(data), '2026-11-13T09:00:00Z'])).rows[0].r;
+      return (await db.query<{ r: string }>('select public.upload_connector_file($1, $2, $3, $4) as r', [t, 'calendario', JSON.stringify(data), '2026-11-13T09:00:00Z'])).rows[0].r;
     };
     expect(await upload(token, [{ uid: 'a', title: 'Daily' }])).toBe('Marta García');
     await expect(upload('gsub_mal', [])).rejects.toThrow(/Clave de subida no válida/);
-    await expect(upload(token, { no: 'lista' })).rejects.toThrow(/lista/);
-    // 013: también las carpetas de SharePoint, en su propia fila; otros tipos, no.
-    await upload(token, [{ site: 'https://caixa.sharepoint.com/sites/E', root: 'Docs/General', items: [] }], 'sharepoint');
-    await expect(upload(token, [], 'otro')).rejects.toThrow(/no admitido/);
-    expect((await as<{ kind: string }>(marta, 'select kind from connector_uploads order by kind')).map((r) => r.kind)).toEqual(['calendario', 'sharepoint']);
-    await db.exec("reset role; delete from connector_uploads where kind = 'sharepoint';");
+    await expect(upload(token, { no: 'lista' })).rejects.toThrow(/lista de reuniones/);
     await db.exec('reset role; set role anon;');
     await expect(db.query('select * from connector_uploads')).rejects.toThrow();
 
