@@ -1268,6 +1268,11 @@ que los documentos (también los de CaixaBank) salgan del ordenador. RAG **local
   Antes cada celda (con sus `<p>`) quedaba en una línea suelta y las celdas en mayúsculas (`COD_POSTEVAR6`) se tomaban por
   apartados, así la IA mezclaba filas («evar161 se usa para el login»). `pageChunks` usa `splitSections(…, { markdownOnly })`.
   **Lo ya subido no cambia hasta volver a subir el export** con `npm run subir-docs`.
+- **«Preguntar a Claude»** (`features/assistant/askClaude.tsx`): para lo que el modelo de 3B no razona (comparar, explicar,
+  juntar muchas páginas), sin API: debajo de cada búsqueda abre `claude.ai/new?q=…` en una ventana estrecha a la derecha con
+  la pregunta y la indicación de usar el conector de Marea (MCP, fase 38); solo hay que enviarla. Solo viaja la pregunta (nada
+  de SharePoint). También «copiar» para la app de escritorio o el panel de Chrome. Tarjeta `ClaudeCard` con cómo añadir el
+  conector (`MCP_URL`). Claude no deja incrustarse en un iframe y manejar claude.ai por detrás iría contra sus condiciones.
 
 ### Más adelante
 

@@ -27,6 +27,7 @@ import { folderKey, folderState, loadFolderDocs, useFolderDocs } from './folderD
 import { confluenceChunks, isConfluenceChunk, loadConfluenceDocs, useConfluenceDocs } from './confluenceDocs';
 import { kqlFrom, summaryMarks } from './spDocs';
 import { AiAnswer, AiPanel, useAiEnabled } from './ai/AiAnswer';
+import { AskClaudeButton, ClaudeCard } from './askClaude';
 import { indexChunks, startLlm, useAi } from './ai/engine';
 
 type ActIntent = Extract<Intent, { kind: 'act' }>;
@@ -288,6 +289,7 @@ export function AssistantView() {
             {fromList.length > 0 && <ListHits hits={fromList} />}
             {sources.map((c, i) => <SharePointHits key={c.id} source={c} query={a.query} skip={new Set(local.map((h) => h.chunk.ref))} lead={!answer && i === 0} />)}
             <SearchAnswer hits={a.hits.filter((h) => h.chunk.source !== 'doc' && h.chunk.source !== 'list')} list={list} />
+            <AskClaudeButton question={a.query} />
           </>
         );
       }
@@ -328,6 +330,7 @@ export function AssistantView() {
       <div className="space-y-4">
         <AiPanel />
         <ConfluenceCard />
+        <ClaudeCard />
         <SharePointPanel />
       </div>
     </div>

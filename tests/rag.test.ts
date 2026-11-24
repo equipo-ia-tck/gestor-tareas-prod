@@ -48,3 +48,13 @@ describe('rag', () => {
     expect(isNotFound('La eVar69 [1].')).toBe(false);
   });
 });
+
+describe('Preguntar a Claude', () => {
+  it('el enlace lleva la pregunta y la indicación de usar el conector de Marea', async () => {
+    const { claudePrompt, claudeUrl } = await import('../src/features/assistant/askClaude');
+    expect(claudePrompt('  ¿Qué evar uso para el login? ')).toMatch(/conector de Marea[\s\S]*Pregunta: ¿Qué evar uso para el login\?$/);
+    const url = new URL(claudeUrl('¿Qué evar?'));
+    expect(url.origin + url.pathname).toBe('https://claude.ai/new');
+    expect(url.searchParams.get('q')).toContain('Pregunta: ¿Qué evar?');
+  });
+});
