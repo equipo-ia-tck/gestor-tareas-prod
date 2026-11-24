@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Bookmark, Check, ChevronRight, Puzzle, Copy, ExternalLink, FileText, Folder, FolderPlus, Loader2, Pencil, Search, ShieldCheck, Trash2, X } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
+import { useWideLayout } from '../../app/Layout';
 import { ViewHeader } from '../views/ViewHeader';
 import { ProjectOptions } from '../../components/ui/ProjectOptions';
 import { inputClass } from '../../components/ui/styles';
@@ -24,6 +25,7 @@ const title = 'mb-3 flex items-center gap-2 text-sm font-semibold';
  */
 export function SharePointView() {
   useBookmarkletBridge();
+  useWideLayout(true);
   return (
     <>
       <ViewHeader title="SharePoint" subtitle="Las carpetas de CaixaBank con las que trabajas, a un clic. Se abren con tu cuenta de proveedor externo." />
@@ -32,7 +34,8 @@ export function SharePointView() {
         <span>Marea solo guarda el nombre y el enlace de cada carpeta. Los documentos se quedan en SharePoint y se abren con tus
           permisos de CaixaBank. Lo que veas con el marcador no se guarda en ningún sitio: al cerrar esta pestaña desaparece.</span>
       </p>
-      <div className="space-y-4">
+      {/* Mis carpetas a la izquierda y su contenido a la derecha (en pantallas estrechas, una debajo de otra). */}
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
         <FolderList />
         <FolderContents />
       </div>
@@ -254,7 +257,7 @@ function FolderContents() {
             <Search className="size-4 text-zinc-400" />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filtrar por nombre…" aria-label="Filtrar archivos" className="w-full bg-transparent outline-none" />
           </div>
-          <div className={`grid gap-3 ${preview ? 'lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]' : ''}`}>
+          <div className={`grid gap-3 ${preview ? '2xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]' : ''}`}>
             <ul className={`max-h-[65vh] divide-y divide-zinc-100 overflow-y-auto rounded-lg border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800 ${loading ? 'opacity-60' : ''}`}>
               {shown.map((e) => {
                 const canPreview = e.kind === 'file' && connected && !!previewType(e.name) && (e.size ?? 0) <= (via === 'extension' ? EXT_PREVIEW_BYTES : MAX_PREVIEW_BYTES);
