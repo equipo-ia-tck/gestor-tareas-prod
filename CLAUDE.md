@@ -1211,12 +1211,17 @@ como es texto sin adjuntos, pesa poco (los 3 zips de prueba, ~700 páginas, ~2,6
   `htmlToText`, y arma el enlace `…/pages/viewpage.action?pageId=<id>` (`CONFLUENCE_BASE`, Data Center de CaixaBank, solo se
   abre desde su red). `pageChunks` trocea por apartados reutilizando `splitSections`/`Chunk` (fuente `doc`).
 - **Supabase** (`supabase/migrations/014_documentacion.sql`, después de 001 a 013): tabla global `docs` (id, space, title,
-  path, url, body); la leen los miembros activos por RLS (`me_active`) y solo los administradores la escriben, por
-  `admin_save_docs(p_docs, p_reset)` (el primer lote de la subida mensual vacía lo anterior). `docs_info()` da el recuento y
-  la fecha.
-- **Subida** (`src/features/docs/`, Ajustes → Documentación, solo administradores): `unzip.ts` abre los .zip en el navegador
-  sin librerías (lee el directorio central del ZIP y descomprime con `DecompressionStream`); `DocsCard.tsx` parsea cada
-  página, deduplica por id y sube en lotes de 120. Se rehace entero cada mes.
+  path, url, body); la leen los miembros activos por RLS (`me_active`) y nadie la escribe directamente. `docs_info()` da el
+  recuento y la fecha. La sube **una sola persona** con el script del Mac (decisión de la usuaria: solo ella, no desde la
+  app), con una «clave de subida» propia (`docs_token`, una para el equipo, huella sha256; la última generada manda), como
+  el calendario (fase 27): `create_docs_token`/`revoke_docs_token`/`docs_token_info` (solo administradores) y
+  `upload_docs(p_token, p_docs, p_reset)`, que llama el script sin sesión (rol anon) solo con la clave y exige que quien la
+  generó siga siendo administradora activa; el primer lote vacía lo anterior.
+- **Subida** (`scripts/subir-docs.ts`, `npm run subir-docs -- [dsub_…] <zips>`): reutiliza `supabaseConfig` del script del
+  calendario; `src/features/docs/unzip.ts` abre los .zip sin librerías (lee el directorio central del ZIP y descomprime con
+  `DecompressionStream`, también en Node 24); parsea cada página, deduplica por id y sube en lotes de 120. La clave se guarda
+  en `servidor/datos/docs-subida.json`. En Ajustes → Documentación (solo administradores, `src/features/docs/DocsCard.tsx`)
+  se genera/quita la clave y se ve el recuento; no se suben zips desde ahí.
 - **MCP**: `loadMarea` añade la tabla `docs` a los datos; `chunksOf` mete sus trozos; la herramienta `buscar_en_documentacion`
   (fuente `doc`) devuelve el apartado y el enlace a Confluence. `buscar` se queda con el contenido de Marea para no mezclarlos.
 

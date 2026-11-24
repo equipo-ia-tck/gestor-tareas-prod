@@ -1,103 +1,111 @@
-import { useEffect, useRef, useState } from 'react';
-import { BookText, Upload } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { BookText, Copy, KeyRound, Trash2 } from 'lucide-react';
 import { useToast } from '../../components/Toast';
 import { sync } from '../../data/sync';
-import { parseConfluencePage, type ConfluencePage } from '../../domain/confluence';
-import { unzip } from './unzip';
 
 /**
- * Ajustes → Documentación (solo administradores; migración 014). Se suben los export HTML de Confluence (uno o varios
- * zips, aprobados por José y Mati: solo cómo trabaja el equipo, sin documentación privada del cliente). El navegador los
- * abre, saca el texto de cada página y lo guarda en Supabase; el conector MCP lo busca después con «buscar_en_documentacion».
- * Se rehace entero cada vez (subida mensual): el primer lote vacía lo anterior.
+ * Ajustes → Documentación (solo administradores; migración 014). La documentación de Confluence la sube UNA persona con el
+ * script del Mac (`scripts/subir-docs.ts`), no desde aquí. Esta tarjeta solo: muestra cuántas páginas hay, genera la clave
+ * de subida (se ve una vez, con la orden para copiar) y la quita. Igual que la clave de subida del calendario.
  */
 
-const BATCH = 120;
-const isHtml = (name: string) => /\.html?$/i.test(name) && !name.includes('__MACOSX');
+interface Info { count: number; updatedAt: string | null }
+interface Token { hasToken: boolean; createdAt?: string; owner?: string }
 
 export function DocsCard() {
   const toast = useToast();
-  const fileInput = useRef<HTMLInputElement>(null);
-  const [info, setInfo] = useState<{ count: number; updatedAt: string | null } | null>(null);
+  const [info, setInfo] = useState<Info | null>(null);
+  const [token, setToken] = useState<Token | null>(null);
+  const [fresh, setFresh] = useState<string | null>(null); // la clave recién generada (se ve una vez)
   const [error, setError] = useState<string | null>(null);
-  const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const loadInfo = async () => {
+  const load = async () => {
     try {
-      const { data, error: e } = await sync().supabase.rpc('docs_info');
-      if (e) throw new Error(e.message);
-      setInfo(data as { count: number; updatedAt: string | null });
+      const [a, b] = await Promise.all([sync().supabase.rpc('docs_info'), sync().supabase.rpc('docs_token_info')]);
+      if (a.error) throw new Error(a.error.message);
+      if (b.error) throw new Error(b.error.message);
+      setInfo(a.data as Info);
+      setToken(b.data as Token);
     } catch (e) {
       setError(mensaje(e));
     }
   };
-  useEffect(() => { void loadInfo(); }, []);
+  useEffect(() => { void load(); }, []);
 
-  async function onFiles(files: FileList | null) {
-    if (!files?.length) return;
+  const run = async (fn: () => Promise<unknown>, done?: string) => {
     setBusy(true);
     setError(null);
     try {
-      if (typeof DecompressionStream === 'undefined') throw new Error('Este navegador no puede abrir los zips. Usa Chrome.');
-      // 1) Abrir los zips y parsear cada página.
-      setStatus('Abriendo los archivos…');
-      const byId = new Map<string, ConfluencePage>();
-      for (const file of Array.from(files)) {
-        const entries = await unzip(await file.arrayBuffer(), isHtml);
-        for (const { name, text } of entries) {
-          const page = parseConfluencePage(text, name);
-          if (page) byId.set(page.id, page); // dedup por id
-        }
-        setStatus(`Leídas ${byId.size} páginas…`);
-      }
-      const pages = [...byId.values()];
-      if (!pages.length) throw new Error('No he encontrado páginas en esos archivos. ¿Son export HTML de un espacio de Confluence?');
-
-      // 2) Subir en lotes; el primero vacía lo anterior.
-      let saved = 0;
-      for (let i = 0; i < pages.length; i += BATCH) {
-        const batch = pages.slice(i, i + BATCH);
-        const { data, error: e } = await sync().supabase.rpc('admin_save_docs', { p_docs: batch, p_reset: i === 0 });
-        if (e) throw new Error(e.message);
-        saved = (data as { count: number }).count;
-        setStatus(`Subiendo… ${Math.min(i + BATCH, pages.length)} de ${pages.length}`);
-      }
-      setStatus(null);
-      toast(`Documentación actualizada: ${saved} páginas`);
-      await loadInfo();
+      await fn();
+      await load();
+      if (done) toast(done);
     } catch (e) {
-      setStatus(null);
       setError(mensaje(e));
     } finally {
       setBusy(false);
-      if (fileInput.current) fileInput.current.value = '';
     }
-  }
+  };
+
+  const generar = () => run(async () => {
+    const { data, error: e } = await sync().supabase.rpc('create_docs_token');
+    if (e) throw new Error(e.message);
+    setFresh(data as string);
+  });
+
+  const comando = fresh ? `npm run subir-docs -- ${fresh} <ruta-a-cada-zip>` : '';
 
   return (
     <section className="mb-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-700">
-      <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold"><BookText size={16} /> Documentación</h2>
+      <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold"><BookText size={16} /> Documentación (conector de Claude)</h2>
       <p className="mb-3 text-sm text-zinc-600 dark:text-zinc-400">
-        Sube el export HTML de Confluence (uno o varios .zip) para que el asistente de Claude pueda consultarlo con el
-        conector de Marea. Se reemplaza entero cada vez, así que vuelve a subir el export completo cada mes.
+        La documentación de Confluence la sube una sola persona desde su Mac con <code>npm run subir-docs</code>; no se sube
+        desde aquí. Genera una clave de subida y guárdala: con ella el script sube la documentación sin tu contraseña.
       </p>
       {info && (
         <p className="mb-3 text-sm">
           {info.count > 0
             ? <>Hay <strong>{info.count}</strong> páginas{info.updatedAt ? `, actualizadas el ${new Date(info.updatedAt).toLocaleDateString('es-ES')}` : ''}.</>
-            : 'Aún no hay documentación subida.'}
+            : 'Aún no se ha subido documentación.'}
         </p>
       )}
-      <input ref={fileInput} type="file" accept=".zip" multiple hidden onChange={(e) => void onFiles(e.target.files)} />
-      <button
-        disabled={busy}
-        onClick={() => fileInput.current?.click()}
-        className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-60"
-      >
-        <Upload size={15} /> {busy ? 'Procesando…' : 'Subir export de Confluence'}
-      </button>
-      {status && <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">{status}</p>}
+
+      {fresh ? (
+        <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-800/60 dark:bg-amber-950/40">
+          <p className="mb-2">Esta clave se ve <strong>solo una vez</strong>. Guárdala y súbela cada mes así:</p>
+          <code className="block overflow-x-auto whitespace-pre rounded bg-white px-2 py-1 text-xs dark:bg-zinc-900">{comando}</code>
+          <button
+            onClick={() => { void navigator.clipboard?.writeText(fresh); toast('Clave copiada'); }}
+            className="mt-2 inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-600 dark:hover:bg-zinc-800"
+          >
+            <Copy size={13} /> Copiar la clave
+          </button>
+        </div>
+      ) : token?.hasToken && (
+        <p className="mb-3 text-sm text-zinc-600 dark:text-zinc-400">
+          Hay una clave de subida activa{token.owner ? ` (de ${token.owner})` : ''}{token.createdAt ? `, generada el ${new Date(token.createdAt).toLocaleDateString('es-ES')}` : ''}.
+          Generar otra invalida la anterior.
+        </p>
+      )}
+
+      <div className="flex gap-2">
+        <button
+          disabled={busy}
+          onClick={generar}
+          className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-60"
+        >
+          <KeyRound size={15} /> {token?.hasToken ? 'Generar otra clave' : 'Generar clave de subida'}
+        </button>
+        {token?.hasToken && (
+          <button
+            disabled={busy}
+            onClick={() => run(async () => { const { error: e } = await sync().supabase.rpc('revoke_docs_token'); if (e) throw new Error(e.message); setFresh(null); }, 'Clave quitada')}
+            className="inline-flex items-center gap-2 rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 disabled:opacity-60 dark:border-zinc-600 dark:hover:bg-zinc-800"
+          >
+            <Trash2 size={15} /> Quitar la clave
+          </button>
+        )}
+      </div>
       {error && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>}
     </section>
   );
@@ -105,7 +113,7 @@ export function DocsCard() {
 
 function mensaje(e: unknown): string {
   const m = (e as Error)?.message ?? String(e);
-  if (/docs_info|admin_save_docs|function.*does not exist|404/i.test(m)) {
+  if (/docs_info|docs_token|upload_docs|function.*does not exist|404/i.test(m)) {
     return 'Falta preparar la documentación en Supabase: un administrador tiene que ejecutar supabase/migrations/014_documentacion.sql.';
   }
   return m;
