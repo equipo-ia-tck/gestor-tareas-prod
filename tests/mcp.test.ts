@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_ITEM_TYPES } from '../src/domain/workflows';
-import { activityLog, findPersonName, listTasks, noteDetail, personDetail, projectDetail, search, taskDetail, type MareaData } from '../src/domain/mcpTools';
+import { activityLog, findPersonName, listTasks, noteDetail, personDetail, projectDetail, search, searchDocs, taskDetail, type MareaData } from '../src/domain/mcpTools';
 import type { Note, Project } from '../src/domain/types';
 import { madridToday } from '../servidor/mcp';
 import { makeTask } from './factories';
@@ -32,6 +32,12 @@ function data(): MareaData {
       body: '## Decisiones\n- @Diana-López: la evar 69 se usa para el login\n- [ ] Revisar evar 69 [[t:t1]]' })],
     activity: [{ id: 'a1', at: '2026-11-23T10:00:00Z', date: '2026-11-23', kind: 'completed', task_id: 't3', title: 'Hecha hace poco', project_id: null, from: null, to: null }],
     accounts: new Map([[ME, 'Marta García'], ['u-otro', 'Mark Pérez']]),
+    docs: [{
+      id: '4511892904', space: 'Digital Sales & Analytics', title: 'Owners de etiquetado',
+      path: 'Digital Sales & Analytics › Analytics › Etiquetado › Owners de etiquetado',
+      url: 'https://confluence.cloud.lacaixa.es/confluence/pages/viewpage.action?pageId=4511892904',
+      body: '# Modelo operativo\nCada guía de etiquetado tiene un owner responsable de validarla antes de la entrega al PO.',
+    }],
   };
 }
 
@@ -82,6 +88,13 @@ describe('herramientas de Marea para Claude', () => {
     expect(out).toContain('la evar 69 se usa para el login');
   });
 
+  it('busca en la documentación y cita la página de Confluence', () => {
+    const out = searchDocs(data(), 'owner validar guía');
+    expect(out).toContain('Owners de etiquetado');
+    expect(out).toContain('https://confluence.cloud.lacaixa.es/confluence/pages/viewpage.action?pageId=4511892904');
+    expect(searchDocs({ ...data(), docs: [] }, 'lo que sea')).toContain('Ajustes → Documentación');
+  });
+
   it('resumen de proyecto y registro', () => {
     expect(projectDetail(data(), 'Caixa')).toContain('2 pendientes');
     expect(activityLog(data(), '2026-11-23', '2026-11-24')).toContain('## Hechas (1)');
@@ -110,6 +123,7 @@ describe('función /api/mcp', () => {
       ]);
       if (url.includes('/overlays?')) return Response.json([{ key: 't2', data: { my_day: '2026-11-24' } }]);
       if (url.includes('/profiles?')) return Response.json([{ id: ME, name: 'Marta García' }]);
+      if (url.includes('/docs?')) return Response.json(d.docs);
       return new Response('{}', { status: 404 });
     }));
     return (await import('../api/mcp')).default;
@@ -139,9 +153,12 @@ describe('función /api/mcp', () => {
 
     const tools = await (await api.fetch(rpc({ jsonrpc: '2.0', id: 2, method: 'tools/list' }))).json();
     expect(tools.result.tools.map((t: { name: string }) => t.name)).toEqual(
-      expect.arrayContaining(['buscar', 'listar_tareas', 'ver_tarea', 'ver_nota', 'ver_persona', 'ver_proyecto', 'listar_proyectos', 'mi_registro']));
+      expect.arrayContaining(['buscar', 'buscar_en_documentacion', 'listar_tareas', 'ver_tarea', 'ver_nota', 'ver_persona', 'ver_proyecto', 'listar_proyectos', 'mi_registro']));
 
     const call = await (await api.fetch(rpc({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'listar_tareas', arguments: { cuando: 'mi_dia' } } }))).json();
     expect(call.result.content[0].text).toContain('Guía de etiquetado home'); // «Mi día» viene de overlays
+
+    const docs = await (await api.fetch(rpc({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'buscar_en_documentacion', arguments: { consulta: 'owner guía' } } }))).json();
+    expect(docs.result.content[0].text).toContain('Owners de etiquetado'); // viene de la tabla docs (migración 014)
   });
 });

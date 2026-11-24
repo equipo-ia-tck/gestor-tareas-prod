@@ -3,8 +3,9 @@ import { z } from 'zod';
 import { SearchIndex } from '../src/domain/knowledge.ts';
 import {
   activityLog, CATEGORY_KEYS, chunksOf, listProjects, listTasks, MCP_INSTRUCTIONS, noteDetail, personDetail, projectDetail,
-  search, taskDetail, WHEN_KEYS, type MareaData,
+  search, searchDocs, taskDetail, WHEN_KEYS, type MareaData,
 } from '../src/domain/mcpTools.ts';
+import type { ConfluencePage } from '../src/domain/confluence.ts';
 import type { TeamUser } from './auth.ts';
 
 /**
@@ -42,10 +43,11 @@ export async function loadMarea(config: { url: string; key: string }, token: str
   const hit = cache.get(token);
   if (hit && hit.until > Date.now()) return hit;
   const tables = 'tasks,notes,projects,people,item_types,activity';
-  const [rows, overlays, profiles] = await Promise.all([
+  const [rows, overlays, profiles, docs] = await Promise.all([
     fetchAll<Row>(config, token, `records?select=tbl,key,scope,owner,data&tbl=in.(${tables})&data=not.is.null&order=tbl,key`, fetchImpl),
     fetchAll<{ key: string; data: { my_day?: string | null } }>(config, token, `overlays?select=key,data&tbl=eq.tasks&user_id=eq.${user.id}`, fetchImpl),
     fetchAll<{ id: string; name: string }>(config, token, 'profiles?select=id,name', fetchImpl),
+    fetchAll<ConfluencePage>(config, token, 'docs?select=id,space,title,path,url,body&order=id', fetchImpl),
   ]);
   const myDay = new Map(overlays.map((o) => [o.key, o.data.my_day ?? null]));
   const of = (tbl: string, personal = false) => rows.filter((r) => r.tbl === tbl && (!personal || r.scope === user.id));
@@ -59,6 +61,9 @@ export async function loadMarea(config: { url: string; key: string }, token: str
     types: of('item_types').map((r) => r.data as unknown as MareaData['types'][number]),
     activity: of('activity', true).map((r) => r.data as unknown as MareaData['activity'][number]),
     accounts: new Map(profiles.map((p) => [p.id, p.name])),
+    docs: docs.map((p) => ({
+      id: p.id, space: p.space ?? '', title: p.title ?? '', path: p.path ?? '', url: p.url ?? '', body: p.body ?? '',
+    })),
   };
   // Valores por defecto de lo que puede faltar en registros antiguos.
   data.tasks = data.tasks.map((t) => ({ ...t, people: t.people ?? [], tags: t.tags ?? [], checklist: t.checklist ?? [], notes: t.notes ?? '' }));
@@ -86,14 +91,24 @@ export function mareaServer(load: () => Promise<{ data: MareaData; index: () => 
 
   server.registerTool('buscar', {
     title: 'Buscar en Marea',
-    description: 'Busca por palabras en tareas, notas y actas, fichas de personas y proyectos. Devuelve los fragmentos que mejor responden, con su enlace. Úsala para preguntas abiertas: qué se habló de algo, cómo se hace algo, dónde está algo.',
+    description: 'Busca por palabras en tareas, notas y actas, fichas de personas y proyectos. Devuelve los fragmentos que mejor responden, con su enlace. Úsala para preguntas abiertas sobre el trabajo del equipo: qué se habló de algo, dónde está algo. Para procesos o conceptos del equipo usa «buscar_en_documentacion».',
     inputSchema: {
       consulta: z.string().min(1).describe('Palabras a buscar, p. ej. «evar 69 login» o «entrega de guía»'),
       tipos: z.array(z.enum(['task', 'note', 'person', 'project'])).optional().describe('Limitar a estos tipos'),
       limite: z.number().int().min(1).max(40).optional(),
     },
     annotations: readOnly,
-  }, async (a) => run((d, index) => search(d, a.consulta, { sources: a.tipos, limit: a.limite, index: index() }))());
+  }, async (a) => run((d, index) => search(d, a.consulta, { sources: a.tipos ?? ['task', 'note', 'person', 'project'], limit: a.limite, index: index() }))());
+
+  server.registerTool('buscar_en_documentacion', {
+    title: 'Buscar en la documentación del equipo',
+    description: 'Busca en la documentación del equipo (export de Confluence): cómo trabaja el equipo, modelos operativos, glosarios, procesos y para qué sirve cada cosa. Úsala para «cómo se hace…», «qué es…», «cuál es el proceso de…». Devuelve el apartado y el enlace a la página de Confluence.',
+    inputSchema: {
+      consulta: z.string().min(1).describe('Palabras a buscar, p. ej. «modelo operativo guías» o «owners de etiquetado»'),
+      limite: z.number().int().min(1).max(20).optional(),
+    },
+    annotations: readOnly,
+  }, async (a) => run((d, index) => searchDocs(d, a.consulta, { limit: a.limite, index: index() }))());
 
   server.registerTool('listar_tareas', {
     title: 'Listar tareas',

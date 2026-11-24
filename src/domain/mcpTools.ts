@@ -1,6 +1,7 @@
 // Lo usa el conector MCP de Vercel (Node lo ejecuta sin empaquetar): los imports de valores llevan `.ts`.
 import { addDays, mondayOf } from './dates.ts';
 import { SearchIndex, type Chunk, type ChunkSource } from './knowledge.ts';
+import { pageChunks, type ConfluencePage } from './confluence.ts';
 import { mentionsOf } from './notes.ts';
 import { ancestry, withDescendants } from './projects.ts';
 import { fold, nameKey } from './text.ts';
@@ -25,6 +26,8 @@ export interface MareaData {
   activity: ActivityEntry[];
   /** Nombre de cada cuenta por su id (para «De X»). */
   accounts: Map<string, string>;
+  /** Documentación del equipo subida desde Confluence (migración 014). */
+  docs: ConfluencePage[];
 }
 
 const TOPIC_TYPE_ID = 'topic';
@@ -207,6 +210,7 @@ export function chunksOf(d: MareaData, extra: Chunk[] = []): Chunk[] {
   }
   for (const p of d.people) out.push({ id: `person:${p.name}`, source: 'person', ref: p.name, title: p.name, text: [p.role, p.notes].filter(Boolean).join('\n') });
   for (const p of d.projects) out.push({ id: `project:${p.id}`, source: 'project', ref: p.id, title: p.name, text: '' });
+  for (const p of d.docs) out.push(...pageChunks(p));
   return [...out, ...extra];
 }
 
@@ -219,6 +223,7 @@ export function search(d: MareaData, query: string, opts: { sources?: ChunkSourc
   const tasks = new Map(d.tasks.map((t) => [t.id, t]));
   const notes = new Map(d.notes.map((n) => [n.id, n]));
   const projects = new Map(d.projects.map((p) => [p.id, p]));
+  const docs = new Map(d.docs.map((p) => [p.id, p]));
   return [`${hits.length} resultado${hits.length === 1 ? '' : 's'} para «${query}»:`, ...hits.map((h) => {
     const c = h.chunk;
     let where = '';
@@ -228,8 +233,27 @@ export function search(d: MareaData, query: string, opts: { sources?: ChunkSourc
       where = `«${n.title}» (${n.kind === 'meeting' ? 'acta' : 'nota'} del ${n.date}${projectName(d, n.project_id) ? `, ${projectName(d, n.project_id)}` : ''}) · ${noteLink(d, n)} · id: ${n.id}`;
     } else if (c.source === 'project' && projects.get(c.ref)) where = `«${projectName(d, c.ref)}» · ${projectLink(d, projects.get(c.ref)!)}`;
     else if (c.source === 'person') where = `${c.ref} · ${personLink(d, c.ref)}`;
-    else where = `«${c.title}»${c.section ? ` › ${c.section}` : ''}`;
+    else if (c.source === 'doc' && docs.get(c.ref)) {
+      const p = docs.get(c.ref)!;
+      where = `«${p.title}»${c.section ? ` › ${c.section}` : ''} · ${p.url}`;
+    } else where = `«${c.title}»${c.section ? ` › ${c.section}` : ''}`;
     return `\n[${SOURCE_NAMES[c.source]}] ${where}\n> ${h.snippet}`;
+  })].join('\n');
+}
+
+/** Busca solo en la documentación del equipo (Confluence). Cita el título, la ruta de la página y su enlace a Confluence. */
+export function searchDocs(d: MareaData, query: string, opts: { limit?: number; index?: SearchIndex } = {}): string {
+  if (!d.docs.length) return 'Aún no se ha subido documentación. Un administrador la sube en Ajustes → Documentación.';
+  const index = opts.index ?? new SearchIndex(chunksOf(d));
+  const hits = index.search(query, { limit: Math.min(opts.limit ?? 8, 20), sources: ['doc'] });
+  if (!hits.length) return `Nada en la documentación para «${query}». Prueba con otras palabras.`;
+  const docs = new Map(d.docs.map((p) => [p.id, p]));
+  return [`${hits.length} resultado${hits.length === 1 ? '' : 's'} en la documentación para «${query}»:`, ...hits.map((h) => {
+    const p = docs.get(h.chunk.ref);
+    const head = p
+      ? `«${p.title}»${h.chunk.section ? ` › ${h.chunk.section}` : ''}\n${p.path} · ${p.url}`
+      : `«${h.chunk.title}»${h.chunk.section ? ` › ${h.chunk.section}` : ''}`;
+    return `\n${head}\n> ${h.snippet}`;
   })].join('\n');
 }
 
@@ -379,11 +403,15 @@ export const MCP_INSTRUCTIONS = `Marea es el gestor de tareas del equipo de anal
 Este conector da acceso de solo lectura a lo que la persona conectada puede ver en Marea: sus tareas y las compartidas con ella,
 notas y actas de reunión, fichas de personas, proyectos y su registro de actividad.
 
+También da acceso a la documentación del equipo (export de Confluence): cómo trabaja el equipo, modelos operativos, glosarios y
+para qué sirve cada cosa. Se busca con «buscar_en_documentacion».
+
 Glosario: US = User Story (en Rally, normalmente una guía de etiquetado); TS = Test Scenario / Test Set (la validación de una US);
 DE = defecto; FE = feature; TA = tarea de Rally. Los IDs de Rally tienen la forma US1234567 o TS92615. «Para hablar» son temas
 pendientes con una persona. «Mi día» es la lista que cada uno elige para hoy. Estados: Por hacer, En curso, Bloqueada, Hecha, Accepted.
 
 Cómo responder:
-- Responde en español y cita siempre de dónde sale cada dato (título de la tarea o nota y su enlace a Marea o a Rally).
-- Para preguntas abiertas («¿qué se habló de…?», «¿cómo se hace…?») empieza por «buscar»; para listas de tareas, «listar_tareas».
-- Si algo no está en Marea, dilo; no lo inventes. Este conector no puede crear ni cambiar nada.`;
+- Responde en español y cita siempre de dónde sale cada dato (título de la tarea, nota o página y su enlace a Marea, Rally o Confluence).
+- Preguntas abiertas sobre el trabajo diario del equipo («¿qué se habló de…?») → «buscar»; sobre cómo funciona algo, procesos o conceptos
+  («¿cómo se valida una guía?», «¿qué es…?») → «buscar_en_documentacion»; para listas de tareas → «listar_tareas».
+- Si algo no está en Marea ni en la documentación, dilo; no lo inventes. Este conector no puede crear ni cambiar nada.`;
