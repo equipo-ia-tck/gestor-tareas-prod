@@ -13,8 +13,9 @@
 //
 // Versión suelta, para quien no tiene el repositorio: al compilar, `scripts/build-subida.mjs` lo empaqueta en un solo
 // archivo (`dist/subir-calendario.mjs`, se descarga en Ajustes) con la configuración de Supabase dentro
-// (`globalThis.GESTOR_EMBEDDED`). Así guarda la clave y se instala en ~/Library/Application Support/Gestor.
-import { execFileSync } from 'node:child_process';
+// (`globalThis.GESTOR_EMBEDDED`). Así guarda la clave y se instala en ~/Library/Application Support/Gestor (Mac) o en %APPDATA%\\Gestor (Windows,
+// arrancado desde la carpeta Inicio con un .vbs oculto).
+import { execFileSync, spawn } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -27,7 +28,10 @@ import { findOutlookFile } from '../servidor/calendar.ts';
 const EMBEDDED = (globalThis as { GESTOR_EMBEDDED?: { url: string; key: string } }).GESTOR_EMBEDDED ?? null;
 const SELF = fileURLToPath(import.meta.url);
 const ROOT = resolve(dirname(SELF), '..');
-const APP_DIR = join(homedir(), 'Library', 'Application Support', 'Gestor');
+const WINDOWS = process.platform === 'win32';
+const APP_DIR = WINDOWS
+  ? join(process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming'), 'Gestor')
+  : join(homedir(), 'Library', 'Application Support', 'Gestor');
 const DATA_DIR = process.env.GESTOR_DATOS ? resolve(process.env.GESTOR_DATOS) : EMBEDDED ? APP_DIR : join(ROOT, 'servidor', 'datos');
 /** Cómo se lanza, para los mensajes. */
 const CMD = EMBEDDED ? 'node subir-calendario.mjs' : 'npm run subir --';
@@ -35,6 +39,9 @@ const TOKEN_FILE = join(DATA_DIR, 'subida.json');
 const LOG_FILE = join(DATA_DIR, 'subida.log');
 const AGENT = 'com.gestor-tareas.subir';
 const AGENT_FILE = join(homedir(), 'Library', 'LaunchAgents', `${AGENT}.plist`);
+/** Windows: se arranca al iniciar sesión desde la carpeta Inicio, oculto (sin ventana). */
+const STARTUP_FILE = join(process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming'), 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup', 'Gestor subir calendario.vbs');
+const PID_FILE = join(DATA_DIR, 'subida.pid');
 /** Cada cuánto se mira si el archivo ha cambiado (el flujo lo escribe cada 5 minutos). */
 const EVERY_MS = 60_000;
 
@@ -128,6 +135,7 @@ async function watch(token: string, once: boolean) {
     return true;
   };
   if (!(await run()) || once) return;
+  try { writeFileSync(PID_FILE, String(process.pid)); } catch { /* solo sirve para pararlo en Windows */ }
   log(process.stdout.isTTY
     ? `Vigilando OneDrive/Gestor/calendario.json. Déjalo abierto (o usa «${CMD} --instalar»). Ctrl+C para parar.`
     : 'Vigilando OneDrive/Gestor/calendario.json.');
@@ -136,17 +144,44 @@ async function watch(token: string, once: boolean) {
 
 const xml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
+/** La versión suelta se copia a su carpeta fija: así da igual dónde se descargó (y se puede borrar de Descargas). */
+function installedScript(): string {
+  if (!EMBEDDED) return SELF;
+  const script = join(APP_DIR, 'subir-calendario.mjs');
+  if (resolve(SELF) !== script) copyFileSync(SELF, script);
+  return script;
+}
+
+/** Para el que se dejó en marcha antes (Windows: no hay launchctl que lo haga). */
+function stopRunning() {
+  try {
+    const pid = Number(readFileSync(PID_FILE, 'utf8'));
+    if (pid && pid !== process.pid) process.kill(pid);
+  } catch { /* no había ninguno */ }
+  try { rmSync(PID_FILE); } catch { /* ya no está */ }
+}
+
+function installWindows() {
+  mkdirSync(DATA_DIR, { recursive: true });
+  const script = installedScript();
+  const q = (a: string) => `"${a}"`;
+  const cmd = `cmd /c "${q(process.execPath)} ${q(script)} >> ${q(LOG_FILE)} 2>&1"`;
+  mkdirSync(dirname(STARTUP_FILE), { recursive: true });
+  // En UTF-16 con BOM: wscript lee mal las tildes de una carpeta de usuario («Adrián») en UTF-8.
+  writeFileSync(STARTUP_FILE, '\uFEFF' + `' Marea: sube el calendario de Outlook (OneDrive/Gestor/calendario.json) a la app.\r\nCreateObject("WScript.Shell").Run "${cmd.replace(/"/g, '""')}", 0, False\r\n`, 'utf16le');
+  stopRunning();
+  spawn('wscript.exe', [STARTUP_FILE], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+  console.log(`Instalado: ya está subiendo en segundo plano y se arranca solo al iniciar sesión en Windows. Registro en ${LOG_FILE}`);
+  console.log('Ya puedes cerrar esta ventana y borrar el archivo de Descargas.');
+}
+
 function install() {
-  if (process.platform !== 'darwin') throw new Error('--instalar solo funciona en macOS.');
   if (!savedToken()) throw new Error(`Primero guarda la clave: ${CMD} <clave> --instalar`);
+  if (WINDOWS) return installWindows();
+  if (process.platform !== 'darwin') throw new Error('--instalar solo funciona en macOS y Windows.');
   mkdirSync(dirname(AGENT_FILE), { recursive: true });
   mkdirSync(DATA_DIR, { recursive: true });
-  // La versión suelta se copia a su carpeta fija: así da igual dónde se descargó (y se puede borrar de Descargas).
-  let script = SELF;
-  if (EMBEDDED) {
-    script = join(APP_DIR, 'subir-calendario.mjs');
-    if (resolve(SELF) !== script) copyFileSync(SELF, script);
-  }
+  const script = installedScript();
   const args = [process.execPath, script];
   writeFileSync(AGENT_FILE, `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -170,6 +205,11 @@ function install() {
 }
 
 function uninstall() {
+  if (WINDOWS) {
+    if (existsSync(STARTUP_FILE)) rmSync(STARTUP_FILE);
+    stopRunning();
+    return console.log('Desinstalado: ya no se sube el calendario en segundo plano.');
+  }
   if (existsSync(AGENT_FILE)) {
     try { execFileSync('launchctl', ['unload', AGENT_FILE], { stdio: 'ignore' }); } catch { /* ya parado */ }
     rmSync(AGENT_FILE);

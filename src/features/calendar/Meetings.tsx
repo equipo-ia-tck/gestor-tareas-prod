@@ -166,6 +166,8 @@ export function OutlookSettings() {
 
 /** Programa de subida suelto, generado al compilar en `dist/` (scripts/build-subida.mjs). */
 const UPLOADER = 'subir-calendario.mjs';
+const WINDOWS = typeof navigator !== 'undefined' && /Windows/i.test(navigator.userAgent);
+const TERMINAL = WINDOWS ? 'PowerShell' : 'la Terminal';
 
 /**
  * Subida desde el Mac (`npm run subir` o el programa suelto): lleva a Supabase las reuniones de OneDrive/Gestor/calendario.json, para verlas
@@ -199,7 +201,10 @@ function UploadSettings() {
     await loadOutlook(true);
   });
   // La versión suelta (`dist/subir-calendario.mjs`, ver scripts/build-subida.mjs): no hace falta el repositorio.
-  const command = token ? `node ~/Downloads/${UPLOADER} ${token} --instalar` : '';
+  // En PowerShell (Windows) `~` no se expande en los argumentos de node: va con $HOME y barras de Windows.
+  const command = !token ? '' : WINDOWS
+    ? `node "$HOME\\Downloads\\${UPLOADER}" ${token} --instalar`
+    : `node ~/Downloads/${UPLOADER} ${token} --instalar`;
   const copy = async () => {
     try { await navigator.clipboard.writeText(command); setCopied(true); } catch { /* se puede copiar a mano */ }
   };
@@ -207,7 +212,7 @@ function UploadSettings() {
 
   return (
     <section>
-      <h3 className="font-medium">Subida desde el Mac <span className="font-normal text-zinc-500">(para la app publicada)</span></h3>
+      <h3 className="font-medium">Subida desde {WINDOWS ? 'el ordenador' : 'el Mac'} <span className="font-normal text-zinc-500">(para la app publicada)</span></h3>
       <p className="mt-1 text-zinc-600 dark:text-zinc-400">
         La app publicada no ve las carpetas de tu Mac. Un pequeño programa del Mac sube tus reuniones de
         {' '}<code>OneDrive/Gestor/calendario.json</code> (lo escribe tu flujo de Power Automate) a tu cuenta cada vez que
@@ -224,14 +229,14 @@ function UploadSettings() {
           <li>
             Necesitas <b>Node.js</b> (la versión LTS de{' '}
             <a href="https://nodejs.org" target="_blank" rel="noreferrer" className="text-indigo-600 underline dark:text-indigo-400">nodejs.org</a>).
-            Para saber si ya lo tienes, escribe <code>node -v</code> en la Terminal.
+            Para saber si ya lo tienes, escribe <code>node -v</code> en {TERMINAL}.
           </li>
           <li>
             <a href={`/${UPLOADER}`} download className="font-medium text-indigo-600 underline dark:text-indigo-400">Descarga el programa de subida</a>{' '}
             (se guarda en Descargas).
           </li>
           <li>
-            Abre la Terminal, pega esta orden y pulsa Enter. <b>La clave solo se ve ahora.</b>
+            Abre {TERMINAL}, pega esta orden y pulsa Enter. <b>La clave solo se ve ahora.</b>
             <div className="mt-1 flex gap-2">
               <code className="min-w-0 flex-1 truncate rounded bg-white px-2 py-1 dark:bg-zinc-900" title={command}>{command}</code>
               <button type="button" onClick={() => void copy()} className="rounded-md border border-zinc-300 px-2 py-1 hover:bg-white dark:border-zinc-600 dark:hover:bg-zinc-800">
@@ -241,8 +246,8 @@ function UploadSettings() {
           </li>
           <li className="text-zinc-500">
             Prueba una subida y se queda instalado: sigue subiendo solo cada vez que el flujo actualiza el archivo, también después
-            de reiniciar el Mac. Si macOS pregunta si «node» puede acceder a OneDrive, di que sí. Ya puedes borrar el archivo de
-            Descargas. (Con el repositorio: <code>npm run subir -- &lt;clave&gt; --instalar</code>.)
+            de reiniciar el {WINDOWS ? 'ordenador' : 'Mac'}.{WINDOWS ? '' : ' Si macOS pregunta si «node» puede acceder a OneDrive, di que sí.'} Ya puedes
+            borrar el archivo de Descargas. (Con el repositorio: <code>npm run subir -- &lt;clave&gt; --instalar</code>.)
           </li>
         </ol>
       ) : null}

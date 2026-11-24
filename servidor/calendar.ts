@@ -37,14 +37,27 @@ export interface CalendarStatus {
 export function findGestorFile(name: string, env: string, home = homedir()): string | null {
   const forced = process.env[env];
   if (forced) return existsSync(forced) ? forced : null;
-  const cloud = join(home, 'Library', 'CloudStorage');
-  let dirs: string[] = [];
-  try { dirs = readdirSync(cloud).filter((d) => d.startsWith('OneDrive')); } catch { /* sin OneDrive */ }
-  for (const d of dirs) {
-    const file = join(cloud, d, 'Gestor', name);
+  for (const dir of oneDriveDirs(home)) {
+    const file = join(dir, 'Gestor', name);
     if (existsSync(file)) return file;
   }
   return null;
+}
+
+/**
+ * Carpetas de OneDrive de este ordenador. Mac: `~/Library/CloudStorage/OneDrive-…`. Windows: las variables
+ * `OneDriveCommercial` y `OneDrive` y las carpetas `OneDrive - <empresa>` del perfil.
+ */
+export function oneDriveDirs(home = homedir(), env: NodeJS.ProcessEnv = process.env): string[] {
+  const list = (dir: string) => {
+    try { return readdirSync(dir).filter((d) => d.startsWith('OneDrive')).map((d) => join(dir, d)); } catch { return []; }
+  };
+  const all = [
+    ...list(join(home, 'Library', 'CloudStorage')),
+    ...[env.OneDriveCommercial, env.OneDrive].filter((d): d is string => !!d),
+    ...list(home),
+  ];
+  return [...new Set(all)];
 }
 
 /** Archivo de reuniones: `GESTOR_CALENDARIO` o `Gestor/calendario.json` en OneDrive. */

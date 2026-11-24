@@ -1,10 +1,10 @@
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
 import { Api } from './fakeAccounts.ts';
-import { Calendar, normalizeIcsUrl } from '../servidor/calendar.ts';
+import { Calendar, findGestorFile, normalizeIcsUrl, oneDriveDirs } from '../servidor/calendar.ts';
 import { parseIcs } from '../src/domain/ics';
 import { nameFromEmail, outlookToCalendar, trimOutlookEvents } from '../src/domain/outlookEvents';
 
@@ -113,5 +113,17 @@ describe('calendario de Outlook (enlace ICS)', () => {
     expect(calendar.linkFile(martaSupabase).file.linked).toBe(true);
     expect(calendar.status(marta).file.linked).toBe(false);
     expect(() => calendar.linkFile(luis)).toThrow(/otra cuenta/);
+  });
+});
+
+describe('oneDriveDirs (Mac y Windows)', () => {
+  it('encuentra Gestor/calendario.json en el OneDrive de empresa de un perfil de Windows', () => {
+    const home = mkdtempSync(join(tmpdir(), 'od-'));
+    mkdirSync(join(home, 'OneDrive - WPP', 'Gestor'), { recursive: true });
+    mkdirSync(join(home, 'Documents'));
+    writeFileSync(join(home, 'OneDrive - WPP', 'Gestor', 'calendario.json'), '[]');
+    expect(oneDriveDirs(home, {})).toEqual([join(home, 'OneDrive - WPP')]);
+    expect(oneDriveDirs(home, { OneDriveCommercial: 'C:\\x' })[0]).toBe('C:\\x');
+    expect(findGestorFile('calendario.json', 'NO_EXISTE_VAR', home)).toBe(join(home, 'OneDrive - WPP', 'Gestor', 'calendario.json'));
   });
 });

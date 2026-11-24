@@ -765,6 +765,10 @@ En Vercel no hay servidor que lea la carpeta de OneDrive del Mac, así que el Ma
   clave, salen los pasos: Node LTS, «Descarga el programa» y `node ~/Downloads/subir-calendario.mjs <clave> --instalar`.
   Suelto, guarda la clave en `~/Library/Application Support/Gestor/` y, al instalar, se copia allí (el LaunchAgent apunta a
   esa copia). `--instalar` con clave prueba antes una subida y no instala si falla. En `npm run dev` no existe el archivo.
+- **Windows** (nov 2026): `oneDriveDirs` busca también `%OneDriveCommercial%`, `%OneDrive%` y las carpetas `OneDrive - …` del
+  perfil. El programa se guarda en `%APPDATA%\Gestor` y `--instalar` deja un `.vbs` oculto en la carpeta Inicio (en UTF-16,
+  por las tildes del perfil) y lo arranca al momento; `subida.pid` sirve para pararlo al reinstalar o con `--desinstalar`.
+  En PowerShell `~` no vale en los argumentos de node: Ajustes enseña `node "$HOME\Downloads\subir-calendario.mjs" …`.
 - Chats y Microsoft List siguen necesitando el servidor local (la Lista escribe en OneDrive).
 
 ## Fase 28: notas con #proyecto y @persona → tareas (rama `notas-proyectos`)
