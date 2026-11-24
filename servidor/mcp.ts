@@ -8,8 +8,22 @@ import {
 import type { ConfluencePage } from '../src/domain/confluence.ts';
 import type { TeamUser } from './auth.ts';
 
+/** Guardar la respuesta de Claude en Marea (migración 015) con la sesión de la persona. */
+export async function saveAnswer(config: { url: string; key: string }, token: string, id: string, question: string, answer: string, fetchImpl: Fetch = fetch): Promise<void> {
+  const res = await fetchImpl(`${config.url}/rest/v1/rpc/save_assistant_answer`, {
+    method: 'POST',
+    headers: { apikey: config.key, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ p_id: id, p_question: question, p_answer: answer }),
+  });
+  if (res.ok) return;
+  const body = (await res.json().catch(() => null)) as { message?: string } | null;
+  const m = body?.message ?? `Supabase respondió ${res.status}`;
+  throw new Error(/save_assistant_answer|function|404/i.test(m) && res.status === 404
+    ? 'Falta preparar Marea: una administradora tiene que ejecutar supabase/migrations/015_respuestas_claude.sql.' : m);
+}
+
 /**
- * Conector MCP de Marea (solo lectura). Lee de Supabase con la sesión de la persona (la que Claude obtiene al conectarse
+ * Conector MCP de Marea (lectura, y una herramienta que escribe: guardar la respuesta para el Asistente). Lee de Supabase con la sesión de la persona (la que Claude obtiene al conectarse
  * con «Entrar con Marea»), así que las reglas de la base de datos deciden qué ve: lo mismo que en la app.
  */
 
@@ -77,7 +91,10 @@ export async function loadMarea(config: { url: string; key: string }, token: str
 const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
 
 /** Servidor MCP con las herramientas de Marea. `load` da los datos (se piden solo cuando se usa una herramienta). */
-export function mareaServer(load: () => Promise<{ data: MareaData; index: () => SearchIndex }>): McpServer {
+export function mareaServer(
+  load: () => Promise<{ data: MareaData; index: () => SearchIndex }>,
+  save?: (id: string, question: string, answer: string) => Promise<void>,
+): McpServer {
   const server = new McpServer({ name: 'marea', title: 'Marea', version: '1.0.0' }, { instructions: MCP_INSTRUCTIONS });
   const run = (fn: (d: MareaData, index: () => SearchIndex) => string) => async () => {
     try {
@@ -170,6 +187,26 @@ export function mareaServer(load: () => Promise<{ data: MareaData; index: () => 
     },
     annotations: readOnly,
   }, async (a) => run((d) => activityLog(d, a.desde, a.hasta, a.tipo))());
+
+  if (save) {
+    server.registerTool('responder_en_marea', {
+      title: 'Guardar la respuesta en Marea',
+      description: 'Guarda tu respuesta final para que se vea en el Asistente de Marea. Úsala SOLO cuando el mensaje de la persona traiga un «id de Marea» (viene de «Preguntar a Claude»): al terminar, llama una vez con ese id y la respuesta completa en Markdown, con los enlaces a las fuentes.',
+      inputSchema: {
+        id: z.string().regex(/^[a-z0-9-]{6,64}$/).describe('El id de Marea que viene en el mensaje'),
+        respuesta: z.string().min(1).max(100000).describe('La respuesta completa, en Markdown, con los enlaces a las páginas, tareas o notas'),
+        pregunta: z.string().max(4000).optional().describe('La pregunta, tal cual'),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    }, async (a) => {
+      try {
+        await save(a.id, a.pregunta ?? '', a.respuesta);
+        return text('Guardada: ya se ve en el Asistente de Marea.');
+      } catch (e) {
+        return { ...text(`No se ha podido guardar en Marea: ${e instanceof Error ? e.message : String(e)}`), isError: true };
+      }
+    });
+  }
 
   return server;
 }

@@ -289,7 +289,7 @@ export function AssistantView() {
             {fromList.length > 0 && <ListHits hits={fromList} />}
             {sources.map((c, i) => <SharePointHits key={c.id} source={c} query={a.query} skip={new Set(local.map((h) => h.chunk.ref))} lead={!answer && i === 0} />)}
             <SearchAnswer hits={a.hits.filter((h) => h.chunk.source !== 'doc' && h.chunk.source !== 'list')} list={list} />
-            <AskClaudeButton question={a.query} />
+            <AskClaudeButton entryId={e.id} question={a.query} />
           </>
         );
       }

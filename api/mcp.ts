@@ -1,10 +1,10 @@
-// Conector MCP de Marea para Claude (solo lectura). Claude se conecta a https://<marea>/api/mcp; la primera vez pide
+// Conector MCP de Marea para Claude (lectura, más guardar la respuesta para el Asistente). Claude se conecta a https://<marea>/api/mcp; la primera vez pide
 // «Entrar con Marea» (OAuth 2.1 de Supabase Auth, con la página de permiso /oauth-consent de la app) y después manda la
 // sesión de la persona en cada petición. Variables de Vercel: VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY.
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { SearchIndex } from '../src/domain/knowledge.ts';
 import { bearerOf, SupabaseAuth } from '../servidor/auth.ts';
-import { chunksOf, loadMarea, mareaServer } from '../servidor/mcp.ts';
+import { chunksOf, loadMarea, mareaServer, saveAnswer } from '../servidor/mcp.ts';
 
 const config = { url: (process.env.VITE_SUPABASE_URL ?? '').replace(/\/$/, ''), key: process.env.VITE_SUPABASE_ANON_KEY ?? '' };
 const auth = new SupabaseAuth(config);
@@ -58,7 +58,7 @@ export default {
       const entry = await loadMarea(config, token, user);
       const data = { ...entry.data, base: origin };
       return { data, index: () => (entry.index ??= new SearchIndex(chunksOf(data))) };
-    });
+    }, (id, question, answer) => saveAnswer(config, token, id, question, answer));
     const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     await server.connect(transport);
     const res = await transport.handleRequest(request);

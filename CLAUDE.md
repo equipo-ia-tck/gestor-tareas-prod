@@ -1273,6 +1273,14 @@ que los documentos (también los de CaixaBank) salgan del ordenador. RAG **local
   la pregunta y la indicación de usar el conector de Marea (MCP, fase 38); solo hay que enviarla. Solo viaja la pregunta (nada
   de SharePoint). También «copiar» para la app de escritorio o el panel de Chrome. Tarjeta `ClaudeCard` con cómo añadir el
   conector (`MCP_URL`). Claude no deja incrustarse en un iframe y manejar claude.ai por detrás iría contra sus condiciones.
+- **La respuesta de Claude vuelve a Marea** (migración `015_respuestas_claude.sql`, después de 001 a 014): Claude y la pestaña
+  de Marea no pueden hablar directamente (Claude corre en Anthropic y llama a `/api/mcp`, que no puede avisar al navegador),
+  así que pasa por Supabase. Cada «Preguntar a Claude» lleva un id (`newRequestId`, `m-…`) en el mensaje y la petición de
+  guardar la respuesta con la herramienta **`responder_en_marea`** del conector (la única que escribe; `saveAnswer` llama a
+  `save_assistant_answer` con la sesión de la persona). Tabla `assistant_answers` (dueño, pregunta, respuesta en Markdown):
+  cada uno lee solo las suyas por RLS; se borran a los 30 días. El Asistente pregunta cada 3 s (hasta 15 min, y 1 min más
+  tras llegar por si Claude la corrige) y la pinta con `Markdown` en «Respuesta de Claude»; si no llega, «Volver a mirar» o
+  pedirle a Claude «guárdala en Marea». La primera vez Claude pide permiso para la herramienta («Permitir siempre»).
 
 ### Más adelante
 

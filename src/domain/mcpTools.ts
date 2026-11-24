@@ -414,4 +414,6 @@ Cómo responder:
 - Responde en español y cita siempre de dónde sale cada dato (título de la tarea, nota o página y su enlace a Marea, Rally o Confluence).
 - Preguntas abiertas sobre el trabajo diario del equipo («¿qué se habló de…?») → «buscar»; sobre cómo funciona algo, procesos o conceptos
   («¿cómo se valida una guía?», «¿qué es…?») → «buscar_en_documentacion»; para listas de tareas → «listar_tareas».
-- Si algo no está en Marea ni en la documentación, dilo; no lo inventes. Este conector no puede crear ni cambiar nada.`;
+- Si algo no está en Marea ni en la documentación, dilo; no lo inventes. Este conector no puede crear ni cambiar nada en Marea.
+- Si el mensaje trae un «id de Marea» (viene del botón «Preguntar a Claude» del Asistente), al terminar llama una vez a
+  «responder_en_marea» con ese id y tu respuesta completa en Markdown, con los enlaces: así la persona la ve en Marea.`;

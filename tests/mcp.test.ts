@@ -106,13 +106,14 @@ describe('herramientas de Marea para Claude', () => {
 });
 
 describe('función /api/mcp', () => {
+  const saved: { p_id: string; p_question: string; p_answer: string }[] = [];
   afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); vi.resetModules(); });
 
   async function handler() {
     vi.stubEnv('VITE_SUPABASE_URL', 'https://sb.test');
     vi.stubEnv('VITE_SUPABASE_ANON_KEY', 'anon');
     const d = data();
-    vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request) => {
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input instanceof Request ? input.url : input);
       if (url.endsWith('/rpc/me')) return Response.json({ user: { id: ME, login: 'marta@x.com', name: 'Marta García' } });
       if (url.includes('/records?')) return Response.json([
@@ -124,6 +125,10 @@ describe('función /api/mcp', () => {
       if (url.includes('/overlays?')) return Response.json([{ key: 't2', data: { my_day: '2026-11-24' } }]);
       if (url.includes('/profiles?')) return Response.json([{ id: ME, name: 'Marta García' }]);
       if (url.includes('/docs?')) return Response.json(d.docs);
+      if (url.endsWith('/rpc/save_assistant_answer')) {
+        saved.push(JSON.parse(String((init as RequestInit | undefined)?.body ?? (input instanceof Request ? '' : ''))));
+        return Response.json({ ok: true });
+      }
       return new Response('{}', { status: 404 });
     }));
     return (await import('../api/mcp')).default;
@@ -153,12 +158,19 @@ describe('función /api/mcp', () => {
 
     const tools = await (await api.fetch(rpc({ jsonrpc: '2.0', id: 2, method: 'tools/list' }))).json();
     expect(tools.result.tools.map((t: { name: string }) => t.name)).toEqual(
-      expect.arrayContaining(['buscar', 'buscar_en_documentacion', 'listar_tareas', 'ver_tarea', 'ver_nota', 'ver_persona', 'ver_proyecto', 'listar_proyectos', 'mi_registro']));
+      expect.arrayContaining(['buscar', 'buscar_en_documentacion', 'listar_tareas', 'ver_tarea', 'ver_nota', 'ver_persona', 'ver_proyecto', 'listar_proyectos', 'mi_registro', 'responder_en_marea']));
 
     const call = await (await api.fetch(rpc({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'listar_tareas', arguments: { cuando: 'mi_dia' } } }))).json();
     expect(call.result.content[0].text).toContain('Guía de etiquetado home'); // «Mi día» viene de overlays
 
     const docs = await (await api.fetch(rpc({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'buscar_en_documentacion', arguments: { consulta: 'owner guía' } } }))).json();
     expect(docs.result.content[0].text).toContain('Owners de etiquetado'); // viene de la tabla docs (migración 014)
+
+    // «Preguntar a Claude»: Claude guarda la respuesta para el Asistente (migración 015).
+    const ok = await (await api.fetch(rpc({ jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'responder_en_marea', arguments: { id: 'abc-123456', respuesta: 'El PO es **Ana** [lista](https://x)', pregunta: '¿PO?' } } }))).json();
+    expect(ok.result.content[0].text).toContain('Guardada');
+    expect(saved.at(-1)).toEqual({ p_id: 'abc-123456', p_question: '¿PO?', p_answer: 'El PO es **Ana** [lista](https://x)' });
+    const bad = await (await api.fetch(rpc({ jsonrpc: '2.0', id: 6, method: 'tools/call', params: { name: 'responder_en_marea', arguments: { id: 'NO VALE', respuesta: 'x' } } }))).json();
+    expect(JSON.stringify(bad)).toMatch(/error|isError/i);
   });
 });

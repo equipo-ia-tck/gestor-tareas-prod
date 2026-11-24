@@ -57,4 +57,13 @@ describe('Preguntar a Claude', () => {
     expect(url.origin + url.pathname).toBe('https://claude.ai/new');
     expect(url.searchParams.get('q')).toContain('Pregunta: ¿Qué evar?');
   });
+
+  it('con id, pide guardar la respuesta en Marea; los ids valen para la migración 015', async () => {
+    const { claudePrompt, newRequestId } = await import('../src/features/assistant/askClaude');
+    const id = newRequestId();
+    expect(id).toMatch(/^[a-z0-9-]{6,64}$/);
+    expect(newRequestId()).not.toBe(id);
+    expect(claudePrompt('¿PO?', id)).toContain(`«responder_en_marea» (id de Marea: ${id})`);
+    expect(claudePrompt('¿PO?')).not.toContain('responder_en_marea');
+  });
 });

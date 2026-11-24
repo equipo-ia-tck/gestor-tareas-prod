@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
  * Prueba la base de datos de Supabase (supabase/migrations) en un Postgres de verdad (PGlite), imitando
  * lo mínimo de Supabase: roles anon/authenticated y auth.uid()/auth.email() de la sesión.
  */
-const MIGRATION = ['001_equipo.sql', '002_baja_y_contrasenas.sql', '003_alta_sin_invitacion.sql', '004_claves_conectores.sql', '005_calendario_subido.sql', '006_feedback.sql', '007_feedback_formulario.sql', '008_feedback_bloqueado.sql', '009_analitica.sql', '010_analitica_kpis.sql', '011_rally_herramienta.sql', '012_calendario_ics.sql', '013_pantallas.sql'].map((f) => readFileSync(`supabase/migrations/${f}`, 'utf8')).join('\n');
+const MIGRATION = ['001_equipo.sql', '002_baja_y_contrasenas.sql', '003_alta_sin_invitacion.sql', '004_claves_conectores.sql', '005_calendario_subido.sql', '006_feedback.sql', '007_feedback_formulario.sql', '008_feedback_bloqueado.sql', '009_analitica.sql', '010_analitica_kpis.sql', '011_rally_herramienta.sql', '012_calendario_ics.sql', '013_pantallas.sql', '015_respuestas_claude.sql'].map((f) => readFileSync(`supabase/migrations/${f}`, 'utf8')).join('\n');
 let db: PGlite;
 
 const SUPABASE_STUB = `
@@ -413,5 +413,20 @@ describe('base de datos del equipo en Supabase', () => {
     expect(r.rows.find((x) => x.kind === 'visit')?.value).toBe(40);
     expect(r.rows.find((x) => x.kind === 'action')).toMatchObject({ name: 'rally-add', detail: 'all.project', count: 1, value: 5 });
     expect(r.states).toEqual([expect.objectContaining({ name: 'calendar-tasks', value: 1 })]);
+  });
+
+  it('respuestas de Claude (015): cada persona guarda y lee solo las suyas', async () => {
+    const marta = await newUser('marta@vml.com');
+    await rpc(marta, 'register_profile', { p_name: 'Marta', p_code: '' });
+    const ana = await newUser('ana@vml.com');
+    await rpc(ana, 'register_profile', { p_name: 'Ana', p_code: '' });
+    await rpc(marta, 'save_assistant_answer', { p_id: 'q-abc123', p_question: '¿PO?', p_answer: 'Primera' });
+    await rpc(marta, 'save_assistant_answer', { p_id: 'q-abc123', p_question: '', p_answer: 'Corregida' });
+    expect(await as(marta, 'select id, question, answer from assistant_answers')).toEqual([{ id: 'q-abc123', question: '¿PO?', answer: 'Corregida' }]);
+    expect(await as(ana, 'select id from assistant_answers')).toEqual([]);
+    await expect(rpc(ana, 'save_assistant_answer', { p_id: 'q-abc123', p_question: '', p_answer: 'Me la quedo' })).rejects.toThrow(/no es tuya/);
+    await expect(rpc(marta, 'save_assistant_answer', { p_id: 'NO VALE', p_question: '', p_answer: 'x' })).rejects.toThrow();
+    await expect(rpc(marta, 'save_assistant_answer', { p_id: 'q-vacia1', p_question: '', p_answer: '' })).rejects.toThrow(/vacía/);
+    await expect(as(marta, "insert into assistant_answers (id, owner, answer) values ('q-directa', '00000000-0000-4000-8000-000000000001', 'x')")).rejects.toThrow();
   });
 });
