@@ -1,3 +1,4 @@
+import type { SharePointFolder } from './sharepoint';
 /** Fecha local sin hora, formato YYYY-MM-DD. Evita errores de zona horaria. */
 export type ISODate = string;
 /** Marca de tiempo ISO 8601 completa. */
@@ -137,6 +138,8 @@ export interface Project {
   parent_id: string | null;
   /** Espacio de equipo (sus miembros lo ven todo). Null = personal; los subproyectos heredan el del padre. */
   space_id?: string | null;
+  /** Accesos a carpetas de SharePoint (solo nombre y enlace; quien ve el proyecto los ve). */
+  folders?: SharePointFolder[];
 }
 
 export interface Task {
@@ -206,6 +209,8 @@ export interface Settings {
   analytics_rally_people: string[] | null;
   /** Ya se han pasado los colores de proyectos, grupos y etiquetas a los de Marea en esta cuenta. */
   brand_colors_done: boolean;
+  /** Accesos a carpetas de SharePoint que no son de ningún proyecto (personales). */
+  sharepoint_folders: SharePointFolder[];
 }
 
 /** Plantilla de «Crear con petición»: un nombre y la frase. */
@@ -251,6 +256,7 @@ export const DEFAULT_SETTINGS: Settings = {
   analytics_people: null,
   analytics_rally_people: null,
   brand_colors_done: false,
+  sharepoint_folders: [],
 };
 
 export type NewTask = Partial<Omit<Task, 'id' | 'created_at' | 'updated_at' | 'last_touched_at'>> & {

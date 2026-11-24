@@ -18,6 +18,7 @@ export const projectSchema = z.object({
   color: z.string(),
   parent_id: z.string().nullable().default(null),
   space_id: z.string().nullable().optional(),
+  folders: z.array(z.object({ id: z.string().min(1), name: z.string(), url: z.string() })).optional(),
   archived: z.boolean(),
   created_at: isoDateTime,
 });
@@ -89,6 +90,7 @@ export const settingsSchema = z.object({
   analytics_people: z.array(z.string()).nullable().default(null),
   analytics_rally_people: z.array(z.string()).nullable().default(null),
   brand_colors_done: z.boolean().default(false),
+  sharepoint_folders: z.array(z.object({ id: z.string().min(1), name: z.string(), url: z.string() })).default([]),
 });
 
 const stateSchema = z.object({
