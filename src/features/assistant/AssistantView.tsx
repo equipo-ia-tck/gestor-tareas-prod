@@ -7,13 +7,14 @@ import { TaskList } from '../../components/TaskList';
 import { useToast } from '../../components/Toast';
 import { inputClass } from '../../components/ui/styles';
 import { repo } from '../../data/services';
+import { doneSummary, extractAnswer, personSummary, saidSummary, scoreSentence, sentences, tasksSummary, topicsSummary } from '../../domain/answer';
 import { ASSISTANT_EXAMPLES, buildChunks, matchTasks, parseIntent, queryTasks, type Intent } from '../../domain/assistant';
 import { formatDay } from '../../domain/dates';
 import { SearchIndex, terms, type Hit } from '../../domain/knowledge';
 import { mentionsOf, type Mention } from '../../domain/notes';
 import { peopleDirectory } from '../../domain/people';
 import { TOPIC_TYPE_ID, type ActivityEntry, type Task } from '../../domain/types';
-import { findType, stateForCategory } from '../../domain/workflows';
+import { findType, stateForCategory, stateOf } from '../../domain/workflows';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { useTaskActions } from '../../hooks/useTaskActions';
 import { parseCapture } from '../../parser/parseCapture';
@@ -30,7 +31,7 @@ type ActIntent = Extract<Intent, { kind: 'act' }>;
 /** Lo que se enseña como respuesta. Las tareas van por id, así se ven siempre como están ahora. */
 type Answer =
   | { kind: 'help' }
-  | { kind: 'tasks'; label: string; ids: string[] }
+  | { kind: 'tasks'; label: string; ids: string[]; topicsWith?: string }
   | { kind: 'done'; label: string; entries: ActivityEntry[] }
   | { kind: 'said'; person: string; mentions: Mention[] }
   | { kind: 'person'; person: string }
@@ -111,12 +112,12 @@ export function AssistantView() {
         case 'done': {
           const entries = activity.filter((a) => a.kind === 'completed' && a.date >= intent.from && a.date <= intent.to)
             .sort((a, b) => b.at.localeCompare(a.at));
-          return push(q, { kind: 'done', label: `Hecho ${intent.label}`, entries });
+          return push(q, { kind: 'done', label: intent.label, entries });
         }
         case 'said': return push(q, { kind: 'said', person: intent.person, mentions: mentionsOf(intent.person, notes).slice(0, 30) });
         case 'topics': {
           const ids = tasks.filter((t) => t.type_id === TOPIC_TYPE_ID && t.status === 'todo' && !t.deleted_at && t.people.some((p) => p === intent.person)).map((t) => t.id);
-          return push(q, { kind: 'tasks', label: `Para hablar con ${intent.person}`, ids });
+          return push(q, { kind: 'tasks', label: `Para hablar con ${intent.person}`, ids, topicsWith: intent.person });
         }
         case 'person': return push(q, { kind: 'person', person: intent.person });
         case 'create-task': {
@@ -162,10 +163,20 @@ export function AssistantView() {
     const a = e.answer;
     switch (a.kind) {
       case 'help': return <Examples onPick={(t) => void ask(t)} />;
-      case 'tasks': return <><Understood>{a.label} · {a.ids.length}</Understood>{list(a.ids, 'No hay ninguna.')}</>;
+      case 'tasks': {
+        const found = a.ids.map((id) => taskById.get(id)).filter((t): t is Task => !!t);
+        const blocked = found.filter((t) => t.status === 'todo' && stateOf(itemTypes, t).category === 'blocked').length;
+        return (
+          <>
+            <Lead text={a.topicsWith ? topicsSummary(a.topicsWith, found) : tasksSummary(found, a.label.toLowerCase(), today, a.label.toLowerCase().includes('bloquead') ? 0 : blocked)} />
+            <Understood>{a.label} · {a.ids.length}</Understood>{list(a.ids, '')}
+          </>
+        );
+      }
       case 'done': return (
         <>
-          <Understood>{a.label} · {a.entries.length}</Understood>
+          <Lead text={doneSummary(a.entries, a.label)} />
+          <Understood>Hecho {a.label} · {a.entries.length}</Understood>
           {a.entries.length === 0 && <p className="text-sm text-zinc-400">No hay nada completado en ese periodo.</p>}
           <ul className="space-y-0.5 text-sm">
             {a.entries.map((x) => {
@@ -182,6 +193,7 @@ export function AssistantView() {
       );
       case 'said': return (
         <>
+          <Lead text={saidSummary(a.person, a.mentions, today)} />
           <Understood>Lo que dijo o se habló con {a.person} · {a.mentions.length}</Understood>
           {a.mentions.length === 0 && <p className="text-sm text-zinc-400">No aparece en ninguna nota.</p>}
           <ul className="space-y-1.5 text-sm">
@@ -202,6 +214,7 @@ export function AssistantView() {
         const open = tasks.filter((t) => t.status === 'todo' && !t.deleted_at && t.people.includes(a.person));
         return (
           <>
+            <Lead text={personSummary(a.person, card, open.length)} />
             <Understood>{a.person}</Understood>
             <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-sm">
               <dt className="text-zinc-500">Rol</dt><dd>{card?.role || '—'}</dd>
@@ -237,18 +250,21 @@ export function AssistantView() {
         </>
       );
       case 'search': {
+        const answer = extractAnswer(a.hits, a.query);
         const local = a.hits.filter((h) => h.chunk.source === 'doc');
         const fromList = a.hits.filter((h) => h.chunk.source === 'list');
         // Cada documento, en el bloque de su carpeta.
         const folderOf = (url: string) => sources.find((c) => folderState(folderDocs, c.siteUrl, c.folder).docs.some((d) => d.url === url));
+        const source = answer && sourceOf(answer.hit, sources.find((c) => c === folderOf(answer.hit.chunk.ref))?.folderName);
         return (
           <>
+            {answer && source && <Lead text={answer.sentence.text} marks={answer.sentence.marks} source={source.label} href={source.href} external={source.external} />}
             {sources.map((c) => {
               const mine = local.filter((h) => folderOf(h.chunk.ref) === c);
               return mine.length > 0 && <FolderHits key={c.id} hits={mine} folderName={c.folderName} />;
             })}
             {fromList.length > 0 && <ListHits hits={fromList} />}
-            {sources.map((c) => <SharePointHits key={c.id} source={c} query={a.query} skip={new Set(local.map((h) => h.chunk.ref))} />)}
+            {sources.map((c, i) => <SharePointHits key={c.id} source={c} query={a.query} skip={new Set(local.map((h) => h.chunk.ref))} lead={!answer && i === 0} />)}
             <SearchAnswer hits={a.hits.filter((h) => h.chunk.source !== 'doc' && h.chunk.source !== 'list')} list={list} />
           </>
         );
@@ -288,6 +304,36 @@ export function AssistantView() {
       <SharePointPanel />
     </div>
   );
+}
+
+/**
+ * La respuesta, arriba: una frase (resumen de lo encontrado o la frase de un documento que mejor responde) y, si sale
+ * de un sitio, su fuente con enlace. Sin IA: no se inventa nada.
+ */
+function Lead({ text, marks, source, href, external }: { text: string; marks?: [number, number][]; source?: string; href?: string; external?: boolean }) {
+  return (
+    <div className="mb-3 rounded-md border-l-4 border-indigo-500 bg-indigo-50/60 px-3 py-2 text-sm dark:bg-indigo-950/40">
+      <p className="text-zinc-800 dark:text-zinc-100">{source && <span className="text-zinc-500">Según {source}: </span>}{marks ? <>«<Marked text={text} marks={marks} />»</> : text}</p>
+      {href && (
+        <a href={href} {...(external ? { target: '_blank', rel: 'noreferrer' } : {})} className="mt-0.5 inline-flex items-center gap-1 text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">
+          Abrir la fuente{external && <ExternalLink className="size-3" />}
+        </a>
+      )}
+    </div>
+  );
+}
+
+/** De dónde sale una frase de respuesta, para citarla. */
+function sourceOf(hit: Hit, folderName?: string): { label: string; href: string; external: boolean } | null {
+  const c = hit.chunk;
+  const title = `«${c.title}»${c.section ? ` (${c.section})` : ''}`;
+  switch (c.source) {
+    case 'doc': return { label: `${title}${folderName ? ` en ${folderName}` : ''}`, href: c.ref, external: true };
+    case 'note': return { label: `la nota ${title}`, href: routeHref({ view: 'notes', id: c.ref }), external: false };
+    case 'list': return { label: `la Lista, elemento ${title}`, href: routeHref({ view: 'lista' }), external: false };
+    case 'person': return { label: `la ficha de ${c.title}`, href: routeHref({ view: 'person', name: c.ref }), external: false };
+    default: return null;
+  }
 }
 
 const Understood = ({ children }: { children: ReactNode }) => <p className="mb-1.5 text-xs font-medium tracking-wide text-zinc-500 uppercase">{children}</p>;
@@ -420,8 +466,23 @@ function ListHits({ hits }: { hits: Hit[] }) {
   );
 }
 
+/** Si en Marea no hay respuesta: la frase del resumen de SharePoint que mejor responde, con su documento. */
+function SharePointLead({ hits, query, where }: { hits: SpHit[]; query: string; where: string }) {
+  const q = [...new Set(terms(query))];
+  let best: { text: string; marks: [number, number][]; score: number; hit: SpHit } | null = null;
+  for (const [rank, hit] of hits.slice(0, 4).entries()) {
+    for (const s of sentences(summaryMarks(hit.summary).text.replace(/…/g, '. '))) {
+      const scored = scoreSentence(s, q);
+      scored.score *= 1 - rank * 0.05;
+      if (!best || scored.score > best.score) best = { ...scored, hit };
+    }
+  }
+  if (!best || best.score < (q.length === 1 ? 1 : 0.5)) return null;
+  return <Lead text={best.text} marks={best.marks} source={`«${best.hit.title || best.hit.url.split('/').pop()}» (${where})`} href={best.hit.url} external />;
+}
+
 /** Resultados del buscador de SharePoint para la pregunta (por la extensión), en todo el sitio o en la carpeta. */
-function SharePointHits({ source: config, query, skip }: { source: SpSource; query: string; skip: Set<string> }) {
+function SharePointHits({ source: config, query, skip, lead }: { source: SpSource; query: string; skip: Set<string>; lead?: boolean }) {
   const extension = useExtension();
   const [state, setState] = useState<{ hits: SpHit[]; loose: boolean } | { error: string } | null>(null);
   const kql = kqlFrom(query, (w) => !terms(w).length);
@@ -440,6 +501,7 @@ function SharePointHits({ source: config, query, skip }: { source: SpSource; que
   if (!extension) return <p className="mb-3 text-xs text-zinc-400">Para buscar también en {where} de SharePoint hace falta la extensión «Marea · Lista».</p>;
   return (
     <section className="mb-3">
+      {lead && state && 'hits' in state && <SharePointLead hits={state.hits} query={query} where={where} />}
       <Understood>En SharePoint · {where}</Understood>
       {!state && <p className="text-sm text-zinc-400">Buscando en SharePoint…</p>}
       {state && 'error' in state && <p className="text-sm text-amber-700 dark:text-amber-300">{state.error}</p>}

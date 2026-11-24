@@ -1092,6 +1092,14 @@ Petición de la usuaria: algo a lo que preguntar y pedir cosas sobre el proyecto
   Cada búsqueda enseña «En la carpeta X» de cada una, «En la Lista» (los elementos de `currentItems`, con su estado, enlace
   a SharePoint y «En el gestor» si hay tarea enlazada; chunks `source: 'list'`), «En SharePoint» de cada sitio y «En Marea».
 
+- **Respuestas redactadas sin IA** (`domain/answer.ts`): cada respuesta empieza con un recuadro (`Lead`). En las búsquedas,
+  `extractAnswer` elige entre los 6 primeros documentos, notas, elementos de la Lista y fichas la **frase** (`sentences`:
+  puntos, líneas y viñetas) con más palabras buscadas (`scoreSentence`: frase exacta y cortas, mejor) y la cita con su
+  fuente y enlace («Según «prueba» en Entry points: «La evar 69 es para el login»»); si ninguna tiene al menos la mitad de
+  las palabras, no contesta. Sin respuesta en Marea, `SharePointLead` la busca en los resúmenes de SharePoint. En tareas, lo
+  hecho, «qué dijo», temas y personas, resúmenes con plantilla (`tasksSummary`, `doneSummary`, `saidSummary`,
+  `topicsSummary`, `personSummary`). No se inventa ni se resume con otras palabras.
+
 ## Fase 36: pantallas de cada cuenta (rama `dev`, nov 2026)
 
 Petición de la usuaria: que los administradores elijan qué pantallas ve cada persona.

@@ -272,3 +272,51 @@ describe('Pantallas de cada cuenta', () => {
     expect(SCREEN_IDS.every((id) => /^[a-z][a-z-]{0,29}$/.test(id))).toBe(true);
   });
 });
+
+describe('Asistente: respuestas redactadas sin IA', async () => {
+  const { extractAnswer, sentences, tasksSummary, doneSummary, topicsSummary, personSummary, saidSummary } = await import('../src/domain/answer');
+  const doc = (id: string, title: string, body: string) => ({ id, title, body });
+  const index = new SearchIndex(buildChunks({ tasks: [], notes: [], people: [{ name: 'Ana Ruiz', role: 'PO de Imagin', notes: '', email: 'ana@x.com' }], projects: [],
+    docs: [
+      doc('d1', 'prueba', 'La evar 69 es para el login'),
+      doc('d2', 'Guía de medición', '# Variables\nLa evar 12 guarda el canal. La evar 40 guarda la sección de la home.\n\n# Login\nEl login va por SSO desde 2025.'),
+    ],
+    listItems: [{ id: '7', title: 'Revisar etiquetado', fields: { Estado: 'Dependencia', Comentarios: 'Falta el OK de seguridad para el login' } }] }));
+  const ask = (q: string) => extractAnswer(index.search(q), q);
+
+  it('elige la frase que responde y la cita con su fuente', () => {
+    const a = ask('me puedes decir que evar se usa para el login?')!;
+    expect(a.sentence.text).toBe('La evar 69 es para el login');
+    expect(a.hit.chunk.title).toBe('prueba');
+    expect(a.sentence.marks.map(([s, e]) => a.sentence.text.slice(s, e))).toEqual(['evar', 'login']);
+    expect(ask('¿qué evar guarda el canal?')!.sentence.text).toBe('La evar 12 guarda el canal.');
+    expect(ask('quién es el PO de Imagin')!.hit.chunk.source).toBe('person');
+  });
+
+  it('mejor no contestar que contestar mal', () => {
+    expect(ask('presupuesto de navidad')).toBeNull();
+    expect(ask('el de la que')).toBeNull();
+  });
+
+  it('parte en frases por puntos, líneas y viñetas', () => {
+    expect(sentences('# Título\n- Uno. Dos frases aquí.\n1. Tres')).toEqual(['Título', 'Uno.', 'Dos frases aquí.', 'Tres']);
+  });
+
+  it('resúmenes de tareas, lo hecho, temas y personas', () => {
+    const today = '2026-11-24';
+    const tasks = [
+      makeTask({ title: 'Revisar login', due_date: '2026-11-20' }),
+      makeTask({ title: 'Informe', due_date: '2026-11-22' }),
+      makeTask({ title: 'Llamar', due_date: today }),
+    ];
+    expect(tasksSummary(tasks, 'tareas pendientes para hoy', today)).toBe('Hay 3: 2 atrasadas (la más antigua, «Revisar login», del vie 20 nov) y 1 para hoy.');
+    expect(tasksSummary([], 'tareas pendientes para hoy', today)).toBe('No hay tareas pendientes para hoy.');
+    expect(tasksSummary([tasks[2]], 'x', today)).toBe('Hay 1: «Llamar».');
+    const entry = (title: string, at: string) => ({ id: at, at, date: at.slice(0, 10), kind: 'completed' as const, task_id: 't', title, project_id: null, from: null, to: null });
+    expect(doneSummary([entry('Uno', '2026-11-23T10:00:00Z'), entry('Dos', '2026-11-24T09:00:00Z')], 'esta semana')).toBe('Esta semana has completado 2 tareas; la última, «Dos».');
+    expect(doneSummary([], 'hoy')).toBe('No has completado nada hoy.');
+    expect(topicsSummary('Luis', [makeTask({ title: 'Vacaciones' })])).toBe('Tienes 1 tema pendiente con Luis: «Vacaciones».');
+    expect(personSummary('Ana Ruiz', { name: 'Ana Ruiz', role: 'PO de Imagin', notes: '', email: 'ana@x.com' }, 2)).toBe('Ana Ruiz es PO de Imagin. Tiene 2 tareas pendientes en tu Marea. Su email es ana@x.com.');
+    expect(saidSummary('Diana', [], today)).toBe('Diana no aparece en ninguna nota.');
+  });
+});
