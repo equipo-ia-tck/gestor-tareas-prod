@@ -37,12 +37,18 @@ export interface SyncState {
   pulled?: boolean;
   /** Dueño de cada registro compartido ("tasks:<id>" → id de cuenta). */
   owners: Record<string, string>;
+  /** Pantallas que un administrador me ha ocultado (Ajustes → Pantallas, migración 013). */
+  hiddenScreens: string[];
 }
 
 /** Estado de la sesión al abrir la app. */
 export type SessionState = 'none' | 'profile' | 'disabled' | 'ok';
 
-export interface AdminUser { id: string; login: string; name: string; isAdmin: boolean; disabled: boolean; createdAt: string; spaces: string[] }
+export interface AdminUser {
+  id: string; login: string; name: string; isAdmin: boolean; disabled: boolean; createdAt: string; spaces: string[];
+  /** Pantallas ocultas; null = las del equipo por defecto (migración 013; antes no viene). */
+  hiddenScreens?: string[] | null;
+}
 export interface AdminSpace { id: string; name: string; color: string; members: { id: string; role: 'admin' | 'member' }[] }
 
 interface Me {
@@ -53,6 +59,8 @@ interface Me {
   team: TeamUser[];
   spaces: Space[];
   adminCode: string | null;
+  /** Desde la migración 013; antes no viene. */
+  hiddenScreens?: string[];
 }
 interface RecordRow { tbl: SyncTable; key: string; owner: string | null; data: Record<string, unknown> | null; version: number }
 interface OverlayRow { key: string; data: { my_day?: string | null; remind_at?: string | null }; version: number }
@@ -83,6 +91,8 @@ function friendly(message: string): string {
     return 'Falta actualizar el feedback en Supabase: un administrador tiene que ejecutar supabase/migrations/007_feedback_formulario.sql.';
   if (/could not find the function public\.admin_usage/i.test(message))
     return 'Falta preparar la analítica en Supabase: un administrador tiene que ejecutar supabase/migrations/009_analitica.sql y 010_analitica_kpis.sql.';
+  if (/could not find the function public\.(admin_set_screens|admin_set_default_screens)\b/i.test(message))
+    return 'Falta preparar las pantallas en Supabase: un administrador tiene que ejecutar supabase/migrations/013_pantallas.sql.';
   if (/feedback_status_check/i.test(message))
     return 'Falta el estado «Bloqueado» del feedback en Supabase: un administrador tiene que ejecutar supabase/migrations/008_feedback_bloqueado.sql.';
   return message;
@@ -91,7 +101,7 @@ function friendly(message: string): string {
 type SyncTx = Transaction & { __fromSync?: boolean };
 
 export class SyncClient {
-  private state: SyncState = { status: 'ok', user: null, team: [], spaces: [], isAdmin: false, adminCode: null, owners: {} };
+  private state: SyncState = { status: 'ok', user: null, team: [], spaces: [], isAdmin: false, adminCode: null, owners: {}, hiddenScreens: [] };
   private listeners = new Set<() => void>();
   private dirty = new Map<string, { table: SyncTable; key: string }>();
   private pushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -150,7 +160,12 @@ export class SyncClient {
 
   private applyMe(me: Me) {
     this.accessVersion = Number(me.accessVersion ?? 0);
-    this.set({ user: me.user, team: me.team, spaces: me.spaces, isAdmin: me.isAdmin, adminCode: me.adminCode });
+    const hiddenScreens = Array.isArray(me.hiddenScreens) ? me.hiddenScreens : [];
+    this.set({
+      user: me.user, team: me.team, spaces: me.spaces, isAdmin: me.isAdmin, adminCode: me.adminCode,
+      // Solo si cambian, para no volver a pintar toda la app en cada consulta.
+      ...(hiddenScreens.join() !== this.state.hiddenScreens.join() ? { hiddenScreens } : {}),
+    });
   }
 
   async login(email: string, password: string) {
@@ -252,7 +267,10 @@ export class SyncClient {
 
   // ---------- Administración (solo administradores) ----------
 
-  adminData = () => this.rpc<{ users: AdminUser[]; spaces: AdminSpace[]; adminCode: string }>('admin_overview');
+  adminData = () => this.rpc<{ users: AdminUser[]; spaces: AdminSpace[]; adminCode: string; defaultHiddenScreens?: string[] }>('admin_overview');
+  /** Pantallas ocultas de varias cuentas (null = volver a las del equipo por defecto). */
+  setScreens = (userIds: string[], hidden: string[] | null) => this.rpc<AdminUser[]>('admin_set_screens', { p_users: userIds, p_hidden: hidden });
+  setDefaultScreens = (hidden: string[]) => this.rpc<string[]>('admin_set_default_screens', { p_hidden: hidden });
   setAdmin = async (userId: string, isAdmin: boolean) => {
     const users = await this.rpc<AdminUser[]>('set_admin', { p_user: userId, p_value: isAdmin });
     await this.session(); // por si me he quitado a mí misma

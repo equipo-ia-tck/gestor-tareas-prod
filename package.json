@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node scripts/start.mjs",
     "dev": "vite",
-    "build": "tsc --noEmit && vite build && node scripts/build-subida.mjs",
+    "build": "tsc --noEmit && vite build && node scripts/build-subida.mjs && node scripts/build-extension.mjs",
     "preview": "node servidor/index.ts",
     "test": "vitest run",
     "test:watch": "vitest",

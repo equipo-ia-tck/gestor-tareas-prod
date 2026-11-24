@@ -65,7 +65,7 @@ describe('SharePoint sincronizado (Power Automate)', () => {
     expect(done).toEqual({ folders: 1, items: 3 });
     expect(body).toMatchObject({ p_token: 'gsub_1', p_kind: 'sharepoint', p_file_at: '2026-11-23T10:00:00.000Z' });
     const fail = (async () => new Response(JSON.stringify({ message: 'Tipo de archivo no admitido.' }), { status: 400 })) as unknown as typeof fetch;
-    await expect(uploadSharePoint({ url: 'x', key: 'k', token: 't', text: '{}', fileAt: new Date() }, fail)).rejects.toThrow(/013/);
+    await expect(uploadSharePoint({ url: 'x', key: 'k', token: 't', text: '{}', fileAt: new Date() }, fail)).rejects.toThrow(/014/);
     await expect(uploadSharePoint({ url: 'x', key: 'k', token: 't', text: 'no json', fileAt: new Date() }, fake)).rejects.toThrow(/JSON/);
   });
 });

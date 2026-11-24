@@ -8,7 +8,7 @@ Nunca el contenido de los documentos. Cada persona solo ve lo suyo.
 
 ## Antes de empezar
 
-- En Supabase tiene que estar aplicada la migración `013_sharepoint_subido.sql`.
+- En Supabase tiene que estar aplicada la migración `014_sharepoint_subido.sql`.
 - En el Mac tiene que estar en marcha el programa de subida del calendario (Ajustes → Calendario de Outlook → «Subida
   desde el Mac»). No hace falta otra clave: el mismo programa sube también este archivo.
 
@@ -70,4 +70,4 @@ una biblioteca entera: el archivo no puede pasar de 5 MB (unos 20.000 elementos)
   SharePoint desde Power Automate con tu cuenta.
 - **En Marea sigue saliendo «Aún no hay carpetas sincronizadas»**: mira el registro del programa de subida del Mac
   (`subida.log`): las líneas «SharePoint: …» dicen si ha subido el archivo o por qué no.
-- **«Falta aplicar en Supabase la migración 013»**: aplícala (Supabase → SQL Editor).
+- **«Falta aplicar en Supabase la migración 014»**: aplícala (Supabase → SQL Editor).

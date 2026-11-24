@@ -1,0 +1,101 @@
+import { repo } from '../../data/services';
+import type { HistoryEntry, HistoryEvent } from '../../data/repository';
+import { LIST_CATEGORIES, listMoves, listPushes, statusValues, valueForCategory } from '../../domain/msList';
+import { LIST_TYPE_ID, taskFromListItem } from '../../domain/msList';
+import { DEFAULT_TYPE_ID } from '../../domain/types';
+import { currentItems, extensionOk, getListaState, isConnected, loadListaConfig, queueChange, type Created } from './listaStore';
+
+let running = false;
+/** Mientras se aplican cambios que vienen de la lista, el historial no los vuelve a mandar. */
+let applying = false;
+/** Entradas que vinieron de la lista: deshacerlas solo cambia el gestor. */
+const fromList = new WeakSet<HistoryEntry>();
+
+/**
+ * Pone cada tarea enlazada (`LS-<id>`) en la categoría que tiene su elemento en la lista (la lista manda, con los
+ * cambios pendientes ya puestos), en un solo «Deshacer». Devuelve cuántas mueve.
+ */
+export async function applyListStates(): Promise<number> {
+  if (running) return 0;
+  const config = loadListaConfig();
+  if (!config.statusColumn || !getListaState().snapshot) return 0;
+  running = true;
+  try {
+    const [tasks, types] = await Promise.all([repo.listTasks(), repo.listItemTypes()]);
+    const moves = listMoves(tasks, currentItems(), config, types);
+    if (!moves.length) return 0;
+    applying = true;
+    try {
+      await repo.batch(moves.length === 1 ? `Movida a ${moves[0].stateName} como en la lista` : `${moves.length} tareas movidas como en la lista`, async () => {
+        for (const m of moves) await repo.setState(m.task.id, m.stateId);
+      });
+    } finally {
+      applying = false;
+    }
+    return moves.length;
+  } finally {
+    running = false;
+  }
+}
+
+/**
+ * Al mover aquí una tarea enlazada, apunta el valor nuevo de la columna de estado; se aplica en la lista la próxima vez
+ * que se pulse el marcador.
+ */
+export async function pushToList(event: HistoryEvent, notify: (message: string) => void) {
+  if (applying) {
+    if (event.type === 'push') fromList.add(event.entry);
+    return;
+  }
+  if (fromList.has(event.entry)) return;
+  const config = loadListaConfig();
+  if (!config.statusColumn || !getListaState().snapshot) return;
+  const pushes = listPushes(event.entry.changes, event.type === 'undo', await repo.listItemTypes());
+  if (!pushes.length) return;
+  // Todos los valores posibles (las opciones de la columna), aunque ningún elemento los tenga aún.
+  const snapshot = getListaState().snapshot!;
+  const field = snapshot.fields.find((f) => f.label === config.statusColumn);
+  const values = field?.choices.length ? field.choices : statusValues(snapshot.items, config.statusColumn);
+  for (const { id, category, stateName } of pushes) {
+    // Tipo «Lista»: el valor que se llama como el estado (Dependencia → Dependencia); si no, el primero de su categoría.
+    const value = (stateName && values.find((v) => v.toLowerCase() === stateName.toLowerCase())) || valueForCategory(category, values, config);
+    const label = LIST_CATEGORIES.find((c) => c.category === (category === 'accepted' ? 'done' : category))?.label ?? category;
+    if (!value) {
+      notify(`El elemento ${id} no se cambiará en la lista: ningún valor de «${config.statusColumn}» corresponde a ${label}.`);
+      continue;
+    }
+    queueChange(id, config.statusColumn, value);
+    notify(isConnected() || extensionOk()
+      ? `Elemento ${id}: «${value}» se está poniendo en la lista`
+      : `Elemento ${id}: «${value}» se pondrá en la lista en cuanto haya conexión (extensión o marcador «Marea · Lista»)`);
+  }
+}
+
+/**
+ * Después de crear elementos en SharePoint: las altas que lo pedían tienen ya su tarea de Marea enlazada (`LS-<id>`), en
+ * su proyecto. Avisa de cada elemento creado (y de las columnas que no se han podido rellenar).
+ */
+export async function afterCreated(created: Created[], notify: (message: string) => void) {
+  if (!created.length) return;
+  const s = getListaState();
+  const items = s.snapshot?.items ?? [];
+  const config = loadListaConfig();
+  const withTask = created.filter((c) => c.create.task);
+  if (withTask.length) {
+    const [tasks, types] = await Promise.all([repo.listTasks(), repo.listItemTypes()]);
+    const linked = new Set(tasks.map((t) => t.external_id));
+    const typeId = types.some((t) => t.id === LIST_TYPE_ID) ? LIST_TYPE_ID : DEFAULT_TYPE_ID;
+    await repo.batch(withTask.length === 1 ? 'Tarea creada con el elemento nuevo de la lista' : `${withTask.length} tareas creadas con los elementos nuevos de la lista`, async () => {
+      for (const c of withTask) {
+        if (linked.has(`LS-${c.id}`)) continue;
+        const item = items.find((it) => it.id === c.id)
+          ?? { id: c.id, title: c.create.values['Título'] ?? `Elemento ${c.id}`, fields: {}, url: null, modified: null };
+        await repo.createTask(taskFromListItem(item, config, c.create.task!.projectId, s.snapshot?.title, typeId));
+      }
+    });
+    void applyListStates().catch(() => {});
+  }
+  for (const c of created) {
+    notify(`Creado en la lista: «${c.create.values['Título'] ?? c.id}» (elemento ${c.id})${c.skipped.length ? `. Sin rellenar: ${c.skipped.join(', ')}` : ''}`);
+  }
+}

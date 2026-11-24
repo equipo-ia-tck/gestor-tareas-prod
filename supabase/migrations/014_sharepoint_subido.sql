@@ -1,6 +1,6 @@
 -- =====================================================================================================
 -- Carpetas de SharePoint subidas desde el Mac (nov 2026). Se pega en Supabase → SQL Editor → New query → Run, después
--- de 001 a 012.
+-- de 001 a 013.
 --
 -- Igual que el calendario (005): un flujo de Power Automate escribe OneDrive/Gestor/sharepoint.json con la lista de
 -- carpetas y archivos (solo nombre, ruta, enlace y fecha; nunca el contenido de los documentos) y el proceso del Mac lo

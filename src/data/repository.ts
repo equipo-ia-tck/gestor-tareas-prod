@@ -15,6 +15,7 @@ import {
   type TaskPatch,
 } from '../domain/types';
 import { isRallyId } from '../domain/rally';
+import { LIST_TYPE_ID, listTypeChanged } from '../domain/msList';
 import { doneState, equivalentState, findType, initialState, isDoneCategory, missingRallyTypes, patchForState, rallyPrefix, stateOf, typeForPrefix, withAcceptedState } from '../domain/workflows';
 import { nameKey } from '../domain/text';
 import { brandColorFor } from '../domain/colors';
@@ -87,6 +88,11 @@ export interface Repository {
    * cualquiera, pasa a su tipo las tareas que siguen como Tarea con un ID de Rally de ese prefijo. Sin historial.
    */
   ensureRallyTypes(addTypes: boolean): Promise<void>;
+  /**
+   * Tipo «Lista» (Microsoft List): con `wanted` (solo en sesión de administrador) lo crea o le pone los estados de la lista;
+   * en cualquier sesión, las tareas de la lista (`LS-<id>`) que siguen como Tarea pasan a ese tipo.
+   */
+  ensureListType(wanted: ItemType | null): Promise<void>;
   /** Elimina un tipo (no el de Tarea); sus tareas pasan a Tarea. */
   deleteItemType(id: string): Promise<void>;
 
@@ -557,6 +563,29 @@ export class DexieRepository implements Repository {
       if (!to || to.id === DEFAULT_TYPE_ID) continue;
       await this.db.tasks.update(t.id, { type_id: to.id, state_id: equivalentState(stateOf(types, t), to).id });
     }
+  }
+
+  async ensureListType(wanted: ItemType | null) {
+    let types = await this.listItemTypes();
+    const current = types.find((t) => t.id === LIST_TYPE_ID);
+    if (wanted && listTypeChanged(current, wanted)) {
+      // Se conservan el orden y el color si alguien los ha cambiado en Ajustes.
+      await this.db.item_types.put({ ...wanted, order: current?.order ?? wanted.order, color: current?.color ?? wanted.color });
+      types = await this.listItemTypes();
+      const type = findType(types, LIST_TYPE_ID);
+      const ids = new Set(type.states.map((st) => st.id));
+      // Tareas en estados que la lista ya no tiene: al equivalente por categoría.
+      for (const t of await this.db.tasks.where('type_id').equals(LIST_TYPE_ID).toArray()) {
+        if (ids.has(t.state_id)) continue;
+        const old = current?.states.find((st) => st.id === t.state_id);
+        await this.db.tasks.update(t.id, { state_id: (old ? equivalentState(old, type) : t.status === 'done' ? doneState(type) : initialState(type)).id });
+      }
+    }
+    const type = types.find((t) => t.id === LIST_TYPE_ID);
+    if (!type) return;
+    const tasks = (await this.db.tasks.where('type_id').equals(DEFAULT_TYPE_ID).toArray())
+      .filter((t) => !t.deleted_at && /^LS-\d+$/.test(t.external_id ?? ''));
+    for (const t of tasks) await this.db.tasks.update(t.id, { type_id: type.id, state_id: equivalentState(stateOf(types, t), type).id });
   }
 
   async saveItemType(type: ItemType) {

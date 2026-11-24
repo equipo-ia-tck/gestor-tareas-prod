@@ -105,7 +105,7 @@ export async function uploadSharePoint(
   if (!res.ok) {
     const body = await res.json().catch(() => null) as { message?: string } | null;
     const msg = body?.message ?? `Supabase ha respondido con un error (${res.status}).`;
-    throw new Error(/no admitido|kind_check/.test(msg) ? 'Falta aplicar en Supabase la migración 013_sharepoint_subido.sql.' : msg);
+    throw new Error(/no admitido|kind_check/.test(msg) ? 'Falta aplicar en Supabase la migración 014_sharepoint_subido.sql.' : msg);
   }
   return { folders: roots.length, items: roots.reduce((n, r) => n + r.items.length, 0) };
 }

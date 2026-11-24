@@ -972,7 +972,155 @@ de Outlook de WPP, también en la app publicada.
   en su ficha, «Chat en el navegador» abre Teams web sin la app (`teamsWebUrl` admite también `/l/chat/…`, tipo `chat`) y
   «Nueva reunión» abre con el entorno La Caixa ya elegido (`NewMeeting` `env`), aunque Ajustes diga abrir Teams en la app.
 
-## Fase 34: carpetas de SharePoint de CaixaBank (rama `sharepoint-carpetas`, nov 2026)
+## Fase 34: Microsoft List con un marcador, sin Power Automate (rama `dev`, prueba, nov 2026)
+
+Petición de la usuaria: volver a traer la Lista (quitada en la fase 26) sin flujos. Sin app en Entra ID no hay Graph, y la
+API de SharePoint no admite CORS, así que lo hace un **marcador del navegador** que se pulsa en la página de la lista.
+
+- **Marcador** (`features/mslist/bookmarklet.ts`, `bridge` convertido en texto con `toString()`: no puede usar nada de fuera
+  de la función; un test lo ejecuta suelto y se ha comprobado minificado). En la página `…/Lists/<nombre>/…` usa la API REST
+  de SharePoint con la sesión de la persona (`GetList(@u)`, `odata=nometadata`): columnas visibles (`/fields`), elementos
+  de 1000 en 1000 (`odata.nextLink`, personas y búsquedas con `$expand`) y escribe con MERGE (`X-RequestDigest` de
+  `/_api/contextinfo`). Abre Marea (`#/lista`, ventana `marea-lista`) y hablan por `postMessage`: «hello» cada 700 ms hasta
+  que Marea contesta `ready` con los cambios pendientes; los aplica, relee la lista y la manda (`data`, con el resultado de
+  cada cambio). Editables: texto, nota, opción, varias opciones, número, moneda, fecha y sí/no (personas y búsquedas, solo
+  lectura). Si la página no deja ejecutar marcadores, «Copiar el código» para pegarlo en la consola.
+- **Marea** (`ListaBridge` en `Shell`): solo acepta mensajes de `https://<x>.sharepoint.com` (`isSharePointOrigin`) y valida
+  lo recibido (`parseSnapshot`, `domain/msListParse.ts`). Columnas por su **nombre visible** («Título» para el título).
+- **Prueba sin servidor**: lista, cambios pendientes, errores y configuración en localStorage de ese navegador
+  (`listaStore.ts`: `lista-snapshot`, `lista-pending`, `lista-errors`, `lista-config`). `addPending` deja un cambio por
+  elemento y columna; `remainingPending` quita los aplicados y los que la lista ya refleja; `withPending` enseña los valores
+  pendientes ya puestos (y con ellos se mueven las tareas enlazadas, así no se deshace un cambio).
+- **En el gestor** (`#/lista`, «Lista» debajo de Rally; lógica de la fase 23 en `domain/msList.ts`): columna de estado y su
+  correspondencia con las columnas del Tablero, «Pasar a mis tareas» (`LS-<id>`), estado en la tabla y ficha lateral con todos
+  los campos (los cambiados en ámbar, «deshacer» un pendiente). Mover una tarea enlazada apunta el cambio (`pushToList`).
+- **Conexión que se queda** (sin servidor no se puede quitar el clic del todo: solo el código de una página de SharePoint
+  puede escribir en la lista): tras pulsar el marcador una vez, mientras su pestaña siga abierta, pregunta cada 4 s
+  (`marea-lista:hello`; recuadro abajo a la derecha, clic para encoger) y Marea contesta con los pendientes y `wantList`
+  (lista entera cada 2 min, `LIST_EVERY_MS`). Además Marea **manda el cambio al momento** a la pestaña conectada
+  (`subscribeLista` en `ListaBridge`), porque Chrome espacia hasta un minuto los temporizadores de las pestañas ocultas. Los
+  que fallaron solo se reintentan con la relectura de cada 2 min. Volver a pulsar el marcador para el anterior
+  (`__mareaListaStop`); si se cierra la pestaña de Marea, se para y lo dice. Varias pestañas de Marea comparten lista y
+  cambios por localStorage (evento `storage`); «Conectado» = «hola» de hace menos de 20 s (`lista-contact`, `isConnected`).
+
+- **Extensión de Chrome «Marea · Lista»** (sin tener SharePoint abierto; Chrome abierto y sesión de SharePoint iniciada):
+  carpeta `extension/` (`manifest.json` MV3 con `host_permissions` `https://*.sharepoint.com/*` y `scripting`; `content.js`
+  en las páginas de Marea, localhost y las dos de Vercel; `background.template.js`). `scripts/build-extension.mjs` (al final
+  de `npm run build`) compila con Vite `features/mslist/spWork.ts` (el trabajo en SharePoint, **común con el marcador**:
+  `bridge(app, work)` lo recibe como argumento; sin imports y autocontenido, porque viaja como texto), lo mete en
+  `background.js` y deja `dist/marea-lista/` y `dist/marea-lista-extension.zip` (se descarga en Lista → Conectar y se
+  instala con «Cargar descomprimida»). En segundo plano llama a la API REST con la sesión; si SharePoint da 401/403, lo hace
+  en una pestaña fijada de la lista (`chrome.scripting.executeScript` con `pageJob`). Solo atiende a su `content.js`
+  (`sender.id`, `sender.tab`), solo listas `https://<x>.sharepoint.com/…/Lists/…` y de una en una.
+- **Marea con la extensión** (`features/mslist/extension.ts`: `marea-ext:ping|hello|sync|result` por `postMessage` del mismo
+  origen; `useExtensionSync` en `ListaBridge`): con la dirección de la lista (`lista-url`, `normalizeListUrl`, o la de la
+  última lectura) aplica los pendientes al momento (400 ms tras un cambio, en cualquier pestaña) y relee cada 2 min (mira
+  cada 20 s). Una sola pestaña sincroniza (`navigator.locks`, `marea-lista-sync`). `lista-ext` guarda cuándo fue bien y el
+  último error; «Sincronizada» = bien hace menos de 5 min (`extensionOk`). El marcador sigue como alternativa.
+
+- **Buscar como en SharePoint** (`domain/msListView.ts`, funciones puras con tests): **vistas** de la lista
+  (`MsListSnapshot.views`: `spWork` lee `/views` y, para cada una, pide a SharePoint sus elementos con `GetItems` y el CAML de
+  la vista sin su tope de página, así filtro y orden (también `[Me]`, `[Today]`…) los aplica SharePoint; guarda sus columnas
+  y su agrupación) en pestañas, «Todos» = sin vista; **Filtros** (`FiltersPanel`: casillas con recuento por valor en
+  opciones, búsquedas, personas, sí/no y texto o número con hasta 25 valores; desde/hasta en fechas; «(Vacío)»; misma
+  columna = o, distintas = y); **Agrupar** (plegable, en el orden de las opciones; por defecto, el de la vista) y
+  **Ordenar** (por defecto, el de la vista o por ID; vacíos al final). Búsqueda por todas las palabras sin tildes. Se
+  recuerdan en `lista-view`, `lista-filters`, `lista-group` y `lista-sort`. Las listas leídas antes no traen vistas.
+- **Crear elementos** («Nuevo elemento» y «Crear con petición» en la cabecera de la Lista; `NewListItem.tsx`): formulario
+  con el título y las columnas que se pueden rellenar (obligatorias con *, `required` y `defaultValue` de SharePoint en
+  `MsListField`), «Crear también la tarea en Marea» con proyecto, y pie Descartar · Crear y otro · Crear. Las altas van a
+  `lista-creates` (`MsListCreate`, clave `new:<uuid>`) y viajan con los cambios (`outgoing`: primero las altas, después los
+  cambios; los que fallaron solo con la relectura); `spWork` las crea con POST `/items` en `odata=verbose` con
+  `ListItemEntityTypeFullName` y devuelve el ID y las columnas que no ha podido rellenar (`skipped`). `receiveSnapshot`
+  devuelve las creadas y `afterCreated` crea su tarea enlazada (`LS-<id>`). «Por crear» se ve encima de la tabla (con la × se
+  quita). **Petición** (`domain/msListRequest.ts`, `parseListRequest`, sin IA): reconoce los nombres de las columnas (o su
+  primera palabra si es única) seguidos del valor, opciones sueltas que solo están en una columna, una fecha suelta si hay
+  una sola columna de fecha, y el título entre comillas o al principio; lo demás, «No entendido».
+- **Tipo «Lista» en el Tablero** (`LIST_TYPE_ID = 'lista'`, abreviatura LS): un estado por cada valor de la columna de
+  estado (las opciones de la columna, en su orden; ids `lista-<valor>`) con el grupo de «Estados» (`listItemType`; siempre
+  hay uno de Por hacer y uno de Hecho; «dependencia» cuenta como Bloqueado). Lo crea y lo ajusta la sesión de un
+  administrador (`repo.ensureListType`, desde `useListType` en `ListaBridge`; las tareas en estados que desaparecen pasan
+  al equivalente) y, en cualquier sesión, las tareas `LS-<id>` que siguen como Tarea pasan a «Lista». Las tareas nuevas de
+  la lista se crean ya de ese tipo. Con él los estados van **uno a uno** en los dos sentidos: `listMoves` busca el estado
+  con el nombre del valor y `listPushes` manda cualquier cambio de estado con su nombre (`stateName`), aunque sea del mismo
+  grupo; sin coincidencia, por grupo como antes.
+  Con **solo «Lista»** elegido en los tipos, el Tablero (y el de cada proyecto) usa sus estados como columnas (`Board` con
+  ese tipo, en `BoardContent`) en vez de las 7 de Rally; soltar una tarjeta llama a `setState` y el cambio va a la lista.
+- **Versión de la extensión**: al cambiar `spWork` o la extensión, sube `version` en `extension/manifest.json` y
+  `LATEST_EXTENSION` en `features/mslist/extension.ts` (un test comprueba que coinciden); si la instalada es anterior, la
+  pantalla Lista avisa y explica cómo actualizarla (descargar, sustituir la carpeta y recargar en `chrome://extensions`).
+
+## Fase 35: Asistente sin IA (rama `dev`, nov 2026)
+
+Petición de la usuaria: algo a lo que preguntar y pedir cosas sobre el proyecto, para todo el equipo y **sin gastar tokens**
+(un MCP siempre pasa por una IA, así que se hizo un asistente propio). Pantalla `#/asistente` («Asistente», debajo de Notas).
+
+- **Intérprete** (`domain/assistant.ts`, `parseIntent`, con tests): tareas con periodo (hoy, atrasadas, mañana, esta semana,
+  la que viene, próximos 7 días, sin fecha, Mi día), persona (`findPerson`: nombre completo o de pila, con o sin @), proyecto
+  (`findProject`: nombre o `#token`, con subproyectos) y estado (bloqueadas, en curso, hechas); IDs (`US1234`); lo hecho
+  (hoy, ayer, esta semana, la pasada, este mes, del registro); «qué dijo X» (`mentionsOf`), «temas para hablar con X»,
+  «quién es X». **Órdenes**: «crea una tarea …» (pasa por `parseCapture` y `submitCapture`: fechas, #proyecto, @persona,
+  !1…), «recuérdame …», «crea una nota Título: texto», «completa / reabre / pon X en curso / mueve X a mañana / pospón X /
+  añade X a mi día» (`matchTasks` por título; si hay varias, se elige; todo con «Deshacer»). Lo demás, a buscar.
+- **Buscador** (`domain/knowledge.ts`): trozos de tareas, notas (por apartados), personas, proyectos y documentos
+  (`splitSections`: títulos Markdown, líneas en mayúsculas o terminadas en «:», párrafos de ~700 caracteres) con BM25
+  (`SearchIndex`: título doble, todas las palabras y frase exacta pesan más, prefijos de 4+ letras), palabras sin tildes,
+  vacías ni plurales (`terms`, `stem`) y el trozo que mejor responde con las palabras marcadas (`snippet`).
+- **Documentación en SharePoint** (decisión de la usuaria: los documentos se quedan en Microsoft, no en Supabase; la
+  migración 013 que los guardaba en Supabase se quitó antes de aplicarse). Por la extensión «Marea · Lista» (1.3.0), con
+  la sesión de cada persona (`features/assistant/spDocs.ts`, autocontenido como `spWork`, en `background.js` como
+  `spDocs`/`pageDocs`, operaciones `resolve | search | list | upload`, mensaje `marea-ext:docs`, `extDocs` en Marea):
+  `resolve` convierte la dirección de una carpeta (o su enlace de «compartir» `/:f:/s/…`, con `/_api/v2.0/shares/u!…`) en
+  sitio y ruta; `search` usa el **buscador de SharePoint** (`/_api/search/query`, KQL con `path:"…"`: todas las palabras y,
+  si no hay nada, alguna; `kqlFrom`) en todo el sitio o solo en la carpeta, y devuelve título, enlace, autor y el resumen
+  con `<c0>` resaltado (`summaryMarks`): lee Word, PDF, PowerPoint o Excel sin descargarlos y cada persona solo ve lo que
+  puede abrir; `list` da los últimos archivos de la carpeta y `upload` sube uno (máx. 15 MB, sin sustituir). Panel lateral
+  (`SharePointPanel`): pegar la carpeta, «Buscar en: todo el sitio / solo la carpeta», subir (también arrastrando) y los
+  últimos archivos; la configuración es de cada persona (`asistente-sharepoint` en localStorage). Cada búsqueda enseña
+  «En SharePoint» (`SharePointHits`) y «En Marea». Sin la extensión, el Asistente busca solo en Marea.
+- **La carpeta, al momento** (extensión 1.4.0): el buscador de SharePoint tarda de minutos a horas en indexar lo nuevo, así
+  que `texts` recorre la carpeta y sus subcarpetas (`walk`: 4 niveles, 400 archivos, sin «Forms») y devuelve el texto de
+  los Word `.docx` (su XML descomprimido sin librerías, títulos con «#»), texto, Markdown, CSV y HTML (máx. 5 MB cada uno,
+  3 MB de texto en total); con `known` (enlace → fecha) solo baja los que han cambiado. `folderDocs.ts` los guarda en
+  memoria y entran en el buscador local: la respuesta enseña primero «En la carpeta» (`FolderHits`), después «En
+  SharePoint» sin repetir y después «En Marea». `list` también recorre subcarpetas. La consulta a SharePoint ya no exige
+  todas las palabras: si salen menos de 3, se completa con la de alguna; y verbos como «usa» o «sirve» no cuentan.
+- **Varias carpetas y la Lista** (petición de la usuaria: la Lista es del SharePoint de La Caixa y la documentación del de
+  WPP): `asistente-sharepoint-v2` guarda una lista de carpetas (`SpSource`; la de una sola carpeta de antes se sigue
+  leyendo), cada una de cualquier `*.sharepoint.com` con la sesión de ese sitio en el mismo Chrome, con su alcance, su
+  subida y sus archivos (`SourceCard`, «Añadir otra carpeta»). `folderDocs.ts` guarda los textos por carpeta (`folderKey`).
+  Cada búsqueda enseña «En la carpeta X» de cada una, «En la Lista» (los elementos de `currentItems`, con su estado, enlace
+  a SharePoint y «En el gestor» si hay tarea enlazada; chunks `source: 'list'`), «En SharePoint» de cada sitio y «En Marea».
+
+- **Respuestas redactadas sin IA** (`domain/answer.ts`): cada respuesta empieza con un recuadro (`Lead`). En las búsquedas,
+  `extractAnswer` elige entre los 6 primeros documentos, notas, elementos de la Lista y fichas la **frase** (`sentences`:
+  puntos, líneas y viñetas) con más palabras buscadas (`scoreSentence`: frase exacta y cortas, mejor) y la cita con su
+  fuente y enlace («Según «prueba» en Entry points: «La evar 69 es para el login»»); si ninguna tiene al menos la mitad de
+  las palabras, no contesta. Sin respuesta en Marea, `SharePointLead` la busca en los resúmenes de SharePoint. En tareas, lo
+  hecho, «qué dijo», temas y personas, resúmenes con plantilla (`tasksSummary`, `doneSummary`, `saidSummary`,
+  `topicsSummary`, `personSummary`). No se inventa ni se resume con otras palabras.
+
+## Fase 36: pantallas de cada cuenta (rama `dev`, nov 2026)
+
+Petición de la usuaria: que los administradores elijan qué pantallas ve cada persona.
+
+- **Supabase** (`supabase/migrations/013_pantallas.sql`, después de 001 a 012): `profiles.hidden_screens` (null = las del
+  equipo por defecto) y `app_settings` `default_hidden_screens`. `me()` devuelve `hiddenScreens` ya resuelto (`screens_of`);
+  `admin_users()` el de cada cuenta y `admin_overview()` `defaultHiddenScreens`. Solo administradores: `admin_set_screens`
+  (varias cuentas a la vez; null = volver al defecto) y `admin_set_default_screens`. Claves validadas (`clean_screens`).
+- **Catálogo** (`domain/screens.ts`, `SCREENS`): Bandeja, Tablero, Calendario, Notas, Asistente, Rally, Lista, Proyectos,
+  Grupos y personas, Revisión semanal, Registro y Buscar. Hoy y Ajustes siempre se ven; Feedback y Analítica ya son de
+  administradores. `screenOf` lleva cada ruta a su pantalla (`week` → calendario, `project` → proyectos, `person` →
+  personas…). La app lo recibe en `SyncState.hiddenScreens` (cada consulta a `me`, como mucho 30 s) y la barra lateral quita
+  las entradas y secciones; `View` enseña «Esta pantalla no está activada para tu cuenta» si se abre por enlace. **Es para
+  simplificar la app, no es seguridad**: no cambia qué datos ve nadie.
+- **Apagadas para todos desde el código** (`HIDDEN_FOR_ALL` en `domain/screens.ts`, se suma a lo de Supabase, administradores
+  incluidos; Ajustes → Pantallas lo avisa). Estuvo el Asistente hasta aplicar la migración 013 (24 nov 2026); ahora está
+  vacía y todo lo decide Ajustes → Pantallas.
+- **Ajustes → Pantallas** (`ScreensCard`, solo administradores): tabla con una fila por cuenta activa y una columna por
+  pantalla (ojo abierto/cerrado), fila «Por defecto» con «Aplicar a todas», y «Por defecto» en cada cuenta elegida a mano.
+
+## Fase 36: carpetas de SharePoint de CaixaBank (rama `sharepoint-carpetas`, nov 2026)
 
 Petición de la usuaria: tener a mano las carpetas del SharePoint de CaixaBank (se abre en el navegador del Mac con la cuenta
 de proveedor externo). Son documentos del cliente, así que **nada de su contenido sale de SharePoint**: sin Power Automate
@@ -1013,8 +1161,8 @@ de proveedor externo). Son documentos del cliente, así que **nada de su conteni
   arrastrarlo, así que Marea no se conecta con uno antiguo y pide volver a arrastrarlo (`OLD_BOOKMARKLET`). Si se cambia
   el protocolo del puente, hay que subir la versión en los dos sitios. El marcador lleva dentro la dirección de Marea desde
   la que se arrastró: en producción hay que arrastrarlo desde la app publicada.
-- **Sincronizado con Power Automate** (misma rama; sin Premium, como el calendario; migración `013_sharepoint_subido.sql`
-  después de 001 a 012): CaixaBank no registra apps, así que un flujo programado (pasos en `docs/sharepoint-power-automate.md`:
+- **Sincronizado con Power Automate** (misma rama; sin Premium, como el calendario; migración `014_sharepoint_subido.sql`
+  después de 001 a 013): CaixaBank no registra apps, así que un flujo programado (pasos en `docs/sharepoint-power-automate.md`:
   «Obtener archivos (solo propiedades)» con elementos anidados + «Seleccionar» + «Redactar») escribe
   `OneDrive/Gestor/sharepoint.json`. El programa de subida del Mac (`scripts/subir-onedrive.ts`, también la versión suelta) lo
   vigila si existe (`GESTOR_SHAREPOINT` lo cambia; sus errores no paran el calendario) y lo sube recortado
