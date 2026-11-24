@@ -1,6 +1,6 @@
-import { plainLine, sectionOf } from './markdown';
-import { resolveProjectToken } from './projects';
-import { fold, nameKey } from './text';
+import { plainLine, sectionOf } from './markdown.ts';
+import { resolveProjectToken } from './projects.ts';
+import { fold, nameKey } from './text.ts';
 import type { ISODate, Note, Project } from './types';
 
 export const isLiveNote = (n: Note) => !n.deleted_at;

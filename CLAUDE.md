@@ -1175,7 +1175,67 @@ de proveedor externo). Son documentos del cliente, así que **nada de su conteni
   la que se arrastró: en producción hay que arrastrarlo desde la app publicada.
 - **Power Automate** (se probó en esta rama: flujo que escribía `Gestor/sharepoint.json`, subida desde el Mac y migración 014): **quitado** al llegar la extensión, que lo hace al momento y sin guardar la lista en Supabase.
 
-## Fase 38: respuestas con IA en el Asistente (rama `dev`, nov 2026)
+## Fase 38: conector MCP de Marea para Claude (rama `mcp-marea`, nov 2026)
+
+Petición de la usuaria: que Claude (de pago o gratuito, navegador o app) tenga el contexto de Marea, Confluence y Notion. Copilot
+descartado (sin licencia de M365 Copilot). Notion **no** pasa por Marea: cada persona conecta el conector oficial de Notion en
+Claude. Confluence (export mensual, aprobado por José y Mati) va en la fase 2. Fase 1 = solo lectura.
+
+- **Función** `api/mcp.ts` (Vercel, MCP «Streamable HTTP» sin sesiones, `WebStandardStreamableHTTPServerTransport` de
+  `@modelcontextprotocol/sdk`, respuestas JSON). En Claude: Ajustes → Conectores → Añadir conector personalizado →
+  `https://gestor-tareas-prod.vercel.app/api/mcp`. Se carga con Node sin empaquetar: los imports de valores de `servidor/mcp.ts`
+  y `src/domain/mcpTools.ts` (y de lo que importan: `knowledge`, `notes`, `projects`, `text`, `dates`) llevan `.ts`.
+- **Entrar**: OAuth 2.1 de **Supabase Auth** (servidor OAuth de Supabase, con registro dinámico de clientes). Sin sesión, 401 con
+  `WWW-Authenticate: Bearer resource_metadata=…`; `/.well-known/oauth-protected-resource` (rewrite a `?route=prm`) apunta a
+  `<supabase>/auth/v1`. La página de permiso es `/oauth-consent` de la app (`OAuthConsent.tsx`: `getAuthorizationDetails`,
+  `approveAuthorization`/`denyAuthorization`; dentro de `AuthGate`). Va en la raíz (no `/oauth/consent`) porque los assets son
+  relativos (`base: './'`). El token es una sesión normal de Supabase: las reglas RLS deciden qué se ve, igual que en la app.
+  **En Supabase** (una vez): Authentication → OAuth Server → activar, «Authorization path» = `/oauth-consent` y permitir el
+  registro dinámico de clientes.
+- **Datos** (`servidor/mcp.ts`, `loadMarea`): `records` (tareas, notas, proyectos, tipos; personas y registro solo los propios),
+  `overlays` (Mi día), `profiles` (nombres) y `docs` (documentación del equipo, global), con la sesión de la persona; 30 s en
+  memoria. Hoy = día de Madrid (`madridToday`).
+- **Herramientas** (`src/domain/mcpTools.ts`, funciones puras con tests en `tests/mcp.test.ts`, también una ida y vuelta del
+  protocolo): `buscar` (BM25 de `knowledge.ts`, solo contenido de Marea: tareas, notas, personas, proyectos), `listar_tareas`
+  (persona, proyecto con subproyectos, estado, periodo, tipo, texto, solo mías), `ver_tarea` (id, ID de Rally o título),
+  `ver_nota`, `ver_persona` (temas, tareas, quién dijo qué, reuniones), `ver_proyecto`, `listar_proyectos`, `mi_registro` y
+  `buscar_en_documentacion` (ver fase 2). Todas `readOnlyHint`. Devuelven texto con enlaces a Marea, Rally y Confluence para
+  que Claude cite. Las instrucciones del servidor (`MCP_INSTRUCTIONS`) llevan el glosario (US, TS, DE…).
+- Privacidad: sin plan Team de Claude, cada persona debe desactivar en Claude el uso de sus conversaciones para entrenar.
+
+### Fase 2 (fase 38): documentación de Confluence en el MCP
+
+El equipo descarga una vez al mes el export **HTML** de los espacios de Confluence (aprobado por José y Mati: solo cómo trabaja
+el equipo y para qué sirve cada cosa, sin documentación privada del cliente). Se saca del entorno de Caixa por OneDrive y,
+como es texto sin adjuntos, pesa poco (los 3 zips de prueba, ~700 páginas, ~2,6 MB de texto). Fuera de git (`importar/`).
+
+- **Parser** (`src/domain/confluence.ts`, puro y con tests, sin DOMParser para correr igual en navegador y en Node):
+  `parseConfluencePage(html, fileName)` saca el id del nombre del fichero (`…_4511892904.html`), el título y el espacio de
+  `#title-text` (`Espacio : Página`), la ruta de `#breadcrumbs`, el cuerpo de `#main-content` (hasta el footer) con
+  `htmlToText`, y arma el enlace `…/pages/viewpage.action?pageId=<id>` (`CONFLUENCE_BASE`, Data Center de CaixaBank, solo se
+  abre desde su red). `pageChunks` trocea por apartados reutilizando `splitSections`/`Chunk` (fuente `doc`).
+- **Supabase** (`supabase/migrations/014_documentacion.sql`, después de 001 a 013): tabla global `docs` (id, space, title,
+  path, url, body); la leen los miembros activos por RLS (`me_active`) y nadie la escribe directamente. `docs_info()` da el
+  recuento y la fecha. La sube **una sola persona** con el script del Mac (decisión de la usuaria: solo ella, no desde la
+  app), con una «clave de subida» propia (`docs_token`, una para el equipo, huella sha256; la última generada manda), como
+  el calendario (fase 27): `create_docs_token`/`revoke_docs_token`/`docs_token_info` (solo administradores) y
+  `upload_docs(p_token, p_docs, p_reset)`, que llama el script sin sesión (rol anon) solo con la clave y exige que quien la
+  generó siga siendo administradora activa; el primer lote vacía lo anterior.
+- **Subida** (`scripts/subir-docs.ts`, `npm run subir-docs -- [dsub_…] <zips>`): reutiliza `supabaseConfig` del script del
+  calendario; `src/features/docs/unzip.ts` abre los .zip sin librerías (lee el directorio central del ZIP y descomprime con
+  `DecompressionStream`, también en Node 24); parsea cada página, deduplica por id y sube en lotes de 120. La clave se guarda
+  en `servidor/datos/docs-subida.json`. En Ajustes → Documentación (solo administradores, `src/features/docs/DocsCard.tsx`)
+  se genera/quita la clave y se ve el recuento; no se suben zips desde ahí.
+- **MCP**: `loadMarea` añade la tabla `docs` a los datos; `chunksOf` mete sus trozos; la herramienta `buscar_en_documentacion`
+  (fuente `doc`) devuelve el apartado y el enlace a Confluence. `buscar` se queda con el contenido de Marea para no mezclarlos.
+
+### Más adelante (MCP)
+
+- **Notion**: cada persona conecta en Claude el conector oficial de Notion (no pasa por Marea).
+- **Escritura** (crear tareas, mover estados) más adelante, si el solo-lectura cuaja. Rally por el conector necesitaría el OK
+  de José.
+
+## Fase 39: respuestas con IA en el Asistente (rama `dev`, nov 2026)
 
 Petición de la usuaria: que el Asistente responda de verdad («¿qué evar uso para el login?» → «la eVar69 [1]»), gratis y sin
 que los documentos (también los de CaixaBank) salgan del ordenador. RAG **local en el navegador**, sin servidor ni APIs.

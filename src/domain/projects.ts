@@ -1,4 +1,4 @@
-import { nameKey } from './text';
+import { nameKey } from './text.ts';
 import type { Project } from './types';
 
 /** Niveles máximos de anidación (proyecto › subproyecto › sub-subproyecto). */

@@ -1,4 +1,4 @@
-import { fold } from './text';
+import { fold } from './text.ts';
 
 /**
  * Buscador del Asistente, sin IA: trocea tareas, notas, personas, proyectos y documentos en fragmentos, los puntúa con
