@@ -1120,7 +1120,7 @@ Petición de la usuaria: que los administradores elijan qué pantallas ve cada p
 - **Ajustes → Pantallas** (`ScreensCard`, solo administradores): tabla con una fila por cuenta activa y una columna por
   pantalla (ojo abierto/cerrado), fila «Por defecto» con «Aplicar a todas», y «Por defecto» en cada cuenta elegida a mano.
 
-## Fase 36: carpetas de SharePoint de CaixaBank (rama `sharepoint-carpetas`, nov 2026)
+## Fase 37: carpetas de SharePoint de CaixaBank (rama `sharepoint-carpetas`, nov 2026)
 
 Petición de la usuaria: tener a mano las carpetas del SharePoint de CaixaBank (se abre en el navegador del Mac con la cuenta
 de proveedor externo). Son documentos del cliente, así que **nada de su contenido sale de SharePoint**: sin Power Automate
@@ -1170,6 +1170,9 @@ de proveedor externo). Son documentos del cliente, así que **nada de su conteni
   el protocolo del puente, hay que subir la versión en los dos sitios. El marcador lleva dentro la dirección de Marea desde
   la que se arrastró: en producción hay que arrastrarlo desde la app publicada.
 - **Power Automate** (se probó en esta rama: flujo que escribía `Gestor/sharepoint.json`, subida desde el Mac y migración 014): **quitado** al llegar la extensión, que lo hace al momento y sin guardar la lista en Supabase.
+
+### Más adelante
+
 - **Electron**: la app es web estática con rutas por hash y datos en IndexedDB, así que se puede empaquetar sin cambios
   (cargando `dist/`). Ojo: Electron tendrá su propio IndexedDB, y los datos se pasan con exportar e importar.
 
