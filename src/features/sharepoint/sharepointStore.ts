@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import { BRIDGE_VERSION } from './bookmarklet';
+import { extDocs, extensionVersion, isOutdated } from '../mslist/extension';
 import { folderLocation, isSharePointOrigin, parseSnapshot, type SharePointFolder, type SharePointSnapshot } from '../../domain/sharepoint';
 
 /**
@@ -14,10 +15,14 @@ interface State {
   connected: boolean;
   /** Carpeta guardada que se quiere ver y espera a que se conecte el puente. */
   waitingFor: (SharePointFolder & { origin: string; path: string }) | null;
+  /** De dónde sale la carpeta que se ve: la extensión de Chrome (sin pestaña de SharePoint) o el marcador. */
+  via: 'extension' | 'bridge' | null;
   /** Carpeta sincronizada (Power Automate) que se quiere ver: sitio y ruta dentro del sitio. */
   syncedTarget: { site: string; path: string; at: number } | null;
 }
-let state: State = { snapshot: null, error: null, loading: false, connected: false, waitingFor: null, syncedTarget: null };
+let state: State = { snapshot: null, error: null, loading: false, connected: false, waitingFor: null, syncedTarget: null, via: null };
+/** Sitio (dirección completa) de la carpeta abierta con la extensión. */
+let extSite: string | null = null;
 
 export const showSynced = (site: string, path: string) => set({ syncedTarget: { site, path, at: Date.now() }, waitingFor: null });
 const listeners = new Set<() => void>();
@@ -27,7 +32,7 @@ export const useSharePointSnapshot = () => useSyncExternalStore(subscribe, () =>
 /** Estado actual (para los tests). */
 export const sharePointState = () => state;
 
-export const setSnapshot = (s: SharePointSnapshot | null) => set({ snapshot: s, error: null, loading: false });
+export const setSnapshot = (s: SharePointSnapshot | null) => set({ snapshot: s, error: null, loading: false, ...(s ? {} : { via: null }) });
 export const setSnapshotError = (message: string | null) => set({ error: message, loading: false });
 
 export const OLD_BOOKMARKLET = 'El marcador de tu barra es de una versión anterior. Bórralo (clic derecho → Eliminar) y vuelve a '
@@ -56,6 +61,7 @@ function ask<T>(message: Record<string, unknown>, timeoutMs = 30000): Promise<T>
 export async function openFolder(path: string) {
   set({ loading: true, error: null });
   try {
+    if (state.via === 'extension' && extSite) { await extensionFolder(extSite, path); return; }
     const snap = await ask<SharePointSnapshot>({ type: 'marea-sp:list', path });
     set({ snapshot: snap, loading: false });
   } catch (e) {
@@ -90,8 +96,40 @@ export function openForBridge(url: string) {
 
 export const cancelWaiting = () => set({ waitingFor: null });
 
+/** ¿Está instalada la extensión «Marea · Lista» con las operaciones de carpetas (1.5.0 o posterior)? */
+export const extensionReady = () => { const v = extensionVersion(); return !!v && !isOutdated(v); };
+
+/** Lee una carpeta con la extensión y la enseña (validada como lo del marcador). */
+async function extensionFolder(siteUrl: string, folder: string) {
+  const raw = await extDocs<unknown>('folder', { siteUrl, folder }, 90_000);
+  const snap = parseSnapshot(raw);
+  if (!snap) throw new Error('Lo que ha llegado de SharePoint no es válido.');
+  extSite = siteUrl;
+  set({ snapshot: snap, loading: false, error: null, via: 'extension', connected: true, waitingFor: null });
+}
+
+/**
+ * Abre una carpeta (su enlace, también los de «compartir») con la extensión de Chrome: sin pestaña de SharePoint ni
+ * marcador. La extensión la resuelve con la sesión de SharePoint de Chrome y la lee.
+ */
+export async function openWithExtension(url: string) {
+  set({ loading: true, error: null, waitingFor: null });
+  try {
+    const where = await extDocs<{ siteUrl: string; folder: string }>('resolve', { url }, 90_000);
+    await extensionFolder(where.siteUrl, where.folder);
+  } catch (e) {
+    set({ error: (e as Error).message, loading: false });
+  }
+}
+
 /** Un PDF o una imagen, como `blob:` de esta pestaña (quien lo pide revoca la URL al cerrar la vista previa). */
 export async function loadFile(path: string, type: string, maxBytes: number): Promise<string> {
+  if (state.via === 'extension' && extSite) {
+    const r = await extDocs<{ base64: string; size: number }>('file', { siteUrl: extSite, path }, 120_000);
+    if (!r || typeof r.base64 !== 'string' || r.size > maxBytes) throw new Error('El archivo no se puede ver aquí: ábrelo en SharePoint.');
+    const bin = Uint8Array.from(atob(r.base64), (c) => c.charCodeAt(0));
+    return URL.createObjectURL(new Blob([bin], { type }));
+  }
   const buffer = await ask<ArrayBuffer>({ type: 'marea-sp:file', path }, 60000);
   if (!(buffer instanceof ArrayBuffer) || buffer.byteLength > maxBytes) throw new Error('El archivo no se puede ver aquí: ábrelo en SharePoint.');
   return URL.createObjectURL(new Blob([buffer], { type }));

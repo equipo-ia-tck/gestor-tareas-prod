@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { Bookmark, Check, ChevronRight, Copy, ExternalLink, FileText, Folder, FolderPlus, Loader2, Pencil, Search, ShieldCheck, Trash2, X } from 'lucide-react';
+import { Bookmark, Check, ChevronRight, Puzzle, Copy, ExternalLink, FileText, Folder, FolderPlus, Loader2, Pencil, Search, ShieldCheck, Trash2, X } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
 import { ViewHeader } from '../views/ViewHeader';
 import { ProjectOptions } from '../../components/ui/ProjectOptions';
@@ -10,7 +10,8 @@ import { fold } from '../../domain/text';
 import { track } from '../usage/track';
 import { bookmarkletCode, bookmarkletHref } from './bookmarklet';
 import { foldersOf, newFolder, saveFolders } from './folders';
-import { cancelWaiting, handleBridgeMessage, loadFile, openFolder, openForBridge, setSnapshot, showFolder, showSynced, useSharePointSnapshot } from './sharepointStore';
+import { cancelWaiting, extensionReady, handleBridgeMessage, loadFile, openFolder, openForBridge, openWithExtension, setSnapshot, showFolder, showSynced, useSharePointSnapshot } from './sharepointStore';
+import { isOutdated, LATEST_EXTENSION, useExtension } from '../mslist/extension';
 import { navigate } from '../../app/router';
 import { SyncedFolders } from './SyncedFolders';
 import { ensureSynced } from './sharepointCloud';
@@ -135,7 +136,14 @@ export function AddFolder({ projectId: fixedProject, compact = false }: { projec
  */
 export async function openSaved(folder: SharePointFolder) {
   track('sharepoint', 'open');
-  // Primero lo sincronizado con Power Automate (sin marcador); si no está, el puente del marcador.
+  // 1) Con la extensión de Chrome: al momento, sin pestaña de SharePoint ni marcador.
+  if (extensionReady()) {
+    navigate({ view: 'sharepoint' });
+    setTimeout(() => document.getElementById('sp-contents')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+    await openWithExtension(folder.url);
+    return;
+  }
+  // 2) Lo sincronizado con Power Automate; 3) si no está, el puente del marcador.
   const where = folderLocation(folder.url);
   const data = where ? await ensureSynced() : null;
   const synced = where && data ? findSynced(data.roots, where.origin, where.path) : null;
@@ -193,7 +201,7 @@ export function FolderRow({ folder, projectId }: { folder: SharePointFolder; pro
 // ───────────────────────────── Contenido (marcador) ─────────────────────────────
 
 function FolderContents() {
-  const { snapshot, error, loading, connected, waitingFor } = useSharePointSnapshot();
+  const { snapshot, error, loading, connected, waitingFor, via } = useSharePointSnapshot();
   const { projects, settings, today } = useApp();
   const [q, setQ] = useState('');
   const [saved, setSaved] = useState(false);
@@ -218,7 +226,7 @@ function FolderContents() {
     <section id="sp-contents" className={card}>
       <h2 className={title}><Bookmark className="size-4 text-[var(--marc)]" />Al momento, con el marcador <span className="font-normal text-zinc-500">(opcional: lo más reciente, sin esperar al flujo)</span></h2>
       {waitingFor && <ConnectFirst folder={waitingFor} />}
-      {!snapshot && !waitingFor && <BookmarkletSetup />}
+      {!snapshot && !waitingFor && <ContentsSetup />}
       {error && <p className="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{error}</p>}
       {snapshot && (
         <div>
@@ -249,9 +257,11 @@ function FolderContents() {
           </nav>
           <p className="mb-2 text-xs text-zinc-500">
             {snapshot.entries.length} elementos{snapshot.truncated && ' (hay más: ábrela en SharePoint)'} · solo en esta pestaña, no se guarda ·{' '}
-            {connected
-              ? <span className="text-emerald-700 dark:text-emerald-400">conectado con SharePoint: entra en las carpetas desde aquí (deja abierta su pestaña)</span>
-              : <span>para moverte por las carpetas desde aquí, vuelve a pulsar el marcador</span>}
+            {via === 'extension'
+              ? <span className="text-emerald-700 dark:text-emerald-400">con la extensión de Chrome: entra en las carpetas desde aquí</span>
+              : connected
+                ? <span className="text-emerald-700 dark:text-emerald-400">conectado con SharePoint: entra en las carpetas desde aquí (deja abierta su pestaña)</span>
+                : <span>para moverte por las carpetas desde aquí, vuelve a pulsar el marcador</span>}
           </p>
           <div className={`mb-2 flex items-center gap-1.5 ${inputClass}`}>
             <Search className="size-4 text-zinc-400" />
@@ -260,7 +270,7 @@ function FolderContents() {
           <div className={`grid gap-3 ${preview ? 'lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]' : ''}`}>
             <ul className={`max-h-[65vh] divide-y divide-zinc-100 overflow-y-auto rounded-lg border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800 ${loading ? 'opacity-60' : ''}`}>
               {shown.map((e) => {
-                const canPreview = e.kind === 'file' && connected && !!previewType(e.name) && (e.size ?? 0) <= MAX_PREVIEW_BYTES;
+                const canPreview = e.kind === 'file' && connected && !!previewType(e.name) && (e.size ?? 0) <= (via === 'extension' ? EXT_PREVIEW_BYTES : MAX_PREVIEW_BYTES);
                 const inside = e.kind === 'folder' && connected;
                 const rowClass = `flex min-w-0 flex-1 items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/60 ${preview?.path === e.path ? 'bg-indigo-50 dark:bg-indigo-950/40' : ''}`;
                 const body = (
@@ -294,6 +304,58 @@ function FolderContents() {
         </div>
       )}
     </section>
+  );
+}
+
+const EXTENSION_ZIP = 'marea-lista-extension.zip';
+/** La extensión trae hasta 10 MB para la vista previa (el marcador, 20). */
+const EXT_PREVIEW_BYTES = 10 * 1024 * 1024;
+
+/**
+ * Sin carpeta abierta: con la extensión de Chrome «Marea · Lista» (1.5.0+) se abre cualquier carpeta al momento, sin
+ * pestaña de SharePoint; sin ella, cómo instalarla o actualizarla, y el marcador como alternativa.
+ */
+function ContentsSetup() {
+  const extension = useExtension();
+  const [url, setUrl] = useState('');
+  const ready = !!extension && !isOutdated(extension);
+  const open = () => { if (isSharePointUrl(url)) { track('sharepoint', 'open-link'); void openWithExtension(url.trim()); } };
+  return (
+    <div className="space-y-3 text-sm">
+      <div className="rounded-lg border border-teal-200 bg-teal-50/50 p-3 dark:border-teal-900 dark:bg-teal-950/30">
+        <p className="mb-2 flex items-center gap-2 font-semibold"><Puzzle className="size-4" />Con la extensión de Chrome
+          <span className="font-normal text-zinc-500">(recomendado: sin tener SharePoint abierto)</span></p>
+        {ready ? (
+          <>
+            <p className="mb-2 text-emerald-700 dark:text-emerald-300">✓ Extensión «Marea · Lista» instalada (versión {extension}). Pulsa una de tus carpetas o pega aquí el enlace de otra:</p>
+            <div className="flex gap-2">
+              <input className={`${inputClass} min-w-0 flex-1 py-1`} value={url} onChange={(e) => setUrl(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') open(); }}
+                placeholder="https://….sharepoint.com/sites/…" aria-label="Enlace de una carpeta de SharePoint" />
+              <button type="button" onClick={open} disabled={!isSharePointUrl(url)}
+                className="rounded-md bg-indigo-600 px-3 py-1 font-medium text-white hover:bg-indigo-700 disabled:opacity-40">Abrir aquí</button>
+            </div>
+          </>
+        ) : extension ? (
+          <p className="rounded-md bg-amber-50 px-2 py-1.5 text-amber-800 dark:bg-amber-950/50 dark:text-amber-200">
+            Para ver carpetas hace falta la versión {LATEST_EXTENSION} de la extensión (tienes la {extension}).{' '}
+            <a href={`/${EXTENSION_ZIP}`} download className="font-medium underline">Descárgala</a>, sustituye la carpeta <code>marea-lista</code> por la
+            nueva y, en <code>chrome://extensions</code>, pulsa el botón de recargar (↻) de «Marea · Lista». Después recarga esta página.
+          </p>
+        ) : (
+          <ol className="list-decimal space-y-1 pl-5 text-zinc-600 dark:text-zinc-300">
+            <li><a href={`/${EXTENSION_ZIP}`} download className="font-medium text-indigo-600 underline dark:text-indigo-400">Descarga la extensión</a> y
+              descomprímela: queda una carpeta <code>marea-lista</code>. Déjala en un sitio fijo (p. ej. Documentos).</li>
+            <li>Abre <code>chrome://extensions</code>, activa <b>Modo de desarrollador</b> y pulsa <b>Cargar descomprimida</b> con esa carpeta.</li>
+            <li>Recarga esta página. Es la misma extensión que la de la Lista: si ya la tienes, solo hay que actualizarla.</li>
+          </ol>
+        )}
+        <p className="mt-2 text-xs text-zinc-500">Funciona con Chrome abierto y la sesión de SharePoint de CaixaBank iniciada en Chrome. Solo lee nombres, fechas y tamaños; un archivo, solo cuando pides verlo (PDF o imagen), y no se guarda.</p>
+      </div>
+      <details className="text-xs text-zinc-500">
+        <summary className="cursor-pointer">Sin extensión: con el marcador</summary>
+        <div className="mt-2"><BookmarkletSetup /></div>
+      </details>
+    </div>
   );
 }
 

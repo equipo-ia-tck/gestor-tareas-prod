@@ -1126,6 +1126,15 @@ Petición de la usuaria: tener a mano las carpetas del SharePoint de CaixaBank (
 de proveedor externo). Son documentos del cliente, así que **nada de su contenido sale de SharePoint**: sin Power Automate
 (copiaría de su tenant a uno de WPP) ni Graph (no hay app en Entra ID).
 
+
+- **Con la extensión de Chrome** (lo recomendado; misma extensión «Marea · Lista» de Marc, versión **1.5.0**): dos operaciones
+  más en `features/assistant/spDocs.ts`, `folder` (un nivel: subcarpetas y archivos con tamaño y fecha, sin `Forms` ni las
+  ocultas, en el formato de `parseSnapshot`) y `file` (PDF o imagen hasta 10 MB en base64), en `DOC_OPS` de
+  `background.template.js` y en `extDocs`. En `sharepointStore.ts`, `openWithExtension(url)` (`resolve` + `folder`) y, con
+  `via: 'extension'`, `openFolder` y `loadFile` van por la extensión: sin pestaña de SharePoint, sin marcador y sin guardar
+  nada. `openSaved` prueba en este orden: extensión (`extensionReady`: 1.5.0 o posterior), lo sincronizado con Power Automate
+  y el marcador. La pantalla enseña el estado de la extensión (instalar, actualizar o «Abrir aquí» un enlace) y deja el
+  marcador como alternativa. `content.js` también se mete en la vista previa de esta rama.
 - **Paso 1, accesos** (`domain/sharepoint.ts`, `features/sharepoint/folders.ts`): nombre y enlace (solo https de
   `*.sharepoint.com`, `isSharePointUrl`; nombre propuesto con `folderNameFromUrl`). Personales en
   `settings.sharepoint_folders` y de proyecto en `Project.folders` (los ve quien ve el proyecto, con «Deshacer»); sin

@@ -205,3 +205,41 @@ describe('SharePoint: carpeta guardada antes de conectar', () => {
     expect(showFolder({ id: '2', name: 'x', url: `${ORIGIN}/:f:/s/E/EabcDEF` })).toBe(false);
   });
 });
+
+describe('SharePoint con la extensión (spDocs folder y file)', async () => {
+  const { spDocs } = await import('../src/features/assistant/spDocs');
+  const SITE_URL = 'https://caixa.sharepoint.com/sites/Etiquetado';
+  const FOLDER = '/sites/Etiquetado/Documentos compartidos/General';
+  const json = (v: unknown) => new Response(JSON.stringify(v), { headers: { 'content-type': 'application/json;odata=nometadata' } });
+  async function withFetch<T>(f: (url: string) => Promise<Response>, run: () => Promise<T>): Promise<T> {
+    const real = globalThis.fetch;
+    globalThis.fetch = ((url: string) => f(url)) as typeof fetch;
+    try { return await run(); } finally { globalThis.fetch = real; }
+  }
+
+  it('lee un nivel de la carpeta en el formato que valida Marea', async () => {
+    const asked: string[] = [];
+    const out = await withFetch(async (url) => {
+      asked.push(url);
+      return json({ value: url.includes('/Folders?') ? [
+        { Name: 'Forms', ServerRelativeUrl: `${FOLDER}/Forms` },
+        { Name: 'App', ServerRelativeUrl: `${FOLDER}/App`, ItemCount: 3, TimeLastModified: '2026-11-20T09:00:00Z' },
+      ] : [{ Name: 'Guía #1.pdf', ServerRelativeUrl: `${FOLDER}/Guía #1.pdf`, Length: '2048', TimeLastModified: '2026-11-21T09:00:00Z' }] });
+    }, () => spDocs('folder', { siteUrl: SITE_URL, folder: FOLDER }));
+    expect(asked).toHaveLength(2);
+    expect(decodeURIComponent(asked[0])).toContain(`@p='${FOLDER}'`);
+    const snap = parseSnapshot(out)!;
+    expect(snap).toMatchObject({ path: FOLDER, site: '/sites/Etiquetado' });
+    expect(snap.entries.map((e) => [e.kind, e.name, e.size])).toEqual([['folder', 'App', 3], ['file', 'Guía #1.pdf', 2048]]);
+    expect(snap.entries[1].url).toBe('https://caixa.sharepoint.com/sites/Etiquetado/Documentos%20compartidos/General/Gu%C3%ADa%20%231.pdf?web=1');
+    await expect(spDocs('folder', { siteUrl: 'https://evil.com/sites/x', folder: FOLDER })).rejects.toThrow(/no es de SharePoint/);
+  });
+
+  it('trae un PDF o una imagen en base64, y nada más', async () => {
+    const pdf = new Uint8Array([37, 80, 68, 70, 45]);
+    const r = await withFetch(async () => new Response(pdf), () => spDocs('file', { siteUrl: SITE_URL, path: `${FOLDER}/a.pdf` }));
+    expect(r).toEqual({ base64: Buffer.from(pdf).toString('base64'), size: 5 });
+    await expect(spDocs('file', { siteUrl: SITE_URL, path: `${FOLDER}/a.docx` })).rejects.toThrow(/PDF e imágenes/);
+    await expect(withFetch(async () => new Response('', { status: 403 }), () => spDocs('file', { siteUrl: SITE_URL, path: `${FOLDER}/a.pdf` }))).rejects.toThrow(/iniciado sesión/);
+  });
+});

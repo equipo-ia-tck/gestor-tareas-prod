@@ -25,7 +25,7 @@ async function pageDocs(op, args) {
 
 const LIST = /^https:\/\/[a-z0-9-]+\.sharepoint\.com\/.+\/Lists\/[^/?#]+$/i;
 const SP = /^https:\/\/[a-z0-9-]+\.sharepoint\.com(\/|$)/i;
-const DOC_OPS = ['resolve', 'search', 'list', 'texts', 'upload'];
+const DOC_OPS = ['resolve', 'search', 'list', 'texts', 'upload', 'folder', 'file'];
 
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   // Solo del puente de Marea (content.js, dentro de una pestaña).
