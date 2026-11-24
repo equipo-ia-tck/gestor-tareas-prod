@@ -24,6 +24,7 @@ import { ViewHeader } from '../views/ViewHeader';
 import { extDocs, useExtension } from '../mslist/extension';
 import { currentItems, loadListaConfig, useLista } from '../mslist/listaStore';
 import { folderKey, folderState, loadFolderDocs, useFolderDocs } from './folderDocs';
+import { confluenceChunks, isConfluenceChunk, loadConfluenceDocs, useConfluenceDocs } from './confluenceDocs';
 import { kqlFrom, summaryMarks } from './spDocs';
 import { AiAnswer, AiPanel, useAiEnabled } from './ai/AiAnswer';
 import { indexChunks, startLlm, useAi } from './ai/engine';
@@ -64,6 +65,9 @@ export function AssistantView() {
   const sourceKeys = sources.map((c) => folderKey(c.siteUrl, c.folder)).join();
   useEffect(() => { if (extension) for (const c of sources) void loadFolderDocs(c.siteUrl, c.folder); }, [sourceKeys, extension]); // eslint-disable-line react-hooks/exhaustive-deps
   const allDocs = useMemo(() => sources.flatMap((c) => folderState(folderDocs, c.siteUrl, c.folder).docs), [sources, folderDocs]);
+  // La documentación de Confluence (Supabase, la misma del conector MCP), al entrar y si ha cambiado.
+  const confluence = useConfluenceDocs();
+  useEffect(() => { void loadConfluenceDocs(); }, []);
   const [entries, setEntries] = useState<Entry[]>(history);
   const [text, setText] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -77,7 +81,7 @@ export function AssistantView() {
     docs: allDocs.map((d) => ({ id: d.url, title: d.name.replace(/\.[^.]+$/, ''), body: d.text })),
     listItems,
     people: people.map((name) => peopleCards.find((c) => c.name === name) ?? { name, role: '', notes: '', email: '' }),
-  }), [tasks, notes, allProjects, people, peopleCards, allDocs, listItems]);
+  }).concat(confluenceChunks(confluence.pages)), [tasks, notes, allProjects, people, peopleCards, allDocs, listItems, confluence.pages]);
   const index = useMemo(() => new SearchIndex(chunks), [chunks]);
   // IA local (si la persona la ha activado): se carga el modelo y se indexa por significado en segundo plano.
   const [aiEnabled] = useAiEnabled();
@@ -268,7 +272,8 @@ export function AssistantView() {
         const fromList = a.hits.filter((h) => h.chunk.source === 'list');
         // Cada documento, en el bloque de su carpeta.
         const folderOf = (url: string) => sources.find((c) => folderState(folderDocs, c.siteUrl, c.folder).docs.some((d) => d.url === url));
-        const source = answer && sourceOf(answer.hit, sources.find((c) => c === folderOf(answer.hit.chunk.ref))?.folderName);
+        const fromConfluence = local.filter((h) => isConfluenceChunk(h.chunk));
+        const source = answer && sourceOf(answer.hit, isConfluenceChunk(answer.hit.chunk) ? 'Confluence' : sources.find((c) => c === folderOf(answer.hit.chunk.ref))?.folderName);
         return (
           <>
             {aiOn
@@ -279,6 +284,7 @@ export function AssistantView() {
               const mine = local.filter((h) => folderOf(h.chunk.ref) === c);
               return mine.length > 0 && <FolderHits key={c.id} hits={mine} folderName={c.folderName} />;
             })}
+            {fromConfluence.length > 0 && <FolderHits hits={fromConfluence} folderName="Confluence" title="En Confluence" />}
             {fromList.length > 0 && <ListHits hits={fromList} />}
             {sources.map((c, i) => <SharePointHits key={c.id} source={c} query={a.query} skip={new Set(local.map((h) => h.chunk.ref))} lead={!answer && i === 0} />)}
             <SearchAnswer hits={a.hits.filter((h) => h.chunk.source !== 'doc' && h.chunk.source !== 'list')} list={list} />
@@ -294,8 +300,8 @@ export function AssistantView() {
         <ViewHeader
           title={<span className="inline-flex items-center gap-2"><MessagesSquare className="size-5 text-indigo-600" />Asistente</span>}
           subtitle={aiOn
-            ? 'Pregunta o pide cosas sobre tus tareas, notas, personas, la Lista y la documentación del equipo en SharePoint. Las preguntas abiertas las responde la IA de tu ordenador con lo que encuentra.'
-            : 'Pregunta o pide cosas sobre tus tareas, notas, personas, la Lista y la documentación del equipo en SharePoint. Entiende frases como las de los ejemplos y, si no, busca en todo. Activa las respuestas con IA en el panel.'}
+            ? 'Pregunta o pide cosas sobre tus tareas, notas, personas, la Lista y la documentación del equipo en Confluence y SharePoint. Las preguntas abiertas las responde la IA de tu ordenador con lo que encuentra.'
+            : 'Pregunta o pide cosas sobre tus tareas, notas, personas, la Lista y la documentación del equipo en Confluence y SharePoint. Entiende frases como las de los ejemplos y, si no, busca en todo. Activa las respuestas con IA en el panel.'}
         />
         <form onSubmit={(e) => { e.preventDefault(); void ask(text); }} className="mb-4 flex gap-2">
           <input ref={inputRef} value={text} onChange={(e) => setText(e.target.value)} aria-label="Pregunta o petición"
@@ -321,6 +327,7 @@ export function AssistantView() {
       </div>
       <div className="space-y-4">
         <AiPanel />
+        <ConfluenceCard />
         <SharePointPanel />
       </div>
     </div>
@@ -391,11 +398,11 @@ function Marked({ text, marks }: { text: string; marks: [number, number][] }) {
 }
 
 /** Lo encontrado en los documentos de la carpeta (leídos directamente, así salen al momento). */
-function FolderHits({ hits, folderName }: { hits: Hit[]; folderName: string }) {
+function FolderHits({ hits, folderName, title }: { hits: Hit[]; folderName: string; title?: string }) {
   const seen = new Set<string>();
   return (
     <section className="mb-3">
-      <Understood>En la carpeta «{folderName}»</Understood>
+      <Understood>{title ?? `En la carpeta «${folderName}»`}</Understood>
       <ul className="space-y-2.5">
         {hits.filter((h) => { const k = `${h.chunk.ref}|${h.chunk.section ?? ''}`; if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 5).map((h) => (
           <li key={h.chunk.id} className="text-sm">
@@ -728,5 +735,24 @@ function SourceCard({ source: config, startOpen, onChange, onRemove }: { source:
         </div>
       )}
     </div>
+  );
+}
+
+/** De dónde sale la documentación de Confluence que conoce el Asistente (la sube una administradora cada mes). */
+function ConfluenceCard() {
+  const c = useConfluenceDocs();
+  if (!c.loaded && !c.loading) return null;
+  return (
+    <section className="rounded-lg border border-zinc-200 p-3 text-sm dark:border-zinc-700">
+      <h2 className="mb-1 flex items-center gap-1.5 font-semibold"><BookOpen className="size-4 text-sky-600" />Documentación de Confluence</h2>
+      {c.loading && !c.pages.length ? <p className="text-xs text-zinc-500">Cargando…</p>
+        : c.error ? <p className="text-xs text-amber-700 dark:text-amber-300">No se ha podido cargar: {c.error}</p>
+          : c.pages.length ? (
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+              {c.pages.length} páginas{c.updatedAt && `, subidas el ${new Date(c.updatedAt).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}`}.
+              El Asistente busca en ellas y la IA las usa para responder. Los enlaces abren Confluence, que solo funciona desde la red de CaixaBank.
+            </p>
+          ) : <p className="text-xs text-zinc-500">Aún no hay documentación subida (la sube una administradora desde Ajustes → Documentación).</p>}
+    </section>
   );
 }

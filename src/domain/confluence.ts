@@ -115,3 +115,20 @@ export function pageChunks(page: ConfluencePage): Chunk[] {
     text: s.text,
   }));
 }
+
+/**
+ * Trozos de las páginas para el Asistente de la app: los de `pageChunks`, con id `cf:` (para no chocar con los de las
+ * carpetas de SharePoint) y el enlace de la página como `ref`, así citarlos lleva a Confluence. La ruta va al final del
+ * texto para que también se encuentre por el espacio o la sección.
+ */
+export function confluenceChunks(pages: ConfluencePage[]): Chunk[] {
+  return pages.flatMap((p) => pageChunks(p).map((c) => ({
+    ...c,
+    id: `cf:${c.id}`,
+    ref: p.url,
+    text: p.path ? `${c.text}\n(${p.path})` : c.text,
+  })));
+}
+
+/** ¿Este trozo es de la documentación de Confluence? */
+export const isConfluenceChunk = (c: Chunk) => c.id.startsWith('cf:');

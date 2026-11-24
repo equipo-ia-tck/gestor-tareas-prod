@@ -168,9 +168,68 @@ function embed(texts: string[]): Promise<Float32Array[]> {
   });
 }
 
-/** Vectores de los trozos ya calculados (por `chunkKey`), solo en memoria. */
+/** Vectores de los trozos ya calculados (por `chunkKey`), en memoria. */
 const vectors = new Map<string, Float32Array>();
 let indexRun = 0;
+
+/**
+ * Los vectores de la documentación de Confluence (trozos `cf:`) también se guardan en IndexedDB, para no recalcular cientos
+ * de páginas en cada sesión: ese export está aprobado para salir de CaixaBank. Los de las carpetas de SharePoint, notas,
+ * Lista y fichas se quedan solo en memoria, como siempre.
+ */
+const persistable = (c: Chunk) => c.id.startsWith('cf:');
+const DB_NAME = 'marea-ia';
+const STORE = 'vectors';
+let dbPromise: Promise<IDBDatabase | null> | null = null;
+
+function openDb(): Promise<IDBDatabase | null> {
+  dbPromise ??= new Promise((resolve) => {
+    try {
+      const req = indexedDB.open(DB_NAME, 1);
+      req.onupgradeneeded = () => req.result.createObjectStore(STORE);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+    } catch {
+      resolve(null);
+    }
+  });
+  return dbPromise;
+}
+
+/** Carga de IndexedDB los vectores que faltan en memoria (los de los trozos que se van a indexar). */
+async function restoreVectors(keys: string[]): Promise<void> {
+  const db = await openDb();
+  if (!db || !keys.length) return;
+  await new Promise<void>((resolve) => {
+    const tx = db.transaction(STORE, 'readonly');
+    const store = tx.objectStore(STORE);
+    for (const k of keys) {
+      const r = store.get(k);
+      r.onsuccess = () => { if (r.result instanceof Float32Array) vectors.set(k, r.result); };
+    }
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => resolve();
+    tx.onabort = () => resolve();
+  });
+}
+
+/** Guarda vectores y quita los que ya no corresponden a ningún trozo (páginas cambiadas o borradas). */
+async function storeVectors(entries: [string, Float32Array][], keep?: Set<string>): Promise<void> {
+  const db = await openDb();
+  if (!db) return;
+  await new Promise<void>((resolve) => {
+    const tx = db.transaction(STORE, 'readwrite');
+    const store = tx.objectStore(STORE);
+    for (const [k, v] of entries) store.put(v, k);
+    if (keep) {
+      const r = store.getAllKeys();
+      r.onsuccess = () => { for (const k of r.result) if (!keep.has(String(k))) store.delete(k); };
+    }
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => resolve();
+    tx.onabort = () => resolve();
+  });
+}
 
 /** Los trozos que vale la pena indexar por significado (las tareas son títulos cortos: con las palabras basta). */
 const semanticWorthy = (c: Chunk) => c.source !== 'task' && c.source !== 'project' && chunkText(c).length >= 25;
@@ -182,6 +241,11 @@ const semanticWorthy = (c: Chunk) => c.source !== 'task' && c.source !== 'projec
 export async function indexChunks(chunks: Chunk[]): Promise<void> {
   const run = ++indexRun;
   const todo = chunks.filter(semanticWorthy);
+  const saved = todo.filter(persistable).map(chunkKey);
+  await restoreVectors(saved.filter((k) => !vectors.has(k)));
+  if (run !== indexRun) return;
+  // Solo se limpia cuando ya ha llegado la documentación (si aún no, `saved` está vacío y lo borraría todo).
+  if (saved.length) void storeVectors([], new Set(saved));
   const missing = todo.filter((c) => !vectors.has(chunkKey(c)));
   set({ total: todo.length, indexed: todo.length - missing.length, embedError: null, embed: missing.length ? (vectors.size ? 'indexing' : 'loading') : 'ready' });
   const BATCH = 16;
@@ -192,6 +256,8 @@ export async function indexChunks(chunks: Chunk[]): Promise<void> {
       // e5 pide el prefijo «passage: » en los textos y «query: » en las preguntas.
       const out = await embed(batch.map((c) => `passage: ${chunkText(c).slice(0, 1500)}`));
       batch.forEach((c, j) => vectors.set(chunkKey(c), out[j]));
+      const toSave = batch.flatMap((c, j): [string, Float32Array][] => (persistable(c) ? [[chunkKey(c), out[j]]] : []));
+      if (toSave.length) void storeVectors(toSave);
       if (run === indexRun) set({ embed: 'indexing', indexed: state.indexed + batch.length });
     }
     if (run === indexRun) set({ embed: 'ready' });

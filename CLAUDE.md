@@ -1258,6 +1258,12 @@ que los documentos (también los de CaixaBank) salgan del ordenador. RAG **local
 - **PWA**: `webllm.ts` reexporta lo que se usa de WebLLM para que vaya en su propio trozo; `globIgnores` deja fuera del
   precache `llmWorker-*`, `embedWorker-*` y `webllm-*` (varios MB que solo descarga quien activa la IA).
 - Probado en el Mac (M, f16): carga en ~70 s la primera vez y ~25 s con el modelo en caché; ~5 s por respuesta.
+- **Documentación de Confluence también en el Asistente** (`features/assistant/confluenceDocs.ts`): la misma tabla `docs` del
+  conector MCP (migración 014), leída con la sesión de la persona al abrir el Asistente (páginas de 500 en 500; se vuelve a
+  pedir solo si `docs_info.updatedAt` cambia; en memoria). `confluenceChunks` (`domain/confluence.ts`, con test) les pone id
+  `cf:` y el enlace de la página como `ref`; salen en «En Confluence» y la IA las cita. Tarjeta «Documentación de
+  Confluence» con el número de páginas. Sus vectores de significado se guardan en IndexedDB (`marea-ia`, `vectors`; ese
+  export está aprobado para salir de CaixaBank) para no recalcular cientos de páginas cada sesión; los demás, solo en memoria.
 
 ### Más adelante
 

@@ -111,3 +111,17 @@ describe('unzip', () => {
     expect(entries[0].text).toBe('<i>hola</i>');
   });
 });
+
+describe('confluenceChunks (Asistente)', () => {
+  it('ids cf:, enlace de la página como ref y la ruta en el texto', async () => {
+    const { confluenceChunks, isConfluenceChunk } = await import('../src/domain/confluence');
+    const page = { id: '42', space: 'Analítica', title: 'Variables', path: 'Analítica › Medición › Variables', url: 'https://x/pages/viewpage.action?pageId=42', body: 'eVar69 | Login | Estado del login' };
+    const [c] = confluenceChunks([page]);
+    expect(c.id).toBe('cf:doc:42:0');
+    expect(c.ref).toBe(page.url);
+    expect(c.text).toContain('eVar69 | Login');
+    expect(c.text).toContain('(Analítica › Medición › Variables)');
+    expect(isConfluenceChunk(c)).toBe(true);
+    expect(isConfluenceChunk({ ...c, id: 'doc:https://sp/x.docx:0' })).toBe(false);
+  });
+});
