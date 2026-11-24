@@ -100,7 +100,7 @@ begin
   if v_ok is not true then raise exception 'Clave de subida no válida: genera otra en Ajustes → Documentación.' using errcode = '42501'; end if;
   if jsonb_typeof(coalesce(p_docs, '[]'::jsonb)) is distinct from 'array' then raise exception 'Se esperaba una lista de páginas.'; end if;
   if pg_column_size(p_docs) > 6 * 1024 * 1024 then raise exception 'El lote es demasiado grande; súbelo en trozos más pequeños.'; end if;
-  if p_reset then delete from public.docs; end if;
+  if p_reset then delete from public.docs where id is not null; end if; -- WHERE explícito: Supabase prohíbe DELETE sin él
   insert into public.docs (id, space, title, path, url, body, updated_at)
   select coalesce(nullif(d->>'id', ''), gen_random_uuid()::text),
          coalesce(d->>'space', ''), coalesce(d->>'title', ''), coalesce(d->>'path', ''),
