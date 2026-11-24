@@ -1228,6 +1228,10 @@ como es texto sin adjuntos, pesa poco (los 3 zips de prueba, ~700 páginas, ~2,6
   se genera/quita la clave y se ve el recuento; no se suben zips desde ahí.
 - **MCP**: `loadMarea` añade la tabla `docs` a los datos; `chunksOf` mete sus trozos; la herramienta `buscar_en_documentacion`
   (fuente `doc`) devuelve el apartado y el enlace a Confluence. `buscar` se queda con el contenido de Marea para no mezclarlos.
+- **Dentro de Marea** (decisión de la usuaria: sin salir a Claude y sin gastar tokens): el **Asistente** (`#/asistente`, sin IA)
+  también busca en esta documentación. `src/features/docs/docsStore.ts` (`useConfluenceDocs`) trae la tabla `docs` con la
+  sesión de cada persona (RLS) y `AssistantView` la mete en su índice (bloque «En la documentación del equipo (Confluence)»,
+  con enlace a cada página). El Claude conversacional dentro de la app (API de pago) se descartó por coste.
 
 ### Más adelante (MCP)
 

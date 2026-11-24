@@ -25,6 +25,7 @@ import { extDocs, useExtension } from '../mslist/extension';
 import { currentItems, loadListaConfig, useLista } from '../mslist/listaStore';
 import { folderKey, folderState, loadFolderDocs, useFolderDocs } from './folderDocs';
 import { kqlFrom, summaryMarks } from './spDocs';
+import { useConfluenceDocs } from '../docs/docsStore';
 
 type ActIntent = Extract<Intent, { kind: 'act' }>;
 
@@ -62,6 +63,8 @@ export function AssistantView() {
   const sourceKeys = sources.map((c) => folderKey(c.siteUrl, c.folder)).join();
   useEffect(() => { if (extension) for (const c of sources) void loadFolderDocs(c.siteUrl, c.folder); }, [sourceKeys, extension]); // eslint-disable-line react-hooks/exhaustive-deps
   const allDocs = useMemo(() => sources.flatMap((c) => folderState(folderDocs, c.siteUrl, c.folder).docs), [sources, folderDocs]);
+  const confluenceDocs = useConfluenceDocs();
+  const confUrls = useMemo(() => new Set(confluenceDocs.map((p) => p.url)), [confluenceDocs]);
   const [entries, setEntries] = useState<Entry[]>(history);
   const [text, setText] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -72,10 +75,13 @@ export function AssistantView() {
   }, [tasks, notes, peopleCards, mentionables]);
   const index = useMemo(() => new SearchIndex(buildChunks({
     tasks, notes, projects: allProjects,
-    docs: allDocs.map((d) => ({ id: d.url, title: d.name.replace(/\.[^.]+$/, ''), body: d.text })),
+    docs: [
+      ...allDocs.map((d) => ({ id: d.url, title: d.name.replace(/\.[^.]+$/, ''), body: d.text })),
+      ...confluenceDocs.map((p) => ({ id: p.url, title: p.title, body: p.body })),
+    ],
     listItems,
     people: people.map((name) => peopleCards.find((c) => c.name === name) ?? { name, role: '', notes: '', email: '' }),
-  })), [tasks, notes, allProjects, people, peopleCards, allDocs, listItems]);
+  })), [tasks, notes, allProjects, people, peopleCards, allDocs, confluenceDocs, listItems]);
   const captureCtx = { today, projects: allProjects, people: mentionables, types: itemTypes, releases };
 
   const push = (question: string, answer: Answer) => {
@@ -252,6 +258,7 @@ export function AssistantView() {
       case 'search': {
         const answer = extractAnswer(a.hits, a.query);
         const local = a.hits.filter((h) => h.chunk.source === 'doc');
+        const confHits = local.filter((h) => confUrls.has(h.chunk.ref));
         const fromList = a.hits.filter((h) => h.chunk.source === 'list');
         // Cada documento, en el bloque de su carpeta.
         const folderOf = (url: string) => sources.find((c) => folderState(folderDocs, c.siteUrl, c.folder).docs.some((d) => d.url === url));
@@ -259,6 +266,7 @@ export function AssistantView() {
         return (
           <>
             {answer && source && <Lead text={answer.sentence.text} marks={answer.sentence.marks} source={source.label} href={source.href} external={source.external} />}
+            {confHits.length > 0 && <ConfluenceHits hits={confHits} />}
             {sources.map((c) => {
               const mine = local.filter((h) => folderOf(h.chunk.ref) === c);
               return mine.length > 0 && <FolderHits key={c.id} hits={mine} folderName={c.folderName} />;
@@ -277,7 +285,7 @@ export function AssistantView() {
       <div className="min-w-0">
         <ViewHeader
           title={<span className="inline-flex items-center gap-2"><MessagesSquare className="size-5 text-indigo-600" />Asistente</span>}
-          subtitle="Pregunta o pide cosas sobre tus tareas, notas, personas, la Lista y la documentación del equipo en SharePoint. Sin IA: entiende frases como las de los ejemplos y, si no, busca en todo."
+          subtitle="Pregunta o pide cosas sobre tus tareas, notas, personas, la Lista y la documentación del equipo (Confluence y SharePoint). Sin IA: entiende frases como las de los ejemplos y, si no, busca en todo."
         />
         <form onSubmit={(e) => { e.preventDefault(); void ask(text); }} className="mb-4 flex gap-2">
           <input ref={inputRef} value={text} onChange={(e) => setText(e.target.value)} aria-label="Pregunta o petición"
@@ -375,6 +383,27 @@ function FolderHits({ hits, folderName }: { hits: Hit[]; folderName: string }) {
   return (
     <section className="mb-3">
       <Understood>En la carpeta «{folderName}»</Understood>
+      <ul className="space-y-2.5">
+        {hits.filter((h) => { const k = `${h.chunk.ref}|${h.chunk.section ?? ''}`; if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 5).map((h) => (
+          <li key={h.chunk.id} className="text-sm">
+            <a href={h.chunk.ref} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-700 hover:underline dark:text-zinc-200">
+              <BookOpen className="size-3.5" />{h.chunk.title}{h.chunk.section && <span className="font-normal text-zinc-400">› {h.chunk.section}</span>}
+              <ExternalLink className="size-3 text-zinc-400" />
+            </a>
+            <p className="mt-0.5 text-zinc-700 dark:text-zinc-300"><Marked text={h.snippet} marks={h.marks} /></p>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** Lo encontrado en la documentación del equipo (Confluence), con enlace a cada página. */
+function ConfluenceHits({ hits }: { hits: Hit[] }) {
+  const seen = new Set<string>();
+  return (
+    <section className="mb-3">
+      <Understood>En la documentación del equipo (Confluence)</Understood>
       <ul className="space-y-2.5">
         {hits.filter((h) => { const k = `${h.chunk.ref}|${h.chunk.section ?? ''}`; if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 5).map((h) => (
           <li key={h.chunk.id} className="text-sm">
