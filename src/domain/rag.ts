@@ -100,7 +100,8 @@ export function buildMessages(question: string, sources: RagSource[], today: str
     'Responde usando solo la información de las FUENTES; no añadas nada que no esté en ellas.',
     'Empieza por la respuesta directa en una frase completa y, si ayuda, añade una lista corta con los pasos o detalles.',
     'Al final de cada frase, pon entre corchetes el número de la fuente de donde sale, por ejemplo [1] o [2][3].',
-    'Las fuentes pueden ser tablas con columnas separadas por «|»: cada línea es una fila.',
+    'Las fuentes pueden ser tablas: cada línea es una fila y «|» separa sus columnas. No mezcles datos de filas distintas.',
+    'Comprueba que la fuente dice de verdad lo que se pregunta (por ejemplo, que la fila habla del login); si no, no la uses.',
     'Las fuentes pueden decirlo con otras palabras (alta = registro, entrar = login…): si alguna responde, úsala.',
     `Solo si ninguna fuente tiene nada que ver con la pregunta, responde: ${NOT_FOUND}`,
   ].join('\n');

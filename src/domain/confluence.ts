@@ -42,9 +42,40 @@ function decode(s: string): string {
 }
 
 /** Convierte un trozo de HTML en texto plano, conservando saltos de párrafo, listas y encabezados (como «#»). */
+/** Texto de una celda en una sola línea (en Confluence cada celda suele llevar sus propios párrafos). */
+const cellText = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/\|/g, '/').replace(/\s+/g, ' ').trim();
+
+/**
+ * Una tabla en texto: una línea por fila con las celdas separadas por « | ». Si la tabla tiene cabecera, cada celda lleva
+ * el nombre de su columna («Variable: eVar69 | Descripción: Estado del login»), así una fila se entiende sola aunque el
+ * trozo empiece a mitad de tabla y la IA no mezcla datos de filas distintas.
+ */
+function tableToText(table: string): string {
+  let headers: string[] | null = null;
+  const out: string[] = [];
+  for (const row of table.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)) {
+    const cells = [...row[1].matchAll(/<t([hd])\b[^>]*>([\s\S]*?)<\/t[hd]>/gi)].map((c) => ({ th: c[1].toLowerCase() === 'h', text: cellText(c[2]) }));
+    if (!cells.length || cells.every((c) => !c.text)) continue;
+    if (!headers && cells.every((c) => c.th)) {
+      headers = cells.map((c) => c.text);
+      continue;
+    }
+    out.push(headers && headers.length === cells.length
+      ? cells.map((c, i) => (c.text ? (headers![i] ? `${headers![i]}: ${c.text}` : c.text) : '')).filter(Boolean).join(' | ')
+      : cells.map((c) => c.text).join(' | '));
+  }
+  if (headers && !out.length) out.push(headers.join(' | '));
+  return `\n${out.join('\n')}\n`;
+}
+
 export function htmlToText(html: string): string {
   let s = html;
   s = s.replace(/<(script|style|head)\b[^>]*>[\s\S]*?<\/\1>/gi, ' ');
+  // Las tablas, de dentro afuera (una tabla dentro de una celda se queda como texto de esa celda).
+  for (let prev = ''; prev !== s;) {
+    prev = s;
+    s = s.replace(/<table\b[^>]*>((?:(?!<table\b)[\s\S])*?)<\/table>/gi, (_m, inner: string) => tableToText(inner));
+  }
   s = s.replace(/<li\b[^>]*>/gi, '\n- ');
   s = s.replace(/<h([1-6])\b[^>]*>/gi, (_m, n: string) => `\n${'#'.repeat(Number(n))} `);
   s = s.replace(/<br\s*\/?>/gi, '\n');
@@ -104,7 +135,8 @@ export function parseConfluencePage(html: string, fileName: string, base = CONFL
 
 /** Trozos buscables de una página (por apartados), con fuente `doc` y el id de la página como `ref`. */
 export function pageChunks(page: ConfluencePage): Chunk[] {
-  const secs = splitSections(page.body);
+  // Solo los títulos de verdad (#): en las tablas hay celdas en mayúsculas (COD_POSTEVAR6) que no son apartados.
+  const secs = splitSections(page.body, { markdownOnly: true });
   const parts = secs.length ? secs : [{ section: '', text: page.body }];
   return parts.map((s, i) => ({
     id: `doc:${page.id}:${i}`,

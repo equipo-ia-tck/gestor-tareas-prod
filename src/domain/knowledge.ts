@@ -72,7 +72,7 @@ const CHUNK_SIZE = 700;
  * Trocea un texto largo por apartados (títulos en Markdown, líneas cortas en mayúsculas o terminadas en «:») y párrafos,
  * en trozos de unos 700 caracteres que guardan su apartado.
  */
-export function splitSections(body: string): { section: string; text: string }[] {
+export function splitSections(body: string, opts: { markdownOnly?: boolean } = {}): { section: string; text: string }[] {
   const out: { section: string; text: string }[] = [];
   let section = '';
   let buf: string[] = [];
@@ -84,7 +84,7 @@ export function splitSections(body: string): { section: string; text: string }[]
   for (const raw of body.replace(/\r/g, '').split('\n')) {
     const line = raw.trimEnd();
     const heading = /^#{1,6}\s+(.+)$/.exec(line)?.[1]
-      ?? (line.length > 2 && line.length < 80 && (/^[^a-zà-ú]*[A-ZÁÉÍÓÚÑ][^a-zà-ú]*$/.test(line) || /^[^.]{3,70}:$/.test(line)) ? line.replace(/:$/, '') : null);
+      ?? (!opts.markdownOnly && line.length > 2 && line.length < 80 && (/^[^a-zà-ú]*[A-ZÁÉÍÓÚÑ][^a-zà-ú]*$/.test(line) || /^[^.]{3,70}:$/.test(line)) ? line.replace(/:$/, '') : null);
     if (heading) { flush(); section = heading.trim(); continue; }
     if (!line.trim()) {
       if (buf.join('\n').length >= CHUNK_SIZE) flush();

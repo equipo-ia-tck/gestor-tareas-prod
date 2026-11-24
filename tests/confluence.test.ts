@@ -125,3 +125,24 @@ describe('confluenceChunks (Asistente)', () => {
     expect(isConfluenceChunk({ ...c, id: 'doc:https://sp/x.docx:0' })).toBe(false);
   });
 });
+
+describe('tablas de Confluence', () => {
+  it('una línea por fila, con el nombre de la columna, aunque las celdas lleven párrafos', () => {
+    const html = `<p>Variables:</p><table class="confluenceTable"><tbody>
+      <tr><th class="confluenceTh"><p>Variable</p></th><th><p>Nombre</p></th><th><p>Descripción</p></th></tr>
+      <tr><td><p>eVar69</p></td><td><p>COD_LOGIN</p></td><td><div class="content-wrapper"><p>Estado del login</p><p>(logado / no logado)</p></div></td></tr>
+      <tr><td><p>eVar161</p></td><td><p>COD_POSTEVAR6</p></td><td><p>Categoría del pedido</p></td></tr>
+    </tbody></table>`;
+    const text = htmlToText(html);
+    expect(text).toContain('Variable: eVar69 | Nombre: COD_LOGIN | Descripción: Estado del login (logado / no logado)');
+    expect(text).toContain('Variable: eVar161 | Nombre: COD_POSTEVAR6 | Descripción: Categoría del pedido');
+  });
+
+  it('sin cabecera, celdas separadas por « | »; las celdas en mayúsculas no son apartados', () => {
+    const text = htmlToText('<table><tr><td>eVar69</td><td>LOGIN</td></tr></table>');
+    expect(text).toBe('eVar69 | LOGIN');
+    const chunks = pageChunks({ id: '1', space: 'A', title: 'T', path: '', url: 'u', body: 'Intro\nCOD_POSTEVAR6\neVar161 | Categoría' });
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0].section).toBeUndefined();
+  });
+});

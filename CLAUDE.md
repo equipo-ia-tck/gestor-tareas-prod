@@ -1264,6 +1264,10 @@ que los documentos (también los de CaixaBank) salgan del ordenador. RAG **local
   `cf:` y el enlace de la página como `ref`; salen en «En Confluence» y la IA las cita. Tarjeta «Documentación de
   Confluence» con el número de páginas. Sus vectores de significado se guardan en IndexedDB (`marea-ia`, `vectors`; ese
   export está aprobado para salir de CaixaBank) para no recalcular cientos de páginas cada sesión; los demás, solo en memoria.
+- **Tablas de Confluence** (`htmlToText`, `tableToText`): una línea por fila con «Columna: valor | …» (cabecera de `<th>`).
+  Antes cada celda (con sus `<p>`) quedaba en una línea suelta y las celdas en mayúsculas (`COD_POSTEVAR6`) se tomaban por
+  apartados, así la IA mezclaba filas («evar161 se usa para el login»). `pageChunks` usa `splitSections(…, { markdownOnly })`.
+  **Lo ya subido no cambia hasta volver a subir el export** con `npm run subir-docs`.
 
 ### Más adelante
 
