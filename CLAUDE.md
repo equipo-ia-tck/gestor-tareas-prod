@@ -1175,6 +1175,30 @@ de proveedor externo). Son documentos del cliente, así que **nada de su conteni
   la que se arrastró: en producción hay que arrastrarlo desde la app publicada.
 - **Power Automate** (se probó en esta rama: flujo que escribía `Gestor/sharepoint.json`, subida desde el Mac y migración 014): **quitado** al llegar la extensión, que lo hace al momento y sin guardar la lista en Supabase.
 
+## Fase 38: respuestas con IA en el Asistente (rama `dev`, nov 2026)
+
+Petición de la usuaria: que el Asistente responda de verdad («¿qué evar uso para el login?» → «la eVar69 [1]»), gratis y sin
+que los documentos (también los de CaixaBank) salgan del ordenador. RAG **local en el navegador**, sin servidor ni APIs.
+
+- **Opcional y de cada persona** (`asistente-ia` en localStorage; panel «Respuestas con IA», `AiPanel`): al activarlo se
+  descarga una vez **Qwen2.5-3B-Instruct** de WebLLM (~2 GB, en la caché del navegador; `q4f16` si la gráfica admite
+  `shader-f16`, si no `q4f32`). Necesita WebGPU (Chrome/Edge); sin él, `unsupported` y se queda la respuesta sin IA
+  (`extractAnswer`). «Borrar el modelo» lo quita de la caché.
+- **Motor** (`features/assistant/ai/engine.ts`): el modelo va en un worker (`llmWorker.ts`, `CreateWebWorkerMLCEngine`), en
+  cola y con «Parar» (`interruptGenerate`). Búsqueda por significado con transformers.js en otro worker (`embedWorker.ts`,
+  `Xenova/multilingual-e5-small` q8 en WASM, ~120 MB, prefijos `passage:`/`query:`): `indexChunks` calcula en segundo plano
+  los vectores de los trozos (sin tareas ni proyectos) y los guarda **solo en memoria** (`chunkKey`: id + huella del texto).
+- **Parte pura** (`domain/rag.ts`, tests en `tests/rag.test.ts`): `fuseRanks` (RRF de BM25 top 30 y significado top 20),
+  `pickContext` (hasta 8 trozos y ~6.500 caracteres, el modelo tiene 4.096 tokens), `buildMessages` (reglas cortas, **un
+  ejemplo de pregunta y respuesta**, que a un modelo de 3B le enseña el formato mejor que las reglas; sin él contestaba
+  «[eVar69]» o «no lo encuentro» teniendo la fuente) y `splitCitations`/`citedSources` para enlazar las citas [n].
+- **Pantalla**: solo las preguntas que van a buscar (`search`) las responde la IA (`AiAnswer`, morado, en streaming, con
+  las fuentes enlazadas debajo); las de tareas, hecho, personas y órdenes siguen igual. Si el modelo aún carga, espera y
+  responde. Las respuestas se quedan en memoria de la sesión.
+- **PWA**: `webllm.ts` reexporta lo que se usa de WebLLM para que vaya en su propio trozo; `globIgnores` deja fuera del
+  precache `llmWorker-*`, `embedWorker-*` y `webllm-*` (varios MB que solo descarga quien activa la IA).
+- Probado en el Mac (M, f16): carga en ~70 s la primera vez y ~25 s con el modelo en caché; ~5 s por respuesta.
+
 ### Más adelante
 
 - **Electron**: la app es web estática con rutas por hash y datos en IndexedDB, así que se puede empaquetar sin cambios

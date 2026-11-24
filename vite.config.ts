@@ -33,6 +33,8 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,webmanifest}'],
+        // La IA del Asistente (WebLLM, embeddings) pesa varios MB: solo la descarga quien la activa.
+        globIgnores: ['**/llmWorker-*.js', '**/embedWorker-*.js', '**/webllm-*.js'],
         // Rutas por hash: cualquier navegación sirve index.html desde la caché.
         navigateFallback: 'index.html',
         // La API del servidor (conectores) nunca se sirve desde la caché.

@@ -10,7 +10,7 @@ import { repo } from '../../data/services';
 import { doneSummary, extractAnswer, personSummary, saidSummary, scoreSentence, sentences, tasksSummary, topicsSummary } from '../../domain/answer';
 import { ASSISTANT_EXAMPLES, buildChunks, matchTasks, parseIntent, queryTasks, type Intent } from '../../domain/assistant';
 import { formatDay } from '../../domain/dates';
-import { SearchIndex, terms, type Hit } from '../../domain/knowledge';
+import { SearchIndex, terms, type Chunk, type Hit } from '../../domain/knowledge';
 import { mentionsOf, type Mention } from '../../domain/notes';
 import { peopleDirectory } from '../../domain/people';
 import { TOPIC_TYPE_ID, type ActivityEntry, type Task } from '../../domain/types';
@@ -25,6 +25,8 @@ import { extDocs, useExtension } from '../mslist/extension';
 import { currentItems, loadListaConfig, useLista } from '../mslist/listaStore';
 import { folderKey, folderState, loadFolderDocs, useFolderDocs } from './folderDocs';
 import { kqlFrom, summaryMarks } from './spDocs';
+import { AiAnswer, AiPanel, useAiEnabled } from './ai/AiAnswer';
+import { indexChunks, startLlm, useAi } from './ai/engine';
 
 type ActIntent = Extract<Intent, { kind: 'act' }>;
 
@@ -37,7 +39,7 @@ type Answer =
   | { kind: 'person'; person: string }
   | { kind: 'message'; text: string; tone: 'ok' | 'warn'; ids?: string[]; noteId?: string }
   | { kind: 'choose'; act: ActIntent; ids: string[] }
-  | { kind: 'search'; query: string; hits: Hit[] };
+  | { kind: 'search'; query: string; hits: Hit[]; /** Lo encontrado por palabras para la IA (más que lo que se enseña). */ rag?: Chunk[] };
 
 interface Entry { id: string; question: string; answer: Answer }
 
@@ -70,12 +72,23 @@ export function AssistantView() {
     const dir = peopleDirectory(tasks, notes, peopleCards).map((p) => p.name);
     return [...new Set([...dir, ...mentionables])];
   }, [tasks, notes, peopleCards, mentionables]);
-  const index = useMemo(() => new SearchIndex(buildChunks({
+  const chunks = useMemo(() => buildChunks({
     tasks, notes, projects: allProjects,
     docs: allDocs.map((d) => ({ id: d.url, title: d.name.replace(/\.[^.]+$/, ''), body: d.text })),
     listItems,
     people: people.map((name) => peopleCards.find((c) => c.name === name) ?? { name, role: '', notes: '', email: '' }),
-  })), [tasks, notes, allProjects, people, peopleCards, allDocs, listItems]);
+  }), [tasks, notes, allProjects, people, peopleCards, allDocs, listItems]);
+  const index = useMemo(() => new SearchIndex(chunks), [chunks]);
+  // IA local (si la persona la ha activado): se carga el modelo y se indexa por significado en segundo plano.
+  const [aiEnabled] = useAiEnabled();
+  const ai = useAi();
+  const aiOn = aiEnabled && ai.llm !== 'unsupported' && ai.llm !== 'error';
+  useEffect(() => { if (aiEnabled) void startLlm(); }, [aiEnabled]);
+  useEffect(() => {
+    if (!aiEnabled) return;
+    const t = setTimeout(() => void indexChunks(chunks), 1500);
+    return () => clearTimeout(t);
+  }, [aiEnabled, chunks]);
   const captureCtx = { today, projects: allProjects, people: mentionables, types: itemTypes, releases };
 
   const push = (question: string, answer: Answer) => {
@@ -145,7 +158,7 @@ export function AssistantView() {
           }
           return push(q, { kind: 'choose', act: intent, ids: found.slice(0, 10).map((t) => t.id) });
         }
-        case 'search': return push(q, { kind: 'search', query: q, hits: index.search(q, { limit: 14 }) });
+        case 'search': return push(q, { kind: 'search', query: q, hits: index.search(q, { limit: 14 }), rag: index.search(q, { limit: 30 }).map((h) => h.chunk) });
       }
     } catch (e) {
       push(q, { kind: 'message', tone: 'warn', text: (e as Error).message });
@@ -258,7 +271,10 @@ export function AssistantView() {
         const source = answer && sourceOf(answer.hit, sources.find((c) => c === folderOf(answer.hit.chunk.ref))?.folderName);
         return (
           <>
-            {answer && source && <Lead text={answer.sentence.text} marks={answer.sentence.marks} source={source.label} href={source.href} external={source.external} />}
+            {aiOn
+              ? <AiAnswer entryId={e.id} query={a.query} keywordHits={a.rag ?? a.hits.map((h) => h.chunk)} chunks={chunks} today={today}
+                  onTask={(id) => { const t = taskById.get(id); if (t) editTask(t); }} />
+              : answer && source && <Lead text={answer.sentence.text} marks={answer.sentence.marks} source={source.label} href={source.href} external={source.external} />}
             {sources.map((c) => {
               const mine = local.filter((h) => folderOf(h.chunk.ref) === c);
               return mine.length > 0 && <FolderHits key={c.id} hits={mine} folderName={c.folderName} />;
@@ -277,7 +293,9 @@ export function AssistantView() {
       <div className="min-w-0">
         <ViewHeader
           title={<span className="inline-flex items-center gap-2"><MessagesSquare className="size-5 text-indigo-600" />Asistente</span>}
-          subtitle="Pregunta o pide cosas sobre tus tareas, notas, personas, la Lista y la documentación del equipo en SharePoint. Sin IA: entiende frases como las de los ejemplos y, si no, busca en todo."
+          subtitle={aiOn
+            ? 'Pregunta o pide cosas sobre tus tareas, notas, personas, la Lista y la documentación del equipo en SharePoint. Las preguntas abiertas las responde la IA de tu ordenador con lo que encuentra.'
+            : 'Pregunta o pide cosas sobre tus tareas, notas, personas, la Lista y la documentación del equipo en SharePoint. Entiende frases como las de los ejemplos y, si no, busca en todo. Activa las respuestas con IA en el panel.'}
         />
         <form onSubmit={(e) => { e.preventDefault(); void ask(text); }} className="mb-4 flex gap-2">
           <input ref={inputRef} value={text} onChange={(e) => setText(e.target.value)} aria-label="Pregunta o petición"
@@ -301,7 +319,10 @@ export function AssistantView() {
           ))}
         </div>
       </div>
-      <SharePointPanel />
+      <div className="space-y-4">
+        <AiPanel />
+        <SharePointPanel />
+      </div>
     </div>
   );
 }
