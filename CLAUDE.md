@@ -1171,6 +1171,32 @@ de proveedor externo). Son documentos del cliente, así que **nada de su conteni
   la que se arrastró: en producción hay que arrastrarlo desde la app publicada.
 - **Power Automate** (se probó en esta rama: flujo que escribía `Gestor/sharepoint.json`, subida desde el Mac y migración 014): **quitado** al llegar la extensión, que lo hace al momento y sin guardar la lista en Supabase.
 
+## Fase 38: conector MCP de Marea para Claude (rama `mcp-marea`, nov 2026)
+
+Petición de la usuaria: que Claude (de pago o gratuito, navegador o app) tenga el contexto de Marea, Confluence y Notion. Copilot
+descartado (sin licencia de M365 Copilot). Notion **no** pasa por Marea: cada persona conecta el conector oficial de Notion en
+Claude. Confluence (export mensual, aprobado por José y Mati) va en la fase 2. Fase 1 = solo lectura.
+
+- **Función** `api/mcp.ts` (Vercel, MCP «Streamable HTTP» sin sesiones, `WebStandardStreamableHTTPServerTransport` de
+  `@modelcontextprotocol/sdk`, respuestas JSON). En Claude: Ajustes → Conectores → Añadir conector personalizado →
+  `https://gestor-tareas-prod.vercel.app/api/mcp`. Se carga con Node sin empaquetar: los imports de valores de `servidor/mcp.ts`
+  y `src/domain/mcpTools.ts` (y de lo que importan: `knowledge`, `notes`, `projects`, `text`, `dates`) llevan `.ts`.
+- **Entrar**: OAuth 2.1 de **Supabase Auth** (servidor OAuth de Supabase, con registro dinámico de clientes). Sin sesión, 401 con
+  `WWW-Authenticate: Bearer resource_metadata=…`; `/.well-known/oauth-protected-resource` (rewrite a `?route=prm`) apunta a
+  `<supabase>/auth/v1`. La página de permiso es `/oauth-consent` de la app (`OAuthConsent.tsx`: `getAuthorizationDetails`,
+  `approveAuthorization`/`denyAuthorization`; dentro de `AuthGate`). Va en la raíz (no `/oauth/consent`) porque los assets son
+  relativos (`base: './'`). El token es una sesión normal de Supabase: las reglas RLS deciden qué se ve, igual que en la app.
+  **En Supabase** (una vez): Authentication → OAuth Server → activar, «Authorization path» = `/oauth-consent` y permitir el
+  registro dinámico de clientes.
+- **Datos** (`servidor/mcp.ts`, `loadMarea`): `records` (tareas, notas, proyectos, tipos; personas y registro solo los propios),
+  `overlays` (Mi día) y `profiles` (nombres), con la sesión de la persona; 30 s en memoria. Hoy = día de Madrid (`madridToday`).
+- **Herramientas** (`src/domain/mcpTools.ts`, funciones puras con tests en `tests/mcp.test.ts`, también una ida y vuelta del
+  protocolo): `buscar` (BM25 de `knowledge.ts`), `listar_tareas` (persona, proyecto con subproyectos, estado, periodo, tipo,
+  texto, solo mías), `ver_tarea` (id, ID de Rally o título), `ver_nota`, `ver_persona` (temas, tareas, quién dijo qué,
+  reuniones), `ver_proyecto`, `listar_proyectos` y `mi_registro`. Todas `readOnlyHint`. Devuelven texto con enlaces a Marea y
+  a Rally para que Claude cite. Las instrucciones del servidor (`MCP_INSTRUCTIONS`) llevan el glosario (US, TS, DE…).
+- Privacidad: sin plan Team de Claude, cada persona debe desactivar en Claude el uso de sus conversaciones para entrenar.
+
 ### Más adelante
 
 - **Electron**: la app es web estática con rutas por hash y datos en IndexedDB, así que se puede empaquetar sin cambios
