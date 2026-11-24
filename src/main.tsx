@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './app/App';
 import { AuthGate } from './app/AuthGate';
+import { isConsentPage, OAuthConsent } from './app/OAuthConsent';
 import { initSync } from './data/sync';
 import { captureInstallPrompt } from './app/install';
 import { requestPersistentStorage } from './data/backup';
@@ -24,7 +25,7 @@ registerSW({ immediate: true });
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <AuthGate>
-      <App />
+      {isConsentPage() ? <OAuthConsent /> : <App />}
     </AuthGate>
   </StrictMode>,
 );

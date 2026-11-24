@@ -10,6 +10,7 @@ import { SpacesCard } from './SpacesCard';
 import { OutlookSettings } from '../calendar/Meetings';
 import { AdminCard } from './AdminCard';
 import { ScreensCard } from './ScreensCard';
+import { DocsCard } from '../docs/DocsCard';
 import type { AutosaveState } from '../../data/fsAutosave';
 import { ViewHeader } from '../views/ViewHeader';
 import { useInstall } from '../../app/install';
@@ -70,6 +71,7 @@ export function SettingsView() {
 
       {isAdmin && <AdminCard />}
       {isAdmin && <ScreensCard />}
+      {isAdmin && <DocsCard />}
 
       <SpacesCard />
 
