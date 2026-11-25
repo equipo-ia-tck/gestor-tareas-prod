@@ -85,7 +85,7 @@ export function SharePointCopy({ files, onClose }: { files: File[]; onClose: () 
   const names = files.length === 1 ? `«${files[0].name}»` : `los ${files.length} archivos`;
 
   return createPortal(
-    <div data-popover className="fixed inset-0 z-[60] flex items-start justify-center bg-black/30 px-4 pt-[10vh] dark:bg-black/50"
+    <div data-popover className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 p-4 dark:bg-black/50"
       onMouseDown={(e) => { if (e.target === e.currentTarget && !progress) onClose(); }}>
       <div role="dialog" aria-modal="true" aria-label="Subir también a SharePoint"
         className="w-full max-w-xl rounded-xl border border-zinc-200 bg-white p-5 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
