@@ -238,8 +238,9 @@ function BoardCard({ f, onUpdate }: { f: Feedback; onUpdate: (patch: { status?: 
   const [open, setOpen] = useState(false);
   const Icon = KIND_ICON[f.kind];
   return (
-    <li draggable onDragStart={(e) => { e.dataTransfer.setData(FEEDBACK_MIME, f.id); e.dataTransfer.effectAllowed = 'move'; }}
-      onClick={(e) => { if (!(e.target as HTMLElement).closest('a, button, select')) setOpen(!open); }}
+    // Desplegada no se arrastra: así se puede escribir y seleccionar texto en la respuesta.
+    <li draggable={!open} onDragStart={(e) => { e.dataTransfer.setData(FEEDBACK_MIME, f.id); e.dataTransfer.effectAllowed = 'move'; }}
+      onClick={(e) => { if (!(e.target as HTMLElement).closest('a, button, select, textarea, input')) setOpen(!open); }}
       className="shrink-0 cursor-grab rounded-lg border border-zinc-200 bg-white p-2.5 text-sm shadow-sm [overflow-wrap:anywhere] hover:shadow-md active:cursor-grabbing dark:border-zinc-700 dark:bg-zinc-900">
       <div className="mb-1 flex flex-wrap items-center gap-1.5 text-[11px]">
         <span className={`inline-flex items-center gap-1 rounded-full px-1.5 py-px font-medium ${KIND_COLOR[f.kind]}`}><Icon className="size-3" />{kindLabel(f.kind)}</span>
