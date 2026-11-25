@@ -1380,6 +1380,11 @@ que los documentos (también los de CaixaBank) salgan del ordenador. RAG **local
   cada uno lee solo las suyas por RLS; se borran a los 30 días. El Asistente pregunta cada 3 s (hasta 15 min, y 1 min más
   tras llegar por si Claude la corrige) y la pinta con `Markdown` en «Respuesta de Claude»; si no llega, «Volver a mirar» o
   pedirle a Claude «guárdala en Marea». La primera vez Claude pide permiso para la herramienta («Permitir siempre»).
+  El botón sale arriba de cada respuesta del Asistente que busca. **Al llegar la respuesta, Marea cierra la ventana de Claude
+  que abrió** (`closeClaude`: solo la suya, abierta con `window.open`; la conversación queda en el historial de Claude, enlace
+  «abrirla») y se vuelve a Marea; se puede desactivar en la tarjeta de Claude (`claude-close-on-answer`). Enviar la pregunta
+  sola no: claude.ai solo admite el texto ya escrito (`?q=`) y pulsar Enter por la persona con un script iría contra sus
+  condiciones; lo totalmente automático sería la API de Anthropic, de pago.
 
 ### Más adelante
 
