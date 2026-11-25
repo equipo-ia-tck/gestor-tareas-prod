@@ -62,33 +62,50 @@ export const FEEDBACK_IMPACTS: { id: FeedbackImpact; label: string; priority: Pr
 ];
 
 /** Partes de la web, en el orden de la barra lateral. */
-export const FEEDBACK_AREAS: { id: string; label: string }[] = [
+/**
+ * Partes de la web para el feedback, en el orden de la barra lateral. `screen` es su pantalla del catálogo de Ajustes →
+ * Pantallas (`domain/screens.ts`): si la persona no la tiene activada, no sale en el formulario. Sin `screen`, siempre
+ * sale (Hoy, la ficha, Ajustes…); `admin`, solo para administradores.
+ */
+export const FEEDBACK_AREAS: { id: string; label: string; screen?: string; admin?: boolean }[] = [
   { id: 'today', label: 'Hoy y Mi día' },
-  { id: 'inbox', label: 'Bandeja y captura rápida' },
-  { id: 'board', label: 'Tablero' },
-  { id: 'calendar', label: 'Calendario y Outlook' },
-  { id: 'notes', label: 'Notas y actas' },
-  { id: 'rally', label: 'Rally' },
-  { id: 'projects', label: 'Proyectos' },
-  { id: 'people', label: 'Personas y grupos' },
-  { id: 'search', label: 'Búsqueda' },
-  { id: 'review', label: 'Revisión semanal y Registro' },
+  { id: 'inbox', label: 'Bandeja y captura rápida', screen: 'inbox' },
+  { id: 'board', label: 'Tablero', screen: 'board' },
+  { id: 'calendar', label: 'Calendario y Outlook', screen: 'calendar' },
+  { id: 'notes', label: 'Notas y actas', screen: 'notes' },
+  { id: 'asistente', label: 'Asistente', screen: 'asistente' },
+  { id: 'rally', label: 'Rally', screen: 'rally' },
+  { id: 'lista', label: 'Lista', screen: 'lista' },
+  { id: 'sharepoint', label: 'SharePoint', screen: 'sharepoint' },
+  { id: 'projects', label: 'Proyectos', screen: 'projects' },
+  { id: 'people', label: 'Personas y grupos', screen: 'people' },
+  { id: 'search', label: 'Búsqueda', screen: 'search' },
+  { id: 'review', label: 'Revisión semanal', screen: 'review' },
+  { id: 'log', label: 'Registro', screen: 'log' },
+  { id: 'feedback', label: 'Feedback y Mis solicitudes' },
+  { id: 'analytics', label: 'Analítica', admin: true },
   { id: 'task', label: 'Ficha de una tarea' },
   { id: 'settings', label: 'Ajustes' },
   { id: 'account', label: 'Acceso, login y usuarios' },
   { id: 'other', label: 'Otra / en general' },
 ];
 
-/** Parte de la web de una pantalla (para proponerla sola en el formulario). */
-export function areaForHash(hash: string, taskOpen = false): string {
+/** Las partes de la web que ve esa persona (las pantallas ocultas, fuera; Analítica, solo administradores). */
+export const feedbackAreas = (hidden: readonly string[], isAdmin: boolean) =>
+  FEEDBACK_AREAS.filter((a) => (!a.screen || !hidden.includes(a.screen)) && (!a.admin || isAdmin));
+
+/** Parte de la web de una pantalla (para proponerla sola en el formulario); si esa persona no la ve, «Otra». */
+export function areaForHash(hash: string, taskOpen = false, hidden: readonly string[] = [], isAdmin = true): string {
   if (taskOpen) return 'task';
   const view = hash.replace(/^#\/?/, '').split('/')[0];
   const map: Record<string, string> = {
     '': 'today', today: 'today', inbox: 'inbox', board: 'board', all: 'board', calendar: 'calendar', week: 'calendar',
-    notes: 'notes', rally: 'rally', project: 'projects', projects: 'projects', people: 'people', person: 'people',
-    search: 'search', review: 'review', log: 'review', settings: 'settings',
+    notes: 'notes', asistente: 'asistente', rally: 'rally', lista: 'lista', sharepoint: 'sharepoint', project: 'projects',
+    projects: 'projects', people: 'people', person: 'people', search: 'search', review: 'review', log: 'log',
+    feedback: 'feedback', analytics: 'analytics', settings: 'settings',
   };
-  return map[view] ?? 'other';
+  const area = map[view] ?? 'other';
+  return feedbackAreas(hidden, isAdmin).some((a) => a.id === area) ? area : 'other';
 }
 
 export const kindLabel = (k: FeedbackKind) => FEEDBACK_KINDS.find((x) => x.id === k)?.label ?? 'Otro';

@@ -1,11 +1,12 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { track } from '../usage/track';
 import { createPortal } from 'react-dom';
 import { MessageSquarePlus, X } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
 import { useToast } from '../../components/Toast';
-import { sync } from '../../data/sync';
-import { areaForHash, FEEDBACK_AREAS, FEEDBACK_IMPACTS, FEEDBACK_KINDS, type FeedbackImpact, type FeedbackKind } from '../../domain/feedback';
+import { sync, useSync } from '../../data/sync';
+import { HIDDEN_FOR_ALL } from '../../domain/screens';
+import { areaForHash, feedbackAreas, FEEDBACK_IMPACTS, FEEDBACK_KINDS, type FeedbackImpact, type FeedbackKind } from '../../domain/feedback';
 
 /**
  * Botón flotante (abajo a la derecha, en todas las pantallas) para contar que algo no funciona, proponer mejoras o
@@ -35,7 +36,10 @@ const Req = () => <span className="text-red-500"> *</span>;
 function FeedbackDialog({ taskOpen, onClose, onSent }: { taskOpen: boolean; onClose: () => void; onSent: () => void }) {
   const toast = useToast();
   const [kind, setKind] = useState<Exclude<FeedbackKind, 'other'>>('bug');
-  const [area, setArea] = useState(() => areaForHash(window.location.hash, taskOpen));
+  const { hiddenScreens, isAdmin } = useSync();
+  const hidden = useMemo(() => [...hiddenScreens, ...HIDDEN_FOR_ALL], [hiddenScreens]);
+  const areas = useMemo(() => feedbackAreas(hidden, isAdmin), [hidden, isAdmin]);
+  const [area, setArea] = useState(() => areaForHash(window.location.hash, taskOpen, hidden, isAdmin));
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [impact, setImpact] = useState<FeedbackImpact | null>(null);
@@ -88,7 +92,7 @@ function FeedbackDialog({ taskOpen, onClose, onSent }: { taskOpen: boolean; onCl
 
           <Field title={<>¿De qué parte de la web?<Req /></>}>
             <select value={area} onChange={(e) => setArea(e.target.value)} className={field} required>
-              {FEEDBACK_AREAS.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
+              {areas.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
             </select>
           </Field>
 

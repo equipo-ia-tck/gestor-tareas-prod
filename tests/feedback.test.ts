@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { areaForHash, browserSummary, feedbackPriority, feedbackTaskTitle, moveFeedback, sortFeedback } from '../src/domain/feedback';
+import { areaForHash, feedbackAreas, browserSummary, feedbackPriority, feedbackTaskTitle, moveFeedback, sortFeedback } from '../src/domain/feedback';
 
 describe('feedback', () => {
   it('orden de prioridad: lo sin ordenar arriba (el más nuevo primero) y después por posición', () => {
@@ -38,6 +38,21 @@ describe('feedback', () => {
     expect(areaForHash('')).toBe('today');
     expect(areaForHash('#/raro')).toBe('other');
     expect(areaForHash('#/board', true)).toBe('task');
+    expect(areaForHash('#/sharepoint')).toBe('sharepoint');
+    expect(areaForHash('#/log')).toBe('log');
+  });
+
+  it('el formulario solo ofrece las pantallas que ve esa persona', () => {
+    const ids = (hidden: string[], admin: boolean) => feedbackAreas(hidden, admin).map((a) => a.id);
+    expect(ids([], true)).toEqual(expect.arrayContaining(['asistente', 'lista', 'sharepoint', 'log', 'analytics']));
+    const user = ids(['rally', 'lista', 'asistente'], false);
+    expect(user).not.toEqual(expect.arrayContaining(['rally']));
+    expect(user).not.toContain('lista');
+    expect(user).not.toContain('analytics');
+    expect(user).toEqual(expect.arrayContaining(['today', 'board', 'task', 'settings', 'other']));
+    // Si está en una pantalla que no ve (o no existe), se propone «Otra».
+    expect(areaForHash('#/rally', false, ['rally'], false)).toBe('other');
+    expect(areaForHash('#/analytics', false, [], false)).toBe('other');
     expect([feedbackPriority({ impact: 'blocking' }), feedbackPriority({ impact: 'minor' }), feedbackPriority({ impact: null })]).toEqual([1, 3, 4]);
   });
 });

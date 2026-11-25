@@ -804,7 +804,8 @@ En Vercel no hay servidor que lea la carpeta de OneDrive del Mac, así que el Ma
 
 - **Formulario** (migración `007_feedback_formulario.sql`, después de 006; rama `feedback-formulario`): pestañas Algo no
   funciona · Mejora · Idea nueva · Duda (`bug | improvement | idea | question`; `other` queda para lo antiguo), parte de la
-  web obligatoria (`FEEDBACK_AREAS`, propuesta sola con `areaForHash`, o «Ficha de una tarea» si el panel está abierto),
+  web obligatoria (`FEEDBACK_AREAS`, propuesta sola con `areaForHash`, o «Ficha de una tarea» si el panel está abierto; solo las
+  pantallas que esa persona ve, `feedbackAreas` con `hiddenScreens` de Ajustes → Pantallas, y Analítica solo para administradores),
   frase obligatoria (`title`), detalle opcional, «¿Cuánto te afecta?» solo en Algo no funciona (`impact`, que da la
   prioridad de la tarea: !1 · !2 · !3) y tamaño de pantalla. Función nueva `send_feedback_form` (la vieja `send_feedback`
   sigue para las pestañas abiertas con la versión anterior). Sin capturas, a propósito. En Más → Feedback: frase en
