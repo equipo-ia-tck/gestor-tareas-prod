@@ -852,6 +852,14 @@ En Vercel no hay servidor que lea la carpeta de OneDrive del Mac, así que el Ma
   solicitudes» (`MyFeedback`: Todas/Abiertas, estado, respuesta y último cambio) y sale en Más con ese nombre; el
   formulario del botón enlaza allí.
 
+- **Orden de prioridad** (migración `017_feedback_orden.sql`, después de 016): columna `rank` (1 = lo primero; null = sin
+  ordenar) y `admin_order_feedback(ids)`, que pone a cada id su posición y no cambia `updated_at`. En Lista y Tablero el
+  feedback sale en ese orden (`sortFeedback`: lo sin ordenar arriba, el más nuevo primero; después por `rank`). En la Lista
+  se ordena con el asa (solo el asa arrastra, para poder escribir la respuesta) o con las flechas; en el Tablero, soltando
+  encima de otra tarjeta (mitad de arriba = antes; si viene de otra columna, además cambia de estado). `moveFeedback`
+  recoloca sobre la lista entera, así ordenar con filtros no desordena lo que no se ve. El número `#n` es la posición en lo
+  que se ve (lista filtrada o columna). Quien envió el feedback no ve el orden.
+
 ## Fase 31: pantalla Rally como la lista de Rally (rama `rally-como-rally`)
 
 Petición de la usuaria (nov 2026): parecerse a la «React Custom List» del dashboard de Owners de etiquetado, que el equipo

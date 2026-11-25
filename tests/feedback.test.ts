@@ -1,7 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { areaForHash, browserSummary, feedbackPriority, feedbackTaskTitle } from '../src/domain/feedback';
+import { areaForHash, browserSummary, feedbackPriority, feedbackTaskTitle, moveFeedback, sortFeedback } from '../src/domain/feedback';
 
 describe('feedback', () => {
+  it('orden de prioridad: lo sin ordenar arriba (el más nuevo primero) y después por posición', () => {
+    const f = (id: string, rank: number | null, createdAt: string) => ({ id, rank, createdAt });
+    const items = [f('a', 2, '2026-11-01'), f('b', null, '2026-11-02'), f('c', 1, '2026-11-03'), f('d', null, '2026-11-05')];
+    expect(sortFeedback(items).map((x) => x.id)).toEqual(['d', 'b', 'c', 'a']);
+  });
+
+  it('mover uno antes o después de otro, sin perder ninguno', () => {
+    const o = ['a', 'b', 'c', 'd'].map((id) => ({ id }));
+    expect(moveFeedback(o, 'd', 'b', 'before')).toEqual(['a', 'd', 'b', 'c']);
+    expect(moveFeedback(o, 'a', 'c', 'after')).toEqual(['b', 'c', 'a', 'd']);
+    expect(moveFeedback(o, 'a', 'a', 'after')).toEqual(['a', 'b', 'c', 'd']);
+    expect(moveFeedback(o, 'x', 'a', 'before')).toEqual(['a', 'b', 'c', 'd']);
+  });
+
   it('navegador en pocas palabras', () => {
     expect(browserSummary('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36')).toBe('Chrome 142 · macOS');
     expect(browserSummary('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36 Edg/142.0.0.0')).toBe('Edge 142 · Windows');

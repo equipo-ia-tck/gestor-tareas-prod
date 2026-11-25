@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
  * Prueba la base de datos de Supabase (supabase/migrations) en un Postgres de verdad (PGlite), imitando
  * lo mínimo de Supabase: roles anon/authenticated y auth.uid()/auth.email() de la sesión.
  */
-const MIGRATION = ['001_equipo.sql', '002_baja_y_contrasenas.sql', '003_alta_sin_invitacion.sql', '004_claves_conectores.sql', '005_calendario_subido.sql', '006_feedback.sql', '007_feedback_formulario.sql', '008_feedback_bloqueado.sql', '009_analitica.sql', '010_analitica_kpis.sql', '011_rally_herramienta.sql', '012_calendario_ics.sql', '013_pantallas.sql', '015_respuestas_claude.sql', '016_mis_solicitudes.sql'].map((f) => readFileSync(`supabase/migrations/${f}`, 'utf8')).join('\n');
+const MIGRATION = ['001_equipo.sql', '002_baja_y_contrasenas.sql', '003_alta_sin_invitacion.sql', '004_claves_conectores.sql', '005_calendario_subido.sql', '006_feedback.sql', '007_feedback_formulario.sql', '008_feedback_bloqueado.sql', '009_analitica.sql', '010_analitica_kpis.sql', '011_rally_herramienta.sql', '012_calendario_ics.sql', '013_pantallas.sql', '015_respuestas_claude.sql', '016_mis_solicitudes.sql', '017_feedback_orden.sql'].map((f) => readFileSync(`supabase/migrations/${f}`, 'utf8')).join('\n');
 let db: PGlite;
 
 const SUPABASE_STUB = `
@@ -362,6 +362,16 @@ describe('base de datos del equipo en Supabase', () => {
     expect(after.replyAt).toBeTruthy();
     expect((await rpc(marta, 'admin_reply_feedback', { p_id: mine.id, p_reply: '' }) as Record<string, unknown>).replyAt).toBeNull();
     expect((await rpc(luis, 'my_feedback') as Record<string, unknown>[]).map((f) => f.title)).toEqual(['Otra cosa']);
+
+    // Orden de prioridad (017): solo administradores; no toca la fecha del último cambio.
+    const before = (await rpc(marta, 'admin_feedback') as { id: string; title: string; rank: number | null; updatedAt: string }[]);
+    expect(before.every((f) => f.rank === null)).toBe(true);
+    await expect(rpc(ana, 'admin_order_feedback', { p_ids: before.map((f) => f.id) })).rejects.toThrow(/administra/);
+    await rpc(marta, 'admin_order_feedback', { p_ids: [...before].reverse().map((f) => f.id) });
+    const after2 = (await rpc(marta, 'admin_feedback') as typeof before);
+    expect(Object.fromEntries(after2.map((f) => [f.title, f.rank]))).toEqual({ 'Filtrar por persona': 1, 'Otra cosa': 2 });
+    expect(after2.map((f) => f.updatedAt).sort()).toEqual(before.map((f) => f.updatedAt).sort());
+    expect((await rpc(ana, 'my_feedback') as Record<string, unknown>[])[0]).not.toHaveProperty('rank');
   });
 
   it('analítica: cada uno apunta lo suyo, solo los administradores lo leen y sin textos en la pantalla', async () => {

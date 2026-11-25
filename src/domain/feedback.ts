@@ -30,6 +30,8 @@ export interface Feedback {
   /** Respuesta del administrador, que ve quien lo envió (migración 016; vacío = sin respuesta). */
   reply?: string;
   replyAt?: string | null;
+  /** Orden de prioridad que ponen los administradores (1 = lo primero; null = sin ordenar; migración 017). */
+  rank?: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -116,6 +118,35 @@ export function feedbackTaskTitle(f: Pick<Feedback, 'kind' | 'title' | 'body'>):
 /** Prioridad de la tarea: la del impacto (solo si algo no funciona); si no, la normal. */
 export const feedbackPriority = (f: Pick<Feedback, 'impact'>): Priority =>
   FEEDBACK_IMPACTS.find((x) => x.id === f.impact)?.priority ?? 4;
+
+/**
+ * Orden de prioridad: primero lo que aún no se ha ordenado (el más nuevo arriba, para que se vea) y después por la
+ * posición que han puesto los administradores.
+ */
+export function sortFeedback<T extends Pick<Feedback, 'rank' | 'createdAt'>>(items: T[]): T[] {
+  return [...items].sort((a, b) => {
+    const ra = a.rank ?? null, rb = b.rank ?? null;
+    if (ra == null || rb == null) {
+      if (ra != null) return 1;
+      if (rb != null) return -1;
+      return b.createdAt.localeCompare(a.createdAt);
+    }
+    return ra - rb || b.createdAt.localeCompare(a.createdAt);
+  });
+}
+
+/**
+ * Nuevo orden completo (ids) al mover `id` justo antes o después de `target`. Se trabaja sobre la lista entera ya
+ * ordenada, así mover algo dentro de una lista filtrada (o de una columna del tablero) no desordena lo que no se ve.
+ */
+export function moveFeedback(ordered: Pick<Feedback, 'id'>[], id: string, target: string, place: 'before' | 'after'): string[] {
+  const ids = ordered.map((f) => f.id).filter((x) => x !== id);
+  if (id === target || !ordered.some((f) => f.id === id)) return ordered.map((f) => f.id);
+  const at = ids.indexOf(target);
+  if (at < 0) return ordered.map((f) => f.id);
+  ids.splice(place === 'before' ? at : at + 1, 0, id);
+  return ids;
+}
 
 /** Abierto = sin cerrar: nuevo, en curso o bloqueado. */
 export const isOpenFeedback = (f: Feedback) => f.status === 'new' || f.status === 'doing' || f.status === 'blocked';
