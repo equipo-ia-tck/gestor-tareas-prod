@@ -19,7 +19,6 @@ import { WeekView } from '../views/WeekView';
 import { MeetingItem } from './Meetings';
 import { EXTRA_COLOR, hasCalendar, hasExtra, loadOutlook, useMeetings, useOutlook } from './outlook';
 import { WeekAgenda } from './WeekAgenda';
-import { Modal } from '../../components/Modal';
 import { looksCapped, OUTLOOK_CAP } from '../../domain/outlookEvents';
 
 const WEEKDAYS = ['lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom'];
@@ -108,9 +107,9 @@ export function CalendarView({ initial }: { initial?: 'week' | 'month' }) {
   const capped = !!outlook.events && looksCapped(outlook.events.length);
 
   return (
-    <div className="flex h-full overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+    <div className="relative flex h-full overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
       {capped && capNotice && (
-        <Modal title="Faltan reuniones en tu calendario" onClose={() => setCapNotice(false)}>
+        <CapNotice onClose={() => setCapNotice(false)}>
           <div className="space-y-3 text-sm">
             <p>
               Tienes <b>{outlook.events!.length} reuniones</b> subidas, justo el máximo que deja pasar tu flujo de Power Automate
@@ -127,7 +126,7 @@ export function CalendarView({ initial }: { initial?: 'week' | 'month' }) {
                 className="rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-500">Entendido</button>
             </div>
           </div>
-        </Modal>
+        </CapNotice>
       )}
       {sidebar && (
         <aside className="hidden w-60 shrink-0 flex-col gap-5 overflow-y-auto border-r border-zinc-200 bg-zinc-50/70 p-3 lg:flex dark:border-zinc-800 dark:bg-zinc-900/40">
@@ -375,6 +374,25 @@ function DayCell({ day, inMonth, tasks, releases, meetings }: {
           </li>
         )}
       </ul>
+    </div>
+  );
+}
+
+/** Ventana centrada en el propio calendario (no en toda la pantalla), con fondo oscurecido solo sobre él. Esc o clic fuera la cierran. */
+function CapNotice({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  return (
+    <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/30 p-4 dark:bg-black/50"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div role="dialog" aria-modal="true" aria-labelledby="cap-notice-title"
+        className="w-full max-w-lg rounded-xl border border-zinc-200 bg-white p-5 shadow-2xl dark:border-zinc-700 dark:bg-zinc-900">
+        <h2 id="cap-notice-title" className="mb-3 font-semibold">Faltan reuniones en tu calendario</h2>
+        {children}
+      </div>
     </div>
   );
 }
