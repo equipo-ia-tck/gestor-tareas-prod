@@ -305,6 +305,7 @@ export function AssistantView() {
         const inv = inventoryFor(chunks, a.query);
         return (
           <Collapsible collapsed={e.id !== latestAiId}>
+            <AskClaudeButton entryId={e.id} question={a.query} />
             {inv ? <InventoryAnswer inv={inv} /> : aiOn
               ? <AiAnswer entryId={e.id} query={a.query} keywordHits={a.rag ?? a.hits.map((h) => h.chunk)} chunks={chunks} today={today}
                   onTask={(id) => { const t = taskById.get(id); if (t) editTask(t); }}
@@ -318,7 +319,6 @@ export function AssistantView() {
             {fromList.length > 0 && <ListHits hits={fromList} />}
             {sources.map((c, i) => <SharePointHits key={c.id} source={c} query={a.query} skip={new Set(local.map((h) => h.chunk.ref))} lead={!answer && i === 0} />)}
             <SearchAnswer hits={a.hits.filter((h) => h.chunk.source !== 'doc' && h.chunk.source !== 'list')} list={list} />
-            <AskClaudeButton entryId={e.id} question={a.query} />
           </Collapsible>
         );
       }

@@ -149,26 +149,26 @@ function ClaudeReply({ entryId, question }: { entryId: string; question: string 
   );
 }
 
-/** Botón pequeño, debajo de cada respuesta del Asistente, y la respuesta de Claude cuando llega. */
+/** Botón arriba de cada respuesta del Asistente (para que se vea) y, debajo, la respuesta de Claude cuando llega. */
 export function AskClaudeButton({ entryId, question }: { entryId: string; question: string }) {
   const toast = useToast();
   useReplies();
   const r = replies.get(entryId);
   return (
-    <>
-    {r && <ClaudeReply entryId={entryId} question={question} />}
-    <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-zinc-100 pt-2 text-xs dark:border-zinc-800">
-      <span className="text-zinc-400">{r ? '¿Otra vez?' : '¿Necesitas que lo piense más?'}</span>
-      <button type="button" onClick={() => ask(entryId, question)} title="Abre Claude al lado con esta pregunta; la respuesta vuelve aquí"
-        className="inline-flex items-center gap-1 rounded-md border border-orange-200 bg-orange-50 px-2 py-0.5 font-medium text-orange-800 hover:bg-orange-100 dark:border-orange-900 dark:bg-orange-950/40 dark:text-orange-200 dark:hover:bg-orange-900/40">
-        <MessageSquareShare className="size-3.5" />Preguntar a Claude
-      </button>
-      <button type="button" onClick={() => { void navigator.clipboard.writeText(claudePrompt(question)).then(() => toast('Pregunta copiada para Claude')); }}
-        title="Copiar la pregunta para pegarla en Claude (app de escritorio o panel de Chrome)" className="rounded p-0.5 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200">
-        <Copy className="size-3.5" />
-      </button>
+    <div className="mb-3">
+      <div className="flex flex-wrap items-center gap-1.5 text-xs">
+        <button type="button" onClick={() => ask(entryId, question)} title="Abre Claude al lado con esta pregunta; la respuesta vuelve aquí"
+          className="inline-flex items-center gap-1.5 rounded-md border border-orange-300 bg-orange-50 px-2.5 py-1 text-sm font-medium text-orange-800 hover:bg-orange-100 dark:border-orange-900 dark:bg-orange-950/40 dark:text-orange-200 dark:hover:bg-orange-900/40">
+          <MessageSquareShare className="size-4" />{r ? 'Preguntar a Claude otra vez' : 'Preguntar a Claude'}
+        </button>
+        <button type="button" onClick={() => { void navigator.clipboard.writeText(claudePrompt(question)).then(() => toast('Pregunta copiada para Claude')); }}
+          title="Copiar la pregunta para pegarla en Claude (app de escritorio o panel de Chrome)" className="rounded p-1 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200">
+          <Copy className="size-3.5" />
+        </button>
+        {!r && <span className="text-zinc-400">Para lo que hay que pensar o juntar mucho: responde con el conector de Marea y la respuesta vuelve aquí.</span>}
+      </div>
+      {r && <ClaudeReply entryId={entryId} question={question} />}
     </div>
-    </>
   );
 }
 
