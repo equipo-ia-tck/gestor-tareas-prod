@@ -18,10 +18,14 @@ import { track } from '../usage/track';
 /** Dirección del conector MCP de Marea (la de producción, que es la que tiene cada persona en Claude). */
 export const MCP_URL = 'https://gestor-tareas-prod.vercel.app/api/mcp';
 
-/** El mensaje para Claude: que use el conector de Marea, cite las fuentes y, con `id`, que guarde la respuesta en Marea. */
+/**
+ * El mensaje para Claude: que use el conector de Marea (y, si lo tiene, el de Notion, para cruzar ambas fuentes en el mismo
+ * chat), cite las fuentes y, con `id`, que guarde la respuesta en Marea. Nombrar Notion no estorba a quien no lo tenga
+ * conectado: Claude simplemente no lo usa.
+ */
 export function claudePrompt(question: string, id?: string): string {
   const back = id ? `\n\nCuando termines, guarda tu respuesta completa en Marea con la herramienta «responder_en_marea» (id de Marea: ${id}).` : '';
-  return `Usa el conector de Marea (busca en la documentación de Confluence y en Marea; haz varias búsquedas si hace falta) y responde en español, citando las páginas o tareas de donde sale cada cosa.${back}\n\nPregunta: ${question.trim()}`;
+  return `Usa el conector de Marea (busca en la documentación de Confluence y en Marea; haz varias búsquedas si hace falta) y, si la pregunta lo necesita y tienes el conector de Notion conectado, busca también en Notion y cruza ambas fuentes. Responde en español, citando las páginas, tareas o documentos de Notion de donde sale cada cosa.${back}\n\nPregunta: ${question.trim()}`;
 }
 
 export const claudeUrl = (question: string, id?: string) => `https://claude.ai/new?q=${encodeURIComponent(claudePrompt(question, id))}`;
@@ -177,8 +181,8 @@ export function ClaudeCard() {
       <h2 className="mb-1 flex items-center gap-1.5 font-semibold"><MessageSquareShare className="size-4 text-orange-600" />Preguntar a Claude</h2>
       <p className="mb-2 text-xs text-zinc-500 dark:text-zinc-400">
         Para preguntas que hay que pensar, comparar o explicar. «Preguntar a Claude», debajo de cada respuesta, abre Claude al lado con la
-        pregunta escrita: solo hay que enviarla. Claude busca en Marea y en Confluence con el conector de Marea y, al terminar, la
-        respuesta aparece también aquí. Va con tu cuenta de Claude (también la gratuita) y solo se manda la pregunta.
+        pregunta escrita: solo hay que enviarla. Claude busca en Marea y en Confluence con el conector de Marea (y en Notion, si
+        lo conectas) y, al terminar, la respuesta aparece también aquí. Va con tu cuenta de Claude (también la gratuita) y solo se manda la pregunta.
       </p>
       <button type="button" onClick={() => setOpen(!open)} className="text-xs font-medium text-orange-700 hover:underline dark:text-orange-300">
         {open ? 'Ocultar' : 'Cómo conectar Marea a Claude (una vez)'}
@@ -195,6 +199,10 @@ export function ClaudeCard() {
           </li>
           <li>Pulsa <strong>Conectar</strong> y entra con tu cuenta de Marea.</li>
           <li>La primera vez que Claude guarde una respuesta en Marea pedirá permiso: elige <strong>Permitir siempre</strong>.</li>
+          <li>
+            Opcional: para cruzar con <strong>Notion</strong> en el mismo chat, añade también el conector oficial de Notion
+            en Claude (Ajustes → Conectores) con tu cuenta de Notion. Claude usará Marea y Notion a la vez.
+          </li>
           <li>Recomendado: en Claude, Ajustes → Privacidad, desactiva que usen tus conversaciones para entrenar.</li>
           <li>
             Si tienes Claude de pago, también puedes usarlo en el panel lateral de Chrome (extensión «Claude in Chrome»)

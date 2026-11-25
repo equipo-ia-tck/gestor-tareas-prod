@@ -122,7 +122,9 @@ describe('función /api/mcp', () => {
         ...d.projects.map((p) => ({ tbl: 'projects', key: p.id, scope: '', owner: ME, data: p })),
         ...d.types.map((t) => ({ tbl: 'item_types', key: t.id, scope: '', owner: null, data: t })),
       ]);
-      if (url.includes('/overlays?')) return Response.json([{ key: 't2', data: { my_day: '2026-11-24' } }]);
+      // «Mi día» cuenta solo si coincide con el hoy que calcula el handler (día de Madrid, fecha real): lo tomamos de
+      // `madridToday` para que el test no dependa del día en que se ejecute.
+      if (url.includes('/overlays?')) return Response.json([{ key: 't2', data: { my_day: madridToday(new Date()) } }]);
       if (url.includes('/profiles?')) return Response.json([{ id: ME, name: 'Marta García' }]);
       if (url.includes('/docs?')) return Response.json(d.docs);
       if (url.endsWith('/rpc/save_assistant_answer')) {
