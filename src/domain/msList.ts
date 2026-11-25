@@ -210,13 +210,10 @@ export function listBoardColumn(stateName: string): string | null {
   return LIST_COLUMN_RULES.find((r) => r.match(n))?.column ?? null;
 }
 
-/** A qué columna «propia» lleva soltar en cada columna del Tablero (las otras tres van al estado más parecido). */
-const DROP_TARGET: Record<string, string> = {
-  New: 'New', Defined: 'New', 'In-Progress': 'In-Progress', 'Need Review': 'Need Review', Blocked: 'Need Review', Completed: 'Accepted', Accepted: 'Accepted',
-};
+/** Columnas del Tablero en las que se pueden soltar elementos de la Lista (las otras tres no tienen estado en la lista). */
+export const LIST_DROP_COLUMNS = LIST_COLUMN_RULES.map((r) => r.column);
 
-/** Estado de la Lista al soltar una tarea en una columna del Tablero (undefined si la lista no tiene ese estado). */
+/** Estado de la Lista al soltar una tarea en una columna del Tablero (undefined si la columna no admite elementos de la Lista o la lista no tiene ese estado). */
 export function listStateForColumn(type: ItemType, column: string): WorkflowState | undefined {
-  const target = DROP_TARGET[column];
-  return target ? type.states.find((st) => listBoardColumn(st.name) === target) : undefined;
+  return LIST_DROP_COLUMNS.includes(column) ? type.states.find((st) => listBoardColumn(st.name) === column) : undefined;
 }

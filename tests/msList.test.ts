@@ -524,12 +524,12 @@ describe('Microsoft List: tipo «Lista» en el repositorio', () => {
 
 describe('Microsoft List: columnas del Tablero con todos los tipos', async () => {
   const { listBoardColumn, listStateForColumn, listItemType } = await import('../src/domain/msList');
-  it('cada estado va a su columna y al soltar se elige el estado', () => {
+  it('cada estado va a su columna; solo se suelta en New, In-Progress, Need Review y Accepted', () => {
     expect(['Backlog', 'In progres', 'In Progress', 'En curso', 'Dependencia', 'Completada', 'Otra cosa'].map(listBoardColumn))
       .toEqual(['New', 'In-Progress', 'In-Progress', 'In-Progress', 'Need Review', 'Accepted', null]);
     const type = listItemType(['Backlog', 'In progress', 'Dependencia', 'Completada'], { statusColumn: 'Estado', map: {} }, 9);
     const to = (c: string) => listStateForColumn(type, c)?.name;
     expect(['New', 'Defined', 'In-Progress', 'Blocked', 'Need Review', 'Completed', 'Accepted'].map(to))
-      .toEqual(['Backlog', 'Backlog', 'In progress', 'Dependencia', 'Dependencia', 'Completada', 'Completada']);
+      .toEqual(['Backlog', undefined, 'In progress', undefined, 'Dependencia', undefined, 'Completada']);
   });
 });

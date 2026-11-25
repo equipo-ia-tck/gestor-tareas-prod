@@ -15,7 +15,7 @@ import { useRallyItem, useRallyLookup } from '../rally/rallyStore';
 import { moveToRallyColumn, moveToNeedReview } from '../rally/rallyStates';
 import { useToast } from '../../components/Toast';
 import { isRallyId, RALLY_COLUMNS, rallyColumnOf } from '../../domain/rally';
-import { LIST_TYPE_ID, listBoardColumn, listStateForColumn } from '../../domain/msList';
+import { LIST_DROP_COLUMNS, LIST_TYPE_ID, listBoardColumn, listStateForColumn } from '../../domain/msList';
 import { Popover } from '../../components/ui/Popover';
 import { usePersistentState } from '../../hooks/usePersistentState';
 
@@ -147,15 +147,18 @@ export function RallyBoard({ tasks, defaults, showProject = true }: Omit<Props, 
         } else {
           for (const t of inRally) void moveToRallyColumn(t, name, category, toast);
         }
+        // Los elementos de la Lista solo van a New, In-Progress, Need Review y Accepted (las columnas con estado en la lista).
+        const blockedList = dropped.filter((t) => !inRally.includes(t) && t.type_id === LIST_TYPE_ID && !LIST_DROP_COLUMNS.includes(name));
+        if (blockedList.length) toast(`Los elementos de la Lista solo se mueven a ${LIST_DROP_COLUMNS.join(', ')}`);
         // Las que no están en Rally van a cualquier columna: pasan al estado de ese grupo y recuerdan la columna.
-        const local = dropped.filter((t) => !inRally.includes(t));
+        const local = dropped.filter((t) => !inRally.includes(t) && !blockedList.includes(t));
         if (!local.length) return;
         void repo.batch(moveLabel(local.length, name), async () => {
           for (const t of local) {
             const type = findType(itemTypes, t.type_id);
             const listState = t.type_id === LIST_TYPE_ID ? listStateForColumn(type, name) : undefined;
             if (listState) {
-              // Elemento de la Lista: pasa al estado de esa columna (Defined, Blocked y Completed, al más parecido).
+              // Elemento de la Lista: pasa al estado de esa columna.
               if (listState.id !== t.state_id) await repo.setState(t.id, listState.id);
               continue;
             }
