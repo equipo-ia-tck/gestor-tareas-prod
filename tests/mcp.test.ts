@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_ITEM_TYPES } from '../src/domain/workflows';
-import { activityLog, findPersonName, listTasks, noteDetail, personDetail, projectDetail, search, searchDocs, taskDetail, type MareaData } from '../src/domain/mcpTools';
+import { activityLog, findPersonName, listTasks, noteDetail, personDetail, projectDetail, search, searchDocs, sharePointFolders, taskDetail, type MareaData } from '../src/domain/mcpTools';
 import type { Note, Project } from '../src/domain/types';
 import { madridToday } from '../servidor/mcp';
 import { makeTask } from './factories';
@@ -20,7 +20,8 @@ function data(): MareaData {
     base: 'https://marea.test',
     me: { id: ME, name: 'Marta García' },
     types: [...DEFAULT_ITEM_TYPES.filter((t) => t.id !== 'us'), { ...us, id: 'us', name: 'User Story', short: 'US', url_template: 'https://rally/{id}' }],
-    projects: [project('p1', 'Caixa'), project('p2', 'Imagin', 'p1')],
+    projects: [project('p1', 'Caixa'), { ...project('p2', 'Imagin', 'p1'), folders: [{ id: 'f1', name: 'Entregables', url: 'https://x.sharepoint.com/sites/a/Entregables' }] }],
+    folders: [{ id: 'f2', name: 'Mis guías', url: 'https://x.sharepoint.com/sites/a/Guias' }],
     people: [{ name: 'Diana López', role: 'PO', notes: '', email: 'diana@x.com' }],
     tasks: [
       { ...makeTask({ id: 't1', title: 'Revisar evar 69 del login', project_id: 'p2', people: ['Diana López'], due_date: '2026-11-20', priority: 1 }), owner: ME },
@@ -100,6 +101,17 @@ describe('herramientas de Marea para Claude', () => {
     expect(activityLog(data(), '2026-11-23', '2026-11-24')).toContain('## Hechas (1)');
   });
 
+  it('carpetas de SharePoint: de proyectos (con subproyectos) y personales, solo enlaces', () => {
+    expect(projectDetail(data(), 'Caixa')).toContain('«Entregables» (Caixa / Imagin): https://x.sharepoint.com/sites/a/Entregables');
+    const all = sharePointFolders(data());
+    expect(all).toContain('proyecto Caixa / Imagin');
+    expect(all).toContain('«Mis guías»');
+    expect(sharePointFolders(data(), 'Caixa')).not.toContain('Mis guías');
+    expect(sharePointFolders(data(), undefined, 'entregables')).not.toContain('Mis guías');
+    expect(sharePointFolders(data(), 'Nada')).toContain('No hay ningún proyecto');
+    expect(sharePointFolders({ ...data(), projects: [], folders: [] })).toContain('pantalla SharePoint');
+  });
+
   it('hoy es el día de Madrid aunque el servidor vaya en UTC', () => {
     expect(madridToday(new Date('2026-11-24T23:30:00Z'))).toBe('2026-11-25');
   });
@@ -121,6 +133,8 @@ describe('función /api/mcp', () => {
         ...d.notes.map((n) => ({ tbl: 'notes', key: n.id, scope: '', owner: ME, data: n })),
         ...d.projects.map((p) => ({ tbl: 'projects', key: p.id, scope: '', owner: ME, data: p })),
         ...d.types.map((t) => ({ tbl: 'item_types', key: t.id, scope: '', owner: null, data: t })),
+        { tbl: 'settings', key: 'settings', scope: ME, owner: ME, data: { sharepoint_folders: d.folders } },
+        { tbl: 'settings', key: 'settings', scope: 'u-otro', owner: 'u-otro', data: { sharepoint_folders: [{ id: 'x', name: 'Ajena', url: 'https://x' }] } },
       ]);
       if (url.includes('/overlays?')) return Response.json([{ key: 't2', data: { my_day: madridToday() } }]);
       if (url.includes('/profiles?')) return Response.json([{ id: ME, name: 'Marta García' }]);
@@ -158,7 +172,11 @@ describe('función /api/mcp', () => {
 
     const tools = await (await api.fetch(rpc({ jsonrpc: '2.0', id: 2, method: 'tools/list' }))).json();
     expect(tools.result.tools.map((t: { name: string }) => t.name)).toEqual(
-      expect.arrayContaining(['buscar', 'buscar_en_documentacion', 'listar_tareas', 'ver_tarea', 'ver_nota', 'ver_persona', 'ver_proyecto', 'listar_proyectos', 'mi_registro', 'responder_en_marea']));
+      expect.arrayContaining(['buscar', 'buscar_en_documentacion', 'listar_tareas', 'ver_tarea', 'ver_nota', 'ver_persona', 'ver_proyecto', 'listar_proyectos', 'carpetas_sharepoint', 'mi_registro', 'responder_en_marea']));
+
+    const folders = await (await api.fetch(rpc({ jsonrpc: '2.0', id: 9, method: 'tools/call', params: { name: 'carpetas_sharepoint', arguments: {} } }))).json();
+    expect(folders.result.content[0].text).toContain('Mis guías');
+    expect(folders.result.content[0].text).not.toContain('Ajena');
 
     const call = await (await api.fetch(rpc({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'listar_tareas', arguments: { cuando: 'mi_dia' } } }))).json();
     expect(call.result.content[0].text).toContain('Guía de etiquetado home'); // «Mi día» viene de overlays

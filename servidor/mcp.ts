@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { SearchIndex } from '../src/domain/knowledge.ts';
 import {
   activityLog, CATEGORY_KEYS, chunksOf, listProjects, listTasks, MCP_INSTRUCTIONS, noteDetail, personDetail, projectDetail,
-  search, searchDocs, taskDetail, WHEN_KEYS, type MareaData,
+  search, searchDocs, sharePointFolders, taskDetail, WHEN_KEYS, type MareaData,
 } from '../src/domain/mcpTools.ts';
 import type { ConfluencePage } from '../src/domain/confluence.ts';
 import type { TeamUser } from './auth.ts';
@@ -56,7 +56,7 @@ async function fetchAll<T>(config: { url: string; key: string }, token: string, 
 export async function loadMarea(config: { url: string; key: string }, token: string, user: TeamUser, fetchImpl: Fetch = fetch) {
   const hit = cache.get(token);
   if (hit && hit.until > Date.now()) return hit;
-  const tables = 'tasks,notes,projects,people,item_types,activity';
+  const tables = 'tasks,notes,projects,people,item_types,activity,settings';
   const [rows, overlays, profiles, docs] = await Promise.all([
     fetchAll<Row>(config, token, `records?select=tbl,key,scope,owner,data&tbl=in.(${tables})&data=not.is.null&order=tbl,key`, fetchImpl),
     fetchAll<{ key: string; data: { my_day?: string | null } }>(config, token, `overlays?select=key,data&tbl=eq.tasks&user_id=eq.${user.id}`, fetchImpl),
@@ -74,6 +74,7 @@ export async function loadMarea(config: { url: string; key: string }, token: str
     people: of('people', true).map((r) => r.data as unknown as MareaData['people'][number]),
     types: of('item_types').map((r) => r.data as unknown as MareaData['types'][number]),
     activity: of('activity', true).map((r) => r.data as unknown as MareaData['activity'][number]),
+    folders: of('settings', true).flatMap((r) => (r.data as { sharepoint_folders?: MareaData['folders'] }).sharepoint_folders ?? []),
     accounts: new Map(profiles.map((p) => [p.id, p.name])),
     docs: docs.map((p) => ({
       id: p.id, space: p.space ?? '', title: p.title ?? '', path: p.path ?? '', url: p.url ?? '', body: p.body ?? '',
@@ -166,7 +167,7 @@ export function mareaServer(
 
   server.registerTool('ver_proyecto', {
     title: 'Ver un proyecto',
-    description: 'Resumen de un proyecto con sus subproyectos: cifras, tareas pendientes y notas recientes.',
+    description: 'Resumen de un proyecto con sus subproyectos: cifras, tareas pendientes, carpetas de SharePoint y notas recientes.',
     inputSchema: { proyecto: z.string().min(1).describe('Nombre del proyecto o ruta «padre/hijo»') },
     annotations: readOnly,
   }, async (a) => run((d) => projectDetail(d, a.proyecto))());
@@ -176,6 +177,16 @@ export function mareaServer(
     description: 'Todos los proyectos y subproyectos que ve la persona, con cuántas tareas pendientes tiene cada uno.',
     annotations: readOnly,
   }, run((d) => listProjects(d)));
+
+  server.registerTool('carpetas_sharepoint', {
+    title: 'Carpetas de SharePoint',
+    description: 'Las carpetas de SharePoint guardadas en Marea: las de cada proyecto (con subproyectos) y las personales, con su enlace. Úsala para «¿dónde está la documentación / los entregables / las guías de X?». Solo da nombre y enlace: no puede leer los documentos.',
+    inputSchema: {
+      proyecto: z.string().optional().describe('Nombre del proyecto o ruta «padre/hijo» (incluye sus subproyectos)'),
+      texto: z.string().optional().describe('Palabras del nombre de la carpeta o del proyecto, p. ej. «entregables»'),
+    },
+    annotations: readOnly,
+  }, async (a) => run((d) => sharePointFolders(d, a.proyecto, a.texto))());
 
   server.registerTool('mi_registro', {
     title: 'Mi registro de actividad',

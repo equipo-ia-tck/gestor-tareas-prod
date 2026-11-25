@@ -1229,7 +1229,9 @@ Claude. Confluence (export mensual, aprobado por José y Mati) va en la fase 2. 
   protocolo): `buscar` (BM25 de `knowledge.ts`, solo contenido de Marea: tareas, notas, personas, proyectos), `listar_tareas`
   (persona, proyecto con subproyectos, estado, periodo, tipo, texto, solo mías), `ver_tarea` (id, ID de Rally o título),
   `ver_nota`, `ver_persona` (temas, tareas, quién dijo qué, reuniones), `ver_proyecto`, `listar_proyectos`, `mi_registro` y
-  `buscar_en_documentacion` (ver fase 2). Todas `readOnlyHint`. Devuelven texto con enlaces a Marea, Rally y Confluence para
+  `buscar_en_documentacion` (ver fase 2) y `carpetas_sharepoint` (las carpetas guardadas en la pantalla SharePoint: las de
+  cada proyecto, con subproyectos, y las personales de `settings.sharepoint_folders`; solo nombre y enlace, nunca el contenido;
+  `ver_proyecto` también las enseña). Todas `readOnlyHint`. Devuelven texto con enlaces a Marea, Rally y Confluence para
   que Claude cite. Las instrucciones del servidor (`MCP_INSTRUCTIONS`) llevan el glosario (US, TS, DE…).
 - Privacidad: sin plan Team de Claude, cada persona debe desactivar en Claude el uso de sus conversaciones para entrenar.
 

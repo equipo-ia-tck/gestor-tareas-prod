@@ -5,6 +5,7 @@ import { pageChunks, type ConfluencePage } from './confluence.ts';
 import { mentionsOf } from './notes.ts';
 import { ancestry, withDescendants } from './projects.ts';
 import { fold, nameKey } from './text.ts';
+import type { SharePointFolder } from './sharepoint';
 import type { ActivityEntry, ISODate, ItemType, Note, Person, Project, StateCategory, Task } from './types';
 
 /**
@@ -28,6 +29,8 @@ export interface MareaData {
   accounts: Map<string, string>;
   /** Documentación del equipo subida desde Confluence (migración 014). */
   docs: ConfluencePage[];
+  /** Carpetas de SharePoint guardadas por la persona en la pantalla SharePoint (solo nombre y enlace). */
+  folders?: SharePointFolder[];
 }
 
 const TOPIC_TYPE_ID = 'topic';
@@ -368,7 +371,50 @@ export function projectDetail(d: MareaData, raw: string): string {
     children.length ? `Subproyectos: ${children.map((c) => c.name).join(', ')}` : null,
     `\n## Tareas pendientes (${open.length})`, ...open.slice(0, 60).map((t) => taskLine(d, t)),
     open.length > 60 ? `… y ${open.length - 60} más (usa listar_tareas con proyecto).` : null,
+    ...folderSection(d, scope),
     `\n## Notas y actas recientes`, ...notes.slice(0, 15).map((n) => `- ${n.date} «${n.title}» · id: ${n.id}`),
+  ].filter((x) => x !== null).join('\n');
+}
+
+/** Carpetas de SharePoint de un conjunto de proyectos (con el proyecto si es un subproyecto). */
+function projectFolders(d: MareaData, scope: Set<string>): { folder: SharePointFolder; project: Project }[] {
+  return d.projects.filter((p) => scope.has(p.id)).flatMap((p) => (p.folders ?? []).map((folder) => ({ folder, project: p })));
+}
+
+function folderSection(d: MareaData, scope: Set<string>): string[] {
+  const list = projectFolders(d, scope);
+  if (!list.length) return [];
+  return [`\n## Carpetas de SharePoint (${list.length})`,
+    ...list.map(({ folder, project }) => `- «${folder.name}» (${projectName(d, project.id)}): ${folder.url}`)];
+}
+
+/**
+ * Carpetas de SharePoint guardadas en Marea: las de los proyectos (las ve quien ve el proyecto) y las personales. Solo
+ * nombre y enlace: el contenido de las carpetas nunca sale de SharePoint.
+ */
+export function sharePointFolders(d: MareaData, project?: string, text?: string): string {
+  let scope: Set<string> | null = null;
+  if (project?.trim()) {
+    const p = findProject(d, project);
+    if (!p) return `No hay ningún proyecto «${project}» que puedas ver. Usa listar_proyectos.`;
+    scope = withDescendants(p.id, d.projects);
+  }
+  const words = fold(text ?? '').split(/\s+/).filter(Boolean);
+  const match = (...parts: (string | null)[]) => words.every((w) => fold(parts.filter(Boolean).join(' ')).includes(w));
+  const ofProjects = projectFolders(d, scope ?? new Set(d.projects.map((p) => p.id)))
+    .filter(({ folder, project: p }) => match(folder.name, projectName(d, p.id)))
+    .sort((a, b) => (projectName(d, a.project.id) ?? '').localeCompare(projectName(d, b.project.id) ?? '', 'es'));
+  const mine = scope ? [] : (d.folders ?? []).filter((f) => match(f.name));
+  if (!ofProjects.length && !mine.length) {
+    return `No hay carpetas de SharePoint guardadas${project ? ` en «${project}»` : ''}${words.length ? ` que coincidan con «${text}»` : ''}. `
+      + 'Se añaden en Marea, en la pantalla SharePoint o en la fila «Carpetas» de cada proyecto.';
+  }
+  return [
+    ofProjects.length ? `## Carpetas de proyectos (${ofProjects.length})` : null,
+    ...ofProjects.map(({ folder, project: p }) => `- «${folder.name}» · proyecto ${projectName(d, p.id)}: ${folder.url}`),
+    mine.length ? `\n## Mis carpetas (${mine.length})` : null,
+    ...mine.map((f) => `- «${f.name}»: ${f.url}`),
+    '\nSolo es el enlace: el contenido de las carpetas no está en Marea. Se abren en SharePoint con la cuenta de cada persona.',
   ].filter((x) => x !== null).join('\n');
 }
 
@@ -405,6 +451,9 @@ notas y actas de reunión, fichas de personas, proyectos y su registro de activi
 
 También da acceso a la documentación del equipo (export de Confluence): cómo trabaja el equipo, modelos operativos, glosarios y
 para qué sirve cada cosa. Se busca con «buscar_en_documentacion».
+
+Las carpetas de SharePoint que el equipo guarda en Marea (por proyecto o personales) se consultan con «carpetas_sharepoint»: solo
+nombre y enlace, nunca el contenido de los documentos. Para «¿dónde está la documentación / los entregables de X?», dalas con su enlace.
 
 Glosario: US = User Story (en Rally, normalmente una guía de etiquetado); TS = Test Scenario / Test Set (la validación de una US);
 DE = defecto; FE = feature; TA = tarea de Rally. Los IDs de Rally tienen la forma US1234567 o TS92615. «Para hablar» son temas
