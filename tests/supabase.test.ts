@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
  * Prueba la base de datos de Supabase (supabase/migrations) en un Postgres de verdad (PGlite), imitando
  * lo mínimo de Supabase: roles anon/authenticated y auth.uid()/auth.email() de la sesión.
  */
-const MIGRATION = ['001_equipo.sql', '002_baja_y_contrasenas.sql', '003_alta_sin_invitacion.sql', '004_claves_conectores.sql', '005_calendario_subido.sql', '006_feedback.sql', '007_feedback_formulario.sql', '008_feedback_bloqueado.sql', '009_analitica.sql', '010_analitica_kpis.sql', '011_rally_herramienta.sql', '012_calendario_ics.sql', '013_pantallas.sql', '015_respuestas_claude.sql'].map((f) => readFileSync(`supabase/migrations/${f}`, 'utf8')).join('\n');
+const MIGRATION = ['001_equipo.sql', '002_baja_y_contrasenas.sql', '003_alta_sin_invitacion.sql', '004_claves_conectores.sql', '005_calendario_subido.sql', '006_feedback.sql', '007_feedback_formulario.sql', '008_feedback_bloqueado.sql', '009_analitica.sql', '010_analitica_kpis.sql', '011_rally_herramienta.sql', '012_calendario_ics.sql', '013_pantallas.sql', '015_respuestas_claude.sql', '016_mis_solicitudes.sql'].map((f) => readFileSync(`supabase/migrations/${f}`, 'utf8')).join('\n');
 let db: PGlite;
 
 const SUPABASE_STUB = `
@@ -335,6 +335,33 @@ describe('base de datos del equipo en Supabase', () => {
     // Lo enviado con la versión anterior se sigue leyendo.
     await rpc(ana, 'send_feedback', { p_kind: 'other', p_body: 'Antiguo', p_page: '', p_user_agent: '' });
     expect((await rpc(marta, 'admin_feedback') as Record<string, unknown>[])[0]).toMatchObject({ kind: 'other', title: '', body: 'Antiguo' });
+  });
+
+  it('mis solicitudes: cada uno ve lo suyo con su estado y la respuesta; solo responde un administrador', async () => {
+    const marta = await newUser('marta@vml.com');
+    await rpc(marta, 'register_profile', { p_name: 'Marta García', p_code: '' });
+    const ana = await newUser('ana@vml.com');
+    await rpc(ana, 'register_profile', { p_name: 'Ana', p_code: '' });
+    const luis = await newUser('luis@vml.com');
+    await rpc(luis, 'register_profile', { p_name: 'Luis', p_code: '' });
+    const send = (who: typeof ana, title: string) => rpc(who, 'send_feedback_form', {
+      p_kind: 'improvement', p_area: 'board', p_title: title, p_body: '', p_impact: '', p_page: '#/board', p_screen: '1440×900', p_user_agent: 'Chrome',
+    });
+    await send(ana, 'Filtrar por persona');
+    await send(luis, 'Otra cosa');
+    const [mine] = await rpc(ana, 'my_feedback') as Record<string, unknown>[];
+    expect(await rpc(ana, 'my_feedback')).toHaveLength(1);
+    expect(mine).toMatchObject({ title: 'Filtrar por persona', status: 'new', reply: '', replyAt: null });
+    expect(mine).not.toHaveProperty('userAgent');
+
+    await expect(rpc(ana, 'admin_reply_feedback', { p_id: mine.id, p_reply: 'Hola' })).rejects.toThrow(/administra/);
+    await rpc(marta, 'admin_update_feedback', { p_id: mine.id, p_status: 'done', p_task_id: null });
+    expect(await rpc(marta, 'admin_reply_feedback', { p_id: mine.id, p_reply: '  Ya está en el tablero  ' })).toMatchObject({ reply: 'Ya está en el tablero' });
+    const [after] = await rpc(ana, 'my_feedback') as Record<string, unknown>[];
+    expect(after).toMatchObject({ status: 'done', reply: 'Ya está en el tablero' });
+    expect(after.replyAt).toBeTruthy();
+    expect((await rpc(marta, 'admin_reply_feedback', { p_id: mine.id, p_reply: '' }) as Record<string, unknown>).replyAt).toBeNull();
+    expect((await rpc(luis, 'my_feedback') as Record<string, unknown>[]).map((f) => f.title)).toEqual(['Otra cosa']);
   });
 
   it('analítica: cada uno apunta lo suyo, solo los administradores lo leen y sin textos en la pantalla', async () => {

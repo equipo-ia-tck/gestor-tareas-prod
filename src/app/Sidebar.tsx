@@ -112,7 +112,6 @@ function MoreSection({ route }: { route: Route }) {
   const active = ['log', 'review', 'feedback', 'analytics'].includes(route.view);
   const show = open || active;
   const see = (v: Route['view']) => !isHiddenRoute(v, hiddenScreens);
-  if (!isAdmin && !see('review') && !see('log')) return null;
   return (
     <>
       <button type="button" onClick={() => setOpen(!open)}
@@ -123,7 +122,7 @@ function MoreSection({ route }: { route: Route }) {
         <>
           {see('review') && <NavItem icon={ClipboardCheck} href={routeHref({ view: 'review' })} active={route.view === 'review'}>Revisión semanal</NavItem>}
           {see('log') && <NavItem icon={History} href={routeHref({ view: 'log' })} active={route.view === 'log'}>Registro</NavItem>}
-          {isAdmin && <NavItem icon={MessageSquarePlus} href={routeHref({ view: 'feedback' })} active={route.view === 'feedback'}>Feedback</NavItem>}
+          <NavItem icon={MessageSquarePlus} href={routeHref({ view: 'feedback' })} active={route.view === 'feedback'}>{isAdmin ? 'Feedback' : 'Mis solicitudes'}</NavItem>
           {isAdmin && <NavItem icon={BarChart3} href={routeHref({ view: 'analytics' })} active={route.view === 'analytics'}>Analítica</NavItem>}
         </>
       )}

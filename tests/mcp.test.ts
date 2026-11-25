@@ -122,7 +122,7 @@ describe('función /api/mcp', () => {
         ...d.projects.map((p) => ({ tbl: 'projects', key: p.id, scope: '', owner: ME, data: p })),
         ...d.types.map((t) => ({ tbl: 'item_types', key: t.id, scope: '', owner: null, data: t })),
       ]);
-      if (url.includes('/overlays?')) return Response.json([{ key: 't2', data: { my_day: '2026-11-24' } }]);
+      if (url.includes('/overlays?')) return Response.json([{ key: 't2', data: { my_day: madridToday() } }]);
       if (url.includes('/profiles?')) return Response.json([{ id: ME, name: 'Marta García' }]);
       if (url.includes('/docs?')) return Response.json(d.docs);
       if (url.endsWith('/rpc/save_assistant_answer')) {

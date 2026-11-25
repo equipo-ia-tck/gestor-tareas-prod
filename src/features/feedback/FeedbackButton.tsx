@@ -57,7 +57,7 @@ function FeedbackDialog({ taskOpen, onClose, onSent }: { taskOpen: boolean; onCl
     setError('');
     try {
       await sync().sendFeedback({ kind, area, title: title.trim(), body: body.trim(), impact: kind === 'bug' ? impact : null, page });
-      toast('¡Gracias! Hemos recibido tu feedback');
+      toast('¡Gracias! Puedes seguirlo en Más → Mis solicitudes');
       onSent();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -115,7 +115,8 @@ function FeedbackDialog({ taskOpen, onClose, onSent }: { taskOpen: boolean; onCl
           )}
 
           <p className="text-xs text-zinc-500">
-            Se guarda también desde dónde lo envías ({page}), el navegador y el tamaño de pantalla. Solo lo ven los administradores.
+            Se guarda también desde dónde lo envías ({page}), el navegador y el tamaño de pantalla. Lo ven los administradores; tú puedes
+            seguir su estado en <a href="#/feedback" onClick={onClose} className="font-medium text-indigo-600 hover:underline dark:text-indigo-400">Más → Mis solicitudes</a>.
           </p>
           {error && <p className="text-sm text-red-600">{error}</p>}
         </div>

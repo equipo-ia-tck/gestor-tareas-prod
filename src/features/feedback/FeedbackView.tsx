@@ -54,16 +54,16 @@ export function FeedbackView() {
   const [impact, setImpact] = useState<FeedbackImpact | 'all'>('all');
   const [author, setAuthor] = useState('all');
   const [query, setQuery] = useState('');
+  // Los usuarios ven aquí «Mis solicitudes» a lo ancho normal.
+  useWideLayout(isAdmin);
 
   const load = useCallback(async () => {
     setError('');
     try { setItems(await sync().adminFeedback()); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }, []);
   useEffect(() => { if (isAdmin) void load(); }, [isAdmin, load]);
-  // Todo el ancho de la ventana en las tres vistas (así la cabecera y los filtros no se mueven al cambiar de vista).
-  useWideLayout(true);
 
-  if (!isAdmin) return <><ViewHeader title="Feedback" /><p className="text-sm text-zinc-500">Solo los administradores ven el feedback. Para enviar el tuyo, usa el botón «Feedback» de abajo a la derecha.</p></>;
+  if (!isAdmin) return <MyFeedback />;
 
   const replace = (f: Feedback) => setItems((list) => list?.map((x) => (x.id === f.id ? f : x)) ?? null);
   const update = async (id: string, patch: { status?: FeedbackStatus; taskId?: string }) => {
@@ -301,6 +301,7 @@ function FeedbackCard({ f, onUpdate, bare = false }: { f: Feedback; onUpdate: (p
       </div>
       {!bare && f.title && <p className="text-sm font-semibold">{f.title}</p>}
       {!bare && f.body && <p className={`text-sm whitespace-pre-wrap ${f.title ? 'mt-1 text-zinc-600 dark:text-zinc-300' : ''}`}>{f.body}</p>}
+      <ReplyBox f={f} />
       <div className="mt-2 text-xs">
         {task ? (
           <button type="button" onClick={() => editTask(task)} className="inline-flex items-center gap-1.5 text-emerald-700 hover:underline dark:text-emerald-400">
@@ -318,3 +319,95 @@ function FeedbackCard({ f, onUpdate, bare = false }: { f: Feedback; onUpdate: (p
 }
 
 const Wrapper = ({ bare, className, children }: { bare: boolean; className: string; children: ReactNode }) => (bare ? <div>{children}</div> : <li className={className}>{children}</li>);
+
+/** Respuesta del administrador: la ve quien lo envió en «Mis solicitudes» (migración 016). */
+function ReplyBox({ f }: { f: Feedback }) {
+  const toast = useToast();
+  const [text, setText] = useState(f.reply ?? '');
+  const [saved, setSaved] = useState(f.reply ?? '');
+  const [saving, setSaving] = useState(false);
+  const save = async () => {
+    if (text.trim() === saved.trim() || saving) return;
+    setSaving(true);
+    try {
+      const r = await sync().replyFeedback(f.id, text);
+      setSaved(r.reply ?? '');
+      setText(r.reply ?? '');
+      toast(r.reply ? 'Respuesta guardada: la verá quien lo envió' : 'Respuesta quitada');
+    } catch (e) { toast(e instanceof Error ? e.message : String(e)); }
+    setSaving(false);
+  };
+  return (
+    <div className="mt-2">
+      <textarea value={text} onChange={(e) => setText(e.target.value)} onBlur={() => void save()} rows={text ? 2 : 1} maxLength={2000}
+        onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void save(); }}
+        placeholder="Respuesta para quien lo envió (opcional; la ve en «Mis solicitudes»)"
+        className="w-full resize-y rounded-md border border-zinc-200 bg-transparent px-2 py-1 text-xs outline-none focus:border-indigo-400 dark:border-zinc-700" />
+      {saving && <p className="text-[11px] text-zinc-400">Guardando…</p>}
+    </div>
+  );
+}
+
+/** «Mis solicitudes»: lo que ha enviado la persona con el botón «Feedback» y en qué estado está, con la respuesta si la hay. */
+export function MyFeedback() {
+  const [items, setItems] = useState<Feedback[] | null>(null);
+  const [error, setError] = useState('');
+  const [show, setShow] = useState<'open' | 'all'>('all');
+  const load = useCallback(async () => {
+    setError('');
+    try { setItems(await sync().myFeedback()); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+  const all = items ?? [];
+  const list = show === 'open' ? all.filter(isOpenFeedback) : all;
+  const open = all.filter(isOpenFeedback).length;
+  return (
+    <>
+      <ViewHeader title="Mis solicitudes" subtitle="Lo que has enviado con el botón «Feedback» y en qué estado está" />
+      <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
+        <div className="inline-flex rounded-lg bg-zinc-100 p-0.5 dark:bg-zinc-800">
+          {([['all', `Todas (${all.length})`], ['open', `Abiertas (${open})`]] as const).map(([id, label]) => (
+            <button key={id} type="button" onClick={() => setShow(id)}
+              className={`rounded-md px-2.5 py-0.5 ${show === id ? 'bg-white font-medium shadow-sm dark:bg-zinc-900' : 'text-zinc-500'}`}>{label}</button>
+          ))}
+        </div>
+        <button type="button" onClick={() => void load()} className="inline-flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200">
+          <RefreshCw className="size-3.5" />Actualizar
+        </button>
+      </div>
+      {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
+      {items && !list.length && !error && (
+        <p className="text-sm text-zinc-500">
+          {all.length ? 'No tienes solicitudes abiertas.' : 'Aún no has enviado nada. Usa el botón «Feedback» de abajo a la derecha para contar qué no funciona, proponer mejoras o preguntar dudas.'}
+        </p>
+      )}
+      <ul className="space-y-2">
+        {list.map((f) => {
+          const Icon = KIND_ICON[f.kind];
+          const status = FEEDBACK_STATUSES.find((x) => x.id === f.status)?.label ?? f.status;
+          return (
+            <li key={f.id} className={`rounded-lg border border-zinc-200 p-3 dark:border-zinc-800 ${f.status === 'dismissed' ? 'opacity-70' : ''}`}>
+              <div className="mb-1.5 flex flex-wrap items-center gap-2 text-xs">
+                <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium ${KIND_COLOR[f.kind]}`}><Icon className="size-3" />{kindLabel(f.kind)}</span>
+                {f.area && <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">{areaLabel(f.area)}</span>}
+                {f.impact && <span className={`font-medium ${IMPACT_COLOR[f.impact]}`}>{impactLabel(f.impact)}</span>}
+                <span className="text-zinc-400">Enviada el {when(f.createdAt)}</span>
+                <span className="flex-1" />
+                <span className={`rounded-md border px-1.5 py-0.5 font-medium ${STATUS_COLOR[f.status]}`}>{status}</span>
+              </div>
+              {f.title && <p className="text-sm font-semibold">{f.title}</p>}
+              {f.body && <p className={`text-sm whitespace-pre-wrap ${f.title ? 'mt-1 text-zinc-600 dark:text-zinc-300' : ''}`}>{f.body}</p>}
+              {f.reply && (
+                <div className="mt-2 rounded-md border-l-4 border-indigo-400 bg-indigo-50/60 px-3 py-1.5 text-sm dark:bg-indigo-950/30">
+                  <p className="text-[11px] font-medium text-indigo-700 dark:text-indigo-300">Respuesta{f.replyAt ? ` · ${when(f.replyAt)}` : ''}</p>
+                  <p className="whitespace-pre-wrap">{f.reply}</p>
+                </div>
+              )}
+              {f.updatedAt !== f.createdAt && f.status !== 'new' && <p className="mt-1.5 text-[11px] text-zinc-400">Último cambio: {when(f.updatedAt)}</p>}
+            </li>
+          );
+        })}
+      </ul>
+    </>
+  );
+}
