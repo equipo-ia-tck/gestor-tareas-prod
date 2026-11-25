@@ -48,6 +48,7 @@ export interface RagSource { n: number; chunk: Chunk; text: string }
 export const CONTEXT_CHARS = 6500;
 const MAX_SOURCES = 8;
 const MAX_PER_SOURCE = 1600;
+const MAX_PER_PAGE = 3;
 
 /**
  * Los trozos que se le dan al modelo, numerados para citarlos: en el orden de la búsqueda, sin repetir, recortados y
@@ -56,11 +57,15 @@ const MAX_PER_SOURCE = 1600;
 export function pickContext(ranked: Chunk[], maxChars = CONTEXT_CHARS, maxSources = MAX_SOURCES): RagSource[] {
   const out: RagSource[] = [];
   const seen = new Set<string>();
+  // Como mucho 3 partes de una misma página: si no, una página larga (p. ej. una por fecha) se lo lleva todo y la que
+  // tiene la respuesta no llega a la IA.
+  const perRef = new Map<string, number>();
   let used = 0;
   for (const chunk of ranked) {
     if (out.length >= maxSources) break;
     if (seen.has(chunk.id)) continue;
     seen.add(chunk.id);
+    if ((perRef.get(chunk.ref) ?? 0) >= MAX_PER_PAGE) continue;
     let text = chunkText(chunk).trim();
     if (text.length < 15) continue;
     if (text.length > MAX_PER_SOURCE) text = `${text.slice(0, MAX_PER_SOURCE).trimEnd()}…`;
@@ -70,6 +75,7 @@ export function pickContext(ranked: Chunk[], maxChars = CONTEXT_CHARS, maxSource
       text = `${text.slice(0, room).trimEnd()}…`;
     }
     used += text.length;
+    perRef.set(chunk.ref, (perRef.get(chunk.ref) ?? 0) + 1);
     out.push({ n: out.length + 1, chunk, text });
   }
   return out;

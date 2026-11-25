@@ -126,9 +126,42 @@ export class SearchIndex {
 
   get size() { return this.docs.length; }
 
+  /** Errata → palabra que sí está (calculado una vez por palabra). */
+  private fixes = new Map<string, string | null>();
+
+  /**
+   * Una palabra que no sale en ningún sitio («onboardinf») se cambia por la más parecida que sí sale (una letra de
+   * diferencia, o dos en palabras largas; si hay varias, la más frecuente). Las cortas no se tocan.
+   */
+  private fix(w: string): string | null {
+    if (this.df.has(w) || w.length < 5 || /\d/.test(w)) return null;
+    if (this.fixes.has(w)) return this.fixes.get(w)!;
+    const max = w.length >= 8 ? 2 : 1;
+    let best: string | null = null;
+    let bestDf = 0;
+    let bestD = max + 1;
+    for (const [k, df] of this.df) {
+      if (Math.abs(k.length - w.length) > max || k[0] !== w[0]) continue;
+      const d = editDistance(w, k, max);
+      if (d <= max && (d < bestD || (d === bestD && df > bestDf))) { best = k; bestDf = df; bestD = d; }
+    }
+    // Si empieza igual que otra palabra más larga (prefijo), ya la encuentra la búsqueda por prefijo.
+    this.fixes.set(w, best);
+    return best;
+  }
+
+  /** Palabras de la búsqueda, cada una con sus alternativas: la corrección de una errata y los sinónimos del equipo. */
+  expand(query: string): string[][] {
+    return [...new Set(terms(query))].map((w) => {
+      const base = this.fix(w) ?? w;
+      return [...new Set([base, ...(SYNONYMS.get(base) ?? [])])];
+    });
+  }
+
   search(query: string, opts: { limit?: number; sources?: ChunkSource[] } = {}): Hit[] {
-    const q = [...new Set(terms(query))];
-    if (!q.length) return [];
+    const groups = this.expand(query);
+    if (!groups.length) return [];
+    const all = groups.flat();
     const n = this.docs.length;
     const phrase = fold(query).replace(/\s+/g, ' ').trim();
     const scored: { d: Indexed; score: number }[] = [];
@@ -136,23 +169,80 @@ export class SearchIndex {
       if (opts.sources && !opts.sources.includes(d.chunk.source)) continue;
       let score = 0;
       let matched = 0;
-      for (const w of q) {
-        const f = d.tf.get(w) ?? prefixCount(d.tf, w);
-        if (!f) continue;
+      for (const alts of groups) {
+        // De cada palabra, la alternativa que más puntúa en este trozo (no se suman: «analista» o «analyst»).
+        let best = 0;
+        for (const w of alts) {
+          const f = d.tf.get(w) ?? prefixCount(d.tf, w);
+          if (!f) continue;
+          const df = this.df.get(w) ?? 1;
+          const idf = Math.log(1 + (n - df + 0.5) / (df + 0.5));
+          best = Math.max(best, idf * ((f * 2.2) / (f + 1.2 * (0.25 + 0.75 * (d.len / this.avg)))));
+        }
+        if (!best) continue;
         matched++;
-        const df = this.df.get(w) ?? 1;
-        const idf = Math.log(1 + (n - df + 0.5) / (df + 0.5));
-        score += idf * ((f * 2.2) / (f + 1.2 * (0.25 + 0.75 * (d.len / this.avg))));
+        score += best;
       }
       if (!matched) continue;
       // Que estén todas las palabras pesa mucho; la frase exacta, más.
-      score *= 0.5 + matched / q.length;
+      score *= 0.5 + matched / groups.length;
       if (phrase.length > 3 && fold(`${d.chunk.title} ${d.chunk.text}`).includes(phrase)) score *= 1.6;
       scored.push({ d, score });
     }
     return scored.sort((a, b) => b.score - a.score).slice(0, opts.limit ?? 8)
-      .map(({ d, score }) => ({ chunk: d.chunk, score, ...snippet(d.chunk.text, q) }));
+      .map(({ d, score }) => ({ chunk: d.chunk, score, ...snippet(d.chunk.text, all) }));
   }
+}
+
+/**
+ * Sinónimos del equipo (la documentación mezcla español e inglés: «Data Analyst», «Owner»…). Cada grupo, en raíces
+ * (`terms`); buscar una palabra busca también las demás de su grupo.
+ */
+const SYNONYM_GROUPS = [
+  'analista analyst',
+  'responsable owner propietario dueno encargado',
+  'etiquetado etiquetar tagging tag',
+  'guia guide',
+  'equipo team',
+  'reunion meeting weekly',
+  'prueba test',
+  'validacion validation',
+  'medicion measurement',
+  'entrega delivery',
+  'herramienta tool',
+  'informe report reporte',
+  'cuadro dashboard',
+  'pagina page',
+  'evento event',
+  'paso step',
+  'vacaciones holidays',
+  'suplente backup',
+];
+const SYNONYMS = new Map<string, string[]>();
+for (const g of SYNONYM_GROUPS) {
+  const words = [...new Set(terms(g))];
+  for (const w of words) SYNONYMS.set(w, words.filter((x) => x !== w));
+}
+
+/** Distancia de edición (con transposiciones), cortando en cuanto pasa de `max`. */
+export function editDistance(a: string, b: string, max = 2): number {
+  if (Math.abs(a.length - b.length) > max) return max + 1;
+  const prev2: number[] = new Array(b.length + 1).fill(0);
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    let rowMin = i;
+    for (let j = 1; j <= b.length; j++) {
+      let v = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) v = Math.min(v, prev2[j - 2] + 1);
+      cur.push(v);
+      rowMin = Math.min(rowMin, v);
+    }
+    if (rowMin > max) return max + 1;
+    for (let j = 0; j <= b.length; j++) prev2[j] = prev[j];
+    prev = cur;
+  }
+  return prev[b.length];
 }
 
 /** Palabras que empiezan por la buscada (con 4 letras o más): «valid» encuentra «validacion». */

@@ -1109,6 +1109,10 @@ Petición de la usuaria: algo a lo que preguntar y pedir cosas sobre el proyecto
   (`splitSections`: títulos Markdown, líneas en mayúsculas o terminadas en «:», párrafos de ~700 caracteres) con BM25
   (`SearchIndex`: título doble, todas las palabras y frase exacta pesan más, prefijos de 4+ letras), palabras sin tildes,
   vacías ni plurales (`terms`, `stem`) y el trozo que mejor responde con las palabras marcadas (`snippet`).
+  **Erratas y sinónimos** (nov 2026): una palabra que no sale en ningún sitio se cambia por la más parecida que sí sale
+  (`SearchIndex.fix`, `editDistance` con transposiciones: 1 letra, 2 en palabras de 8 o más; «onboardinf» → onboarding), y
+  cada palabra busca también sus sinónimos del equipo en español e inglés (`SYNONYM_GROUPS`: analista/analyst,
+  responsable/owner, etiquetado/tagging…; de cada grupo cuenta la que más puntúa). Vale para el Asistente, su IA y el MCP.
 - **Documentación en SharePoint** (decisión de la usuaria: los documentos se quedan en Microsoft, no en Supabase; la
   migración 013 que los guardaba en Supabase se quitó antes de aplicarse). Por la extensión «Marea · Lista» (1.3.0), con
   la sesión de cada persona (`features/assistant/spDocs.ts`, autocontenido como `spWork`, en `background.js` como
@@ -1335,6 +1339,8 @@ que los documentos (también los de CaixaBank) salgan del ordenador. RAG **local
   `enable_thinking: false` y `withoutThinking` quita cualquier `<think>…</think>`. Cambiar suelta el modelo que hay y carga
   el otro (`startLlm(size)`); si la gráfica no tiene memoria para el grande, lo dice. «Borrar el modelo» borra todos (también
   el Qwen2.5-7B que fue el grande un día). Un test comprueba que los ids existen en WebLLM y que el contexto cabe.
+- **Variedad de páginas**: `pickContext` da como mucho 3 partes de una misma página (`MAX_PER_PAGE`), para que una página
+  larga (p. ej. «Prioridades de equipo», una parte por fecha) no se lleve todo y la que responde llegue a la IA.
 - **Nunca en blanco**: si la IA responde «No lo encuentro» o falla, debajo sale la frase que mejor responde sin IA
   (`extractAnswer`, el `Lead` de siempre, prop `fallback` de `AiAnswer`) con su enlace.
 - **Motor** (`features/assistant/ai/engine.ts`): el modelo va en un worker (`llmWorker.ts`, `CreateWebWorkerMLCEngine`), en
