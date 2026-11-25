@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { BarChart3, Bug, ChevronsLeftRight, ExternalLink, HelpCircle, KanbanSquare, Lightbulb, List, MessageCircle, RefreshCw, Sparkles } from 'lucide-react';
+import { ArrowDown, ArrowUp, BarChart3, Bug, ChevronsLeftRight, GripVertical, ExternalLink, HelpCircle, KanbanSquare, Lightbulb, List, MessageCircle, RefreshCw, Sparkles } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
 import { StatePill } from '../../components/ui/Badges';
 import { useToast } from '../../components/Toast';
 import { repo } from '../../data/services';
 import { sync, useSync } from '../../data/sync';
 import {
-  areaLabel, browserSummary, FEEDBACK_AREAS, FEEDBACK_IMPACTS, FEEDBACK_KINDS, FEEDBACK_STATUSES, isOpenFeedback, feedbackPriority, feedbackTaskTitle, impactLabel, kindLabel,
+  areaLabel, browserSummary, FEEDBACK_AREAS, FEEDBACK_IMPACTS, FEEDBACK_KINDS, FEEDBACK_STATUSES, isOpenFeedback, feedbackPriority, feedbackTaskTitle, impactLabel, kindLabel, moveFeedback, sortFeedback,
   type Feedback, type FeedbackImpact, type FeedbackKind, type FeedbackStatus,
 } from '../../domain/feedback';
 import { stateOf } from '../../domain/workflows';
@@ -73,7 +73,16 @@ export function FeedbackView() {
     try { replace(await sync().updateFeedback(id, patch)); } catch (e) { if (before) replace(before); toast(e instanceof Error ? e.message : String(e)); }
   };
 
-  const all = items ?? [];
+  // Orden de prioridad (migración 017): lo sin ordenar arriba y después la posición que ponen los administradores.
+  const all = sortFeedback(items ?? []);
+  /** Mueve `id` antes o después de `target` (en la lista entera) y guarda el orden; si falla, vuelve atrás. */
+  const reorder = async (id: string, target: string, place: 'before' | 'after') => {
+    const ids = moveFeedback(all, id, target, place);
+    const before = items;
+    const pos = new Map(ids.map((x, i) => [x, i + 1]));
+    setItems((list) => list?.map((f) => ({ ...f, rank: pos.get(f.id) ?? f.rank ?? null })) ?? null);
+    try { await sync().orderFeedback(ids); } catch (e) { setItems(before); toast(e instanceof Error ? e.message : String(e)); }
+  };
   const words = fold(query).split(/\s+/).filter(Boolean);
   // Los mismos filtros en las tres vistas. En el tablero, el estado deja solo sus columnas.
   const filtered = all.filter((f) => (kind === 'all' || f.kind === kind) && (area === 'all' || f.area === area)
@@ -146,12 +155,20 @@ export function FeedbackView() {
           {view === 'list' && (
             <>
               {!shown.length && <p className="text-sm text-zinc-400">No hay feedback {status === 'open' && !filtering ? 'abierto' : 'con este filtro'}.</p>}
+              {shown.length > 1 && <p className="mb-2 text-xs text-zinc-400">Ordénalos por prioridad: arrastra por el asa o usa las flechas. Lo de arriba es lo primero que hay que hacer; lo que aún no tiene número está sin ordenar.</p>}
               <ul className="space-y-3">
-                {shown.map((f) => <FeedbackCard key={f.id} f={f} onUpdate={(patch) => update(f.id, patch)} />)}
+                {shown.map((f, i) => (
+                  <SortableRow key={f.id} f={f} position={f.rank != null ? i + 1 : null}
+                    onMove={(id, place) => void reorder(id, f.id, place)}
+                    onUp={i > 0 ? () => void reorder(f.id, shown[i - 1].id, 'before') : undefined}
+                    onDown={i < shown.length - 1 ? () => void reorder(f.id, shown[i + 1].id, 'after') : undefined}>
+                    <FeedbackCard f={f} onUpdate={(patch) => update(f.id, patch)} />
+                  </SortableRow>
+                ))}
               </ul>
             </>
           )}
-          {view === 'board' && <FeedbackBoard items={shown} onUpdate={update}
+          {view === 'board' && <FeedbackBoard items={shown} onUpdate={update} onReorder={reorder}
             columns={FEEDBACK_STATUSES.filter((c) => status === 'all' || (status === 'open' ? isOpenFeedback({ status: c.id } as Feedback) : c.id === status))} />}
           {view === 'dashboard' && (
             shown.length ? (
@@ -178,10 +195,11 @@ const FEEDBACK_MIME = 'application/x-gestor-feedback';
 const COLUMN_COLOR: Record<FeedbackStatus, string> = { new: '#2E6BE6', doing: '#f59e0b', blocked: '#ef4444', done: '#22c55e', dismissed: '#a1a1aa' };
 
 /** Tablero del feedback: una columna por estado; arrastrar una tarjeta a otra columna le cambia el estado. */
-function FeedbackBoard({ items, columns, onUpdate }: {
+function FeedbackBoard({ items, columns, onUpdate, onReorder }: {
   items: Feedback[];
   columns: typeof FEEDBACK_STATUSES;
   onUpdate: (id: string, patch: { status?: FeedbackStatus; taskId?: string }) => Promise<void>;
+  onReorder: (id: string, target: string, place: 'before' | 'after') => Promise<void>;
 }) {
   const [over, setOver] = useState<FeedbackStatus | null>(null);
   // Columnas plegadas, como en el Tablero de tareas (se recuerdan en el navegador).
@@ -224,7 +242,13 @@ function FeedbackBoard({ items, columns, onUpdate }: {
               </button>
             </header>
             <ul className="-mx-1 flex min-h-8 flex-1 flex-col gap-2 overflow-y-auto px-1 pb-1">
-              {list.map((f) => <BoardCard key={f.id} f={f} onUpdate={(patch) => onUpdate(f.id, patch)} />)}
+              {list.map((f, i) => <BoardCard key={f.id} f={f} position={f.rank != null ? i + 1 : null} onUpdate={(patch) => onUpdate(f.id, patch)}
+                onDropHere={(id, place) => {
+                  setOver(null);
+                  // Soltar encima de una tarjeta: se coloca antes o después de ella (y, si viene de otra columna, cambia de estado).
+                  if (items.find((x) => x.id === id)?.status !== col.id) void onUpdate(id, { status: col.id });
+                  void onReorder(id, f.id, place);
+                }} />)}
             </ul>
             </>}
           </section>
@@ -234,20 +258,43 @@ function FeedbackBoard({ items, columns, onUpdate }: {
   );
 }
 
-function BoardCard({ f, onUpdate }: { f: Feedback; onUpdate: (patch: { status?: FeedbackStatus; taskId?: string }) => Promise<void> }) {
+function BoardCard({ f, position, onUpdate, onDropHere }: {
+  f: Feedback;
+  /** Posición dentro de su columna (null = sin ordenar). */
+  position: number | null;
+  onUpdate: (patch: { status?: FeedbackStatus; taskId?: string }) => Promise<void>;
+  onDropHere: (id: string, place: 'before' | 'after') => void;
+}) {
   const [open, setOpen] = useState(false);
+  const [drop, setDrop] = useState<'before' | 'after' | null>(null);
   const Icon = KIND_ICON[f.kind];
   return (
     // Desplegada no se arrastra: así se puede escribir y seleccionar texto en la respuesta.
     <li draggable={!open} onDragStart={(e) => { e.dataTransfer.setData(FEEDBACK_MIME, f.id); e.dataTransfer.effectAllowed = 'move'; }}
+      onDragOver={(e) => {
+        if (!e.dataTransfer.types.includes(FEEDBACK_MIME)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        setDrop(placeOf(e));
+      }}
+      onDragLeave={() => setDrop(null)}
+      onDrop={(e) => {
+        const id = e.dataTransfer.getData(FEEDBACK_MIME);
+        setDrop(null);
+        if (!id) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (id !== f.id) onDropHere(id, placeOf(e));
+      }}
       onClick={(e) => { if (!(e.target as HTMLElement).closest('a, button, select, textarea, input')) setOpen(!open); }}
+      style={drop ? { boxShadow: `0 ${drop === 'before' ? '-3px' : '3px'} 0 0 rgb(99 102 241)` } : undefined}
       className="shrink-0 cursor-grab rounded-lg border border-zinc-200 bg-white p-2.5 text-sm shadow-sm [overflow-wrap:anywhere] hover:shadow-md active:cursor-grabbing dark:border-zinc-700 dark:bg-zinc-900">
       <div className="mb-1 flex flex-wrap items-center gap-1.5 text-[11px]">
         <span className={`inline-flex items-center gap-1 rounded-full px-1.5 py-px font-medium ${KIND_COLOR[f.kind]}`}><Icon className="size-3" />{kindLabel(f.kind)}</span>
         {f.area && <span className="rounded-full bg-zinc-100 px-1.5 py-px text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">{areaLabel(f.area)}</span>}
         {f.impact && <span className={`font-medium ${IMPACT_COLOR[f.impact]}`}>{impactLabel(f.impact)}</span>}
       </div>
-      <p className="font-medium leading-snug">{f.title || f.body.split('\n')[0]}</p>
+      <p className="font-medium leading-snug">{position != null && <span className="mr-1 text-xs font-semibold text-indigo-600 dark:text-indigo-400">#{position}</span>}{f.title || f.body.split('\n')[0]}</p>
       {f.body && f.title && <p className={`mt-1 text-xs whitespace-pre-wrap text-zinc-600 dark:text-zinc-300 ${open ? '' : 'line-clamp-3'}`}>{f.body}</p>}
       <p className="mt-1.5 flex items-center gap-1 text-[11px] text-zinc-400">
         <span className="truncate font-medium text-zinc-600 dark:text-zinc-300">{f.authorName || f.authorLogin || 'Cuenta eliminada'}</span>· {when(f.createdAt)}
@@ -319,32 +366,90 @@ function FeedbackCard({ f, onUpdate, bare = false }: { f: Feedback; onUpdate: (p
   );
 }
 
-const Wrapper = ({ bare, className, children }: { bare: boolean; className: string; children: ReactNode }) => (bare ? <div>{children}</div> : <li className={className}>{children}</li>);
+const Wrapper = ({ bare, className, children }: { bare: boolean; className: string; children: ReactNode }) => (bare ? <div>{children}</div> : <div className={className}>{children}</div>);
+
+/** Mitad de arriba = antes; mitad de abajo = después. */
+const placeOf = (e: React.DragEvent) => {
+  const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  return e.clientY < r.top + r.height / 2 ? 'before' as const : 'after' as const;
+};
+
+/**
+ * Fila de la Lista que se ordena: asa para arrastrar (solo el asa, así se puede escribir la respuesta), número de
+ * prioridad y flechas para subir o bajar una posición.
+ */
+function SortableRow({ f, position, onMove, onUp, onDown, children }: {
+  f: Feedback;
+  position: number | null;
+  onMove: (id: string, place: 'before' | 'after') => void;
+  onUp?: () => void;
+  onDown?: () => void;
+  children: ReactNode;
+}) {
+  const [drop, setDrop] = useState<'before' | 'after' | null>(null);
+  const arrow = 'rounded p-0.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 disabled:invisible dark:hover:bg-zinc-800 dark:hover:text-zinc-200';
+  return (
+    <li className="relative flex gap-1.5"
+      onDragOver={(e) => { if (e.dataTransfer.types.includes(FEEDBACK_MIME)) { e.preventDefault(); setDrop(placeOf(e)); } }}
+      onDragLeave={() => setDrop(null)}
+      onDrop={(e) => {
+        const id = e.dataTransfer.getData(FEEDBACK_MIME);
+        setDrop(null);
+        if (!id) return;
+        e.preventDefault();
+        if (id !== f.id) onMove(id, placeOf(e));
+      }}>
+      {drop && <span className={`pointer-events-none absolute inset-x-0 h-0.5 rounded bg-indigo-500 ${drop === 'before' ? '-top-2' : '-bottom-2'}`} />}
+      <div className="flex w-7 shrink-0 flex-col items-center gap-0.5 pt-2">
+        <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400" title={position ? 'Posición en el orden de prioridad' : 'Sin ordenar'}>{position ? `#${position}` : '·'}</span>
+        <button type="button" onClick={onUp} disabled={!onUp} title="Subir" aria-label="Subir" className={arrow}><ArrowUp className="size-3.5" /></button>
+        <span draggable title="Arrastrar para ordenar" aria-label="Arrastrar para ordenar"
+          onDragStart={(e) => {
+            e.dataTransfer.setData(FEEDBACK_MIME, f.id);
+            e.dataTransfer.effectAllowed = 'move';
+            const row = (e.currentTarget as HTMLElement).closest('li');
+            if (row) e.dataTransfer.setDragImage(row, 20, 20);
+          }}
+          className="cursor-grab rounded p-0.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 active:cursor-grabbing dark:hover:bg-zinc-800"><GripVertical className="size-4" /></span>
+        <button type="button" onClick={onDown} disabled={!onDown} title="Bajar" aria-label="Bajar" className={arrow}><ArrowDown className="size-3.5" /></button>
+      </div>
+      <div className="min-w-0 flex-1">{children}</div>
+    </li>
+  );
+}
 
 /** Respuesta del administrador: la ve quien lo envió en «Mis solicitudes» (migración 016). */
 function ReplyBox({ f }: { f: Feedback }) {
   const toast = useToast();
   const [text, setText] = useState(f.reply ?? '');
-  const [saved, setSaved] = useState(f.reply ?? '');
+  const [saved, setSaved] = useState({ reply: f.reply ?? '', at: f.replyAt ?? null });
   const [saving, setSaving] = useState(false);
+  const changed = text.trim() !== saved.reply.trim();
   const save = async () => {
-    if (text.trim() === saved.trim() || saving) return;
+    if (!changed || saving) return;
     setSaving(true);
     try {
       const r = await sync().replyFeedback(f.id, text);
-      setSaved(r.reply ?? '');
+      setSaved({ reply: r.reply ?? '', at: r.replyAt ?? null });
       setText(r.reply ?? '');
-      toast(r.reply ? 'Respuesta guardada: la verá quien lo envió' : 'Respuesta quitada');
+      toast(r.reply ? `Respuesta enviada a ${f.authorName || 'quien lo envió'}` : 'Respuesta quitada');
     } catch (e) { toast(e instanceof Error ? e.message : String(e)); }
     setSaving(false);
   };
   return (
     <div className="mt-2">
-      <textarea value={text} onChange={(e) => setText(e.target.value)} onBlur={() => void save()} rows={text ? 2 : 1} maxLength={2000}
-        onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void save(); }}
-        placeholder="Respuesta para quien lo envió (opcional; la ve en «Mis solicitudes»)"
+      <textarea value={text} onChange={(e) => setText(e.target.value)} rows={2} maxLength={2000}
+        onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); e.stopPropagation(); void save(); } }}
+        placeholder={`Respuesta para ${f.authorName || 'quien lo envió'} (la ve en «Mis solicitudes»)`}
         className="w-full resize-y rounded-md border border-zinc-200 bg-transparent px-2 py-1 text-xs outline-none focus:border-indigo-400 dark:border-zinc-700" />
-      {saving && <p className="text-[11px] text-zinc-400">Guardando…</p>}
+      <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px]">
+        <button type="button" onClick={() => void save()} disabled={!changed || saving}
+          className="rounded bg-indigo-600 px-2 py-0.5 font-medium text-white hover:bg-indigo-500 disabled:opacity-40">
+          {saving ? 'Enviando…' : text.trim() || !saved.reply ? 'Enviar respuesta' : 'Quitar respuesta'}
+        </button>
+        {changed && !saving && <span className="text-amber-600 dark:text-amber-400">Sin enviar</span>}
+        {!changed && saved.reply && <span className="text-emerald-700 dark:text-emerald-400">✓ Enviada{saved.at ? ` el ${when(saved.at)}` : ''}: la ve en «Mis solicitudes»</span>}
+      </div>
     </div>
   );
 }

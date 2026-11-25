@@ -440,7 +440,7 @@ Petición de la usuaria (oct 2026): traer Rally al gestor sin tocar el resto (en
   anidadas de dos en dos (`joinQuery`). Escribe tres cosas: la columna (FlowState, o ScheduleState/State) al mover, comentarios
   (`conversationpost/create`) y adjuntos (`attachmentcontent` + `attachment`, máx. 25 MB). Los comentarios propios de la discusión se editan y eliminan (lápiz y papelera; `editComment` conserva las
   menciones que tenía con `mentionsIn`, `deleteComment`; `comment-edit` y `comment-delete`). Los adjuntos también se eliminan desde la ficha
-  (papelera con confirmación; `deleteAttachment`: DELETE del adjunto y de su contenido, `POST /api/rally/attachment-delete`). Crear devuelve `CreateResult` y
+  (papelera con confirmación; `deleteAttachment`: DELETE del adjunto y de su contenido, `POST /api/rally/attachment-delete`). Cada adjunto enseña debajo del nombre cuándo se subió y quién (`CreationDate` y `User` de Rally, `toAttachment`; «hoy, 12:40», «ayer…» o la fecha, `uploadedAt`). Crear devuelve `CreateResult` y
   actualizar `OperationResult`. Hace falta una clave Full Access para escribir.
 - **Crear en Rally** (`rally.create`, `POST /api/rally/create`): User Story, Defect, Defect Suite (`DS`) y Test Set en un
   proyecto; tareas dentro de una US o un defecto (`WorkProduct`). «Nuevo en Rally» (`RallyCreateForm`) es un panel lateral
@@ -852,6 +852,14 @@ En Vercel no hay servidor que lea la carpeta de OneDrive del Mac, así que el Ma
   solicitudes» (`MyFeedback`: Todas/Abiertas, estado, respuesta y último cambio) y sale en Más con ese nombre; el
   formulario del botón enlaza allí.
 
+- **Orden de prioridad** (migración `017_feedback_orden.sql`, después de 016): columna `rank` (1 = lo primero; null = sin
+  ordenar) y `admin_order_feedback(ids)`, que pone a cada id su posición y no cambia `updated_at`. En Lista y Tablero el
+  feedback sale en ese orden (`sortFeedback`: lo sin ordenar arriba, el más nuevo primero; después por `rank`). En la Lista
+  se ordena con el asa (solo el asa arrastra, para poder escribir la respuesta) o con las flechas; en el Tablero, soltando
+  encima de otra tarjeta (mitad de arriba = antes; si viene de otra columna, además cambia de estado). `moveFeedback`
+  recoloca sobre la lista entera, así ordenar con filtros no desordena lo que no se ve. El número `#n` es la posición en lo
+  que se ve (lista filtrada o columna). Quien envió el feedback no ve el orden.
+
 ## Fase 31: pantalla Rally como la lista de Rally (rama `rally-como-rally`)
 
 Petición de la usuaria (nov 2026): parecerse a la «React Custom List» del dashboard de Owners de etiquetado, que el equipo
@@ -1057,6 +1065,11 @@ API de SharePoint no admite CORS, así que lo hace un **marcador del navegador**
   grupo; sin coincidencia, por grupo como antes.
   Con **solo «Lista»** elegido en los tipos, el Tablero (y el de cada proyecto) usa sus estados como columnas (`Board` con
   ese tipo, en `BoardContent`) en vez de las 7 de Rally; soltar una tarjeta llama a `setState` y el cambio va a la lista.
+  Con **todos los tipos** (las 7 columnas de Rally), los elementos de la Lista van por su estado y no por su grupo (petición
+  de la usuaria, nov 2026; `listBoardColumn`): backlog → New, in progress → In-Progress, dependencia → Need Review y
+  completada → Accepted (sin mayúsculas ni tildes, con variantes como «in progres» o «en curso»). Solo se
+  pueden soltar en esas cuatro columnas (`LIST_DROP_COLUMNS`, `listStateForColumn`): en Defined, Blocked o Completed no se
+  mueven y sale un aviso. Solo afecta a las tareas de tipo Lista.
 - **Versión de la extensión**: al cambiar `spWork` o la extensión, sube `version` en `extension/manifest.json` y
   `LATEST_EXTENSION` en `features/mslist/extension.ts` (un test comprueba que coinciden); si la instalada es anterior, la
   pantalla Lista avisa y explica cómo actualizarla (descargar, sustituir la carpeta y recargar en `chrome://extensions`).
