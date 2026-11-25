@@ -28,6 +28,7 @@ import { confluenceChunks, isConfluenceChunk, loadConfluenceDocs, useConfluenceD
 import { kqlFrom, summaryMarks } from './spDocs';
 import { AiAnswer, AiPanel, useAiEnabled } from './ai/AiAnswer';
 import { AskClaudeButton, ClaudeCard } from './askClaude';
+import { InventoryAnswer, inventoryFor } from './InventoryAnswer';
 import { indexChunks, startLlm, useAi } from './ai/engine';
 
 type ActIntent = Extract<Intent, { kind: 'act' }>;
@@ -299,9 +300,11 @@ export function AssistantView() {
         const folderOf = (url: string) => sources.find((c) => folderState(folderDocs, c.siteUrl, c.folder).docs.some((d) => d.url === url));
         const fromConfluence = local.filter((h) => isConfluenceChunk(h.chunk));
         const source = answer && sourceOf(answer.hit, isConfluenceChunk(answer.hit.chunk) ? 'Confluence' : sources.find((c) => c === folderOf(answer.hit.chunk.ref))?.folderName);
+        // «Dame las evar que hay»: lista exacta de toda la documentación, en vez de la IA (que solo ve unos trozos).
+        const inv = inventoryFor(chunks, a.query);
         return (
           <Collapsible collapsed={e.id !== latestAiId}>
-            {aiOn
+            {inv ? <InventoryAnswer inv={inv} /> : aiOn
               ? <AiAnswer entryId={e.id} query={a.query} keywordHits={a.rag ?? a.hits.map((h) => h.chunk)} chunks={chunks} today={today}
                   onTask={(id) => { const t = taskById.get(id); if (t) editTask(t); }} />
               : answer && source && <Lead text={answer.sentence.text} marks={answer.sentence.marks} source={source.label} href={source.href} external={source.external} />}

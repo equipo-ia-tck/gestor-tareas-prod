@@ -1143,6 +1143,15 @@ Petición de la usuaria: algo a lo que preguntar y pedir cosas sobre el proyecto
   hecho, «qué dijo», temas y personas, resúmenes con plantilla (`tasksSummary`, `doneSummary`, `saidSummary`,
   `topicsSummary`, `personSummary`). No se inventa ni se resume con otras palabras.
 
+- **Lista exacta sin IA** (`domain/inventory.ts`, `InventoryAnswer.tsx`, nov 2026): «dame las evar que hay», «¿qué props
+  tenemos?», «qué evar se usan para las cosas de onboarding» (en plural; «qué evar se usa para el login», en singular, sigue
+  siendo una búsqueda). Recorre todos los trozos (documentación, notas, Lista; no tareas ni proyectos) buscando
+  `<palabra><número>` (`eVar69`, `evar 161`, `evar_12`), con la palabra de la pregunta en singular o plural; hace falta una
+  familia (2 o más). De cada uno, la línea que mejor lo explica (una fila de tabla si la hay), hasta 3 sitios con enlace y
+  cuántas veces sale; todos escritos con la forma más habitual («eVar»). Las demás palabras acotan («onboarding»: solo lo que
+  sale donde se habla de ello). Sustituye a la respuesta de la IA en esas preguntas (la IA solo ve 8 trozos); «Copiar lista»
+  la copia con tabuladores. Rinde de verdad con las tablas de Confluence bien subidas (`npm run subir-docs`).
+
 ## Fase 36: pantallas de cada cuenta (rama `dev`, nov 2026)
 
 Petición de la usuaria: que los administradores elijan qué pantallas ve cada persona.
