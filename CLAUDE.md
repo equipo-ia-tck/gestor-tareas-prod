@@ -1203,6 +1203,12 @@ de proveedor externo). Son documentos del cliente, así que **nada de su conteni
   con la extensión, «Subir archivos» o arrastrarlos a la lista (`uploadFiles` en `sharepointStore.ts`, operación `upload` de
   `spDocs`, la del Asistente: hasta 15 MB, nunca sustituye). Va del Mac a SharePoint con la sesión de la persona, como
   «Cargar»; al acabar se relee la carpeta y se ve cuántos se han subido y por qué no los demás. Con el marcador, no.
+- **Adjuntar en Rally y subir también a SharePoint** (nov 2026): en la ficha de Rally (pantalla Rally y panel de una tarea
+  enlazada), tras adjuntar y con la extensión al día, `SharePointCopy` pregunta «¿Lo subes también a SharePoint?»; si sí, se
+  elige la carpeta (la última usada, `sp-upload-last` en localStorage, las guardadas en Marea o un enlace) y se navega por sus
+  subcarpetas (`resolveFolder`/`browseFolder`, sin tocar la carpeta de la pantalla SharePoint) hasta «Subir a «X»»
+  (`uploadTo`). Avisa si ya hay un archivo con ese nombre (no se sustituye). Va en un portal con `data-popover` y su Esc no
+  cierra la ficha. El alta de «Nuevo en Rally» no lo pregunta.
 - **Versión del marcador** (`BRIDGE_VERSION`, `v` en el «hola»): el código de un marcador se queda como estaba al
   arrastrarlo, así que Marea no se conecta con uno antiguo y pide volver a arrastrarlo (`OLD_BOOKMARKLET`). Si se cambia
   el protocolo del puente, hay que subir la versión en los dos sitios. El marcador lleva dentro la dirección de Marea desde

@@ -1,4 +1,6 @@
 import { track } from '../usage/track';
+import { SharePointCopy } from '../sharepoint/SharePointCopy';
+import { extensionReady } from '../sharepoint/sharepointStore';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ExternalLink, Paperclip, Pencil, Trash2, Plus, Send, Upload, X } from 'lucide-react';
 import { unlinkedMentions, uploadedAt, type RallyDetail, type RallyItem, type RallyRef } from '../../domain/rally';
@@ -429,6 +431,8 @@ function Attachments({ item, files }: { item: RallyItem; files: RallyDetail['att
   const [uploading, setUploading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [over, setOver] = useState(false);
+  /** Lo recién adjuntado, para ofrecer subirlo también a SharePoint (con la extensión de Chrome). */
+  const [copy, setCopy] = useState<File[] | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const all = [...files, ...added].filter((f) => !f.objectId || !removed.includes(f.objectId));
 
@@ -448,18 +452,21 @@ function Attachments({ item, files }: { item: RallyItem; files: RallyDetail['att
 
   const upload = async (list: File[]) => {
     setError(null);
+    const attached: File[] = [];
     for (const file of list) {
       if (file.size > MAX_UPLOAD) { setError(tooBigMessage(file)); continue; }
       setUploading(file.name);
       try {
         const done = await rallyApi.attach(item, { name: file.name, contentType: file.type, content: await toBase64(file) });
         setAdded((l) => [...l, done]);
+        attached.push(file);
       } catch (e) {
         setError((e as Error).message);
         break;
       }
     }
     setUploading(null);
+    if (attached.length && extensionReady()) setCopy(attached);
   };
 
   return (
@@ -517,6 +524,7 @@ function Attachments({ item, files }: { item: RallyItem; files: RallyDetail['att
         </button>
         {error && <p className="mt-1 rounded-md bg-red-50 px-2 py-1 text-xs text-red-700 dark:bg-red-950 dark:text-red-300">{error}</p>}
       </Block>
+      {copy && <SharePointCopy files={copy} onClose={() => setCopy(null)} />}
     </div>
   );
 }

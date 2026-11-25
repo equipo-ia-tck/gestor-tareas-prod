@@ -142,21 +142,38 @@ export async function uploadFiles(files: File[], onProgress?: (done: number, tot
   const site = extSite;
   const folder = state.snapshot?.path;
   if (state.via !== 'extension' || !site || !folder) throw new Error('Para subir archivos abre la carpeta con la extensión de Chrome.');
+  const results = await uploadTo(site, folder, files, onProgress);
+  // Si mientras tanto se ha cambiado de carpeta, no se pisa la que se ve.
+  if (results.some((r) => !r.error) && state.snapshot?.path === folder) await openFolder(folder);
+  return results;
+}
+
+/** Sube archivos a una carpeta cualquiera de SharePoint con la extensión (de uno en uno; los de más de 15 MB, no). */
+export async function uploadTo(siteUrl: string, folder: string, files: File[], onProgress?: (done: number, total: number) => void): Promise<UploadResult[]> {
   const results: UploadResult[] = [];
   for (const [i, file] of files.entries()) {
     onProgress?.(i, files.length);
     if (file.size > MAX_UPLOAD_BYTES) { results.push({ name: file.name, error: 'pesa más de 15 MB: súbelo en SharePoint' }); continue; }
     try {
-      await extDocs('upload', { siteUrl: site, folder, name: file.name, base64: toBase64(await file.arrayBuffer()) }, 180_000);
+      await extDocs('upload', { siteUrl, folder, name: file.name, base64: toBase64(await file.arrayBuffer()) }, 180_000);
       results.push({ name: file.name, error: null });
     } catch (e) {
       results.push({ name: file.name, error: (e as Error).message });
     }
   }
   onProgress?.(files.length, files.length);
-  // Si mientras tanto se ha cambiado de carpeta, no se pisa la que se ve.
-  if (results.some((r) => !r.error) && state.snapshot?.path === folder) await openFolder(folder);
   return results;
+}
+
+/**
+ * Para elegir carpeta fuera de la pantalla SharePoint (p. ej. al adjuntar en Rally), sin tocar la carpeta que se ve allí:
+ * `resolveFolder` (un enlace → sitio y ruta) y `browseFolder` (un nivel, validado como lo demás).
+ */
+export const resolveFolder = (url: string) => extDocs<{ siteUrl: string; folder: string; folderName: string }>('resolve', { url }, 90_000);
+export async function browseFolder(siteUrl: string, folder: string): Promise<SharePointSnapshot> {
+  const snap = parseSnapshot(await extDocs<unknown>('folder', { siteUrl, folder }, 90_000));
+  if (!snap) throw new Error('Lo que ha llegado de SharePoint no es válido.');
+  return snap;
 }
 
 /** Un PDF o una imagen, como `blob:` de esta pestaña (quien lo pide revoca la URL al cerrar la vista previa). */
