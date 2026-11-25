@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { Bookmark, Check, ChevronRight, Puzzle, Copy, ExternalLink, FileText, Folder, FolderPlus, Loader2, Pencil, Search, ShieldCheck, Trash2, X } from 'lucide-react';
+import { Bookmark, Check, ChevronRight, Puzzle, Copy, ExternalLink, FileText, Folder, FolderPlus, Loader2, Pencil, Search, ShieldCheck, Trash2, Upload, X } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
 import { useWideLayout } from '../../app/Layout';
 import { ViewHeader } from '../views/ViewHeader';
@@ -11,7 +11,7 @@ import { fold } from '../../domain/text';
 import { track } from '../usage/track';
 import { bookmarkletCode, bookmarkletHref } from './bookmarklet';
 import { foldersOf, newFolder, saveFolders } from './folders';
-import { cancelWaiting, extensionReady, handleBridgeMessage, loadFile, openFolder, openForBridge, openWithExtension, setSnapshot, showFolder, useSharePointSnapshot } from './sharepointStore';
+import { canUpload, cancelWaiting, extensionReady, handleBridgeMessage, loadFile, openFolder, uploadFiles, type UploadResult, openForBridge, openWithExtension, setSnapshot, showFolder, useSharePointSnapshot } from './sharepointStore';
 import { isOutdated, LATEST_EXTENSION, useExtension } from '../mslist/extension';
 import { navigate } from '../../app/router';
 import { ClaudeAccessCard } from './SharePointClaude';
@@ -213,6 +213,27 @@ function FolderContents() {
     track('sharepoint', 'save-snapshot');
   };
   const go = (path: string) => { track('sharepoint', 'navigate'); void openFolder(path); };
+  const uploadable = !!snapshot && via === 'extension' && canUpload();
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [results, setResults] = useState<UploadResult[] | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const upload = async (list: FileList | File[]) => {
+    const files = [...list];
+    if (!files.length || progress) return;
+    setResults(null);
+    setProgress({ done: 0, total: files.length });
+    try {
+      const r = await uploadFiles(files, (done, total) => setProgress({ done, total }));
+      setResults(r);
+      track('sharepoint', 'upload', r.filter((x) => !x.error).length);
+    } catch (e) {
+      setResults(files.map((f) => ({ name: f.name, error: (e as Error).message })));
+    } finally {
+      setProgress(null);
+    }
+  };
+  const hasFiles = (e: React.DragEvent) => uploadable && [...e.dataTransfer.types].includes('Files');
 
   return (
     <section id="sp-contents" className={card}>
@@ -239,6 +260,13 @@ function FolderContents() {
                 className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-600 dark:hover:bg-zinc-800">
                 <ExternalLink className="size-3.5" />Abrir en SharePoint
               </a>
+              {uploadable && (
+                <button type="button" disabled={!!progress} onClick={() => fileRef.current?.click()}
+                  className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:hover:bg-zinc-800">
+                  <Upload className="size-3.5" />Subir archivos
+                </button>
+              )}
+              <input ref={fileRef} type="file" multiple hidden onChange={(e) => { if (e.target.files?.length) void upload(e.target.files); e.target.value = ''; }} />
               <button type="button" disabled={alreadySaved || saved} onClick={() => void save()}
                 className="inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:hover:bg-zinc-800">
                 {alreadySaved || saved ? <><Check className="size-3.5" />En mis carpetas</> : <><FolderPlus className="size-3.5" />Guardar en mis carpetas</>}
@@ -250,17 +278,38 @@ function FolderContents() {
           <p className="mb-2 text-xs text-zinc-500">
             {snapshot.entries.length} elementos{snapshot.truncated && ' (hay más: ábrela en SharePoint)'} · solo en esta pestaña, no se guarda ·{' '}
             {via === 'extension'
-              ? <span className="text-emerald-700 dark:text-emerald-400">con la extensión de Chrome: entra en las carpetas desde aquí</span>
+              ? <span className="text-emerald-700 dark:text-emerald-400">con la extensión de Chrome: entra en las carpetas desde aquí y arrastra archivos para subirlos</span>
               : connected
                 ? <span className="text-emerald-700 dark:text-emerald-400">conectado con SharePoint: entra en las carpetas desde aquí (deja abierta su pestaña)</span>
                 : <span>para moverte por las carpetas desde aquí, vuelve a pulsar el marcador</span>}
           </p>
+          {progress && (
+            <p className="mb-2 flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-300">
+              <Loader2 className="size-3.5 animate-spin" />Subiendo {Math.min(progress.done + 1, progress.total)} de {progress.total}…
+            </p>
+          )}
+          {results && (
+            <div className="mb-2 rounded-md border border-zinc-200 px-3 py-2 text-xs dark:border-zinc-700">
+              <div className="flex items-start justify-between gap-2">
+                <p className="font-medium">
+                  {results.filter((r) => !r.error).length} de {results.length} subidos a «{folderName}»
+                </p>
+                <button type="button" onClick={() => setResults(null)} aria-label="Cerrar" className="rounded p-0.5 text-zinc-400 hover:text-zinc-700"><X className="size-3.5" /></button>
+              </div>
+              {results.filter((r) => r.error).map((r) => (
+                <p key={r.name} className="text-amber-700 dark:text-amber-400">{r.name}: {r.error}</p>
+              ))}
+            </div>
+          )}
           <div className={`mb-2 flex items-center gap-1.5 ${inputClass}`}>
             <Search className="size-4 text-zinc-400" />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filtrar por nombre…" aria-label="Filtrar archivos" className="w-full bg-transparent outline-none" />
           </div>
           <div className={`grid gap-3 ${preview ? '2xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]' : ''}`}>
-            <ul className={`max-h-[65vh] divide-y divide-zinc-100 overflow-y-auto rounded-lg border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800 ${loading ? 'opacity-60' : ''}`}>
+            <ul className={`max-h-[65vh] divide-y divide-zinc-100 overflow-y-auto rounded-lg border dark:divide-zinc-800 ${dragging ? 'border-dashed border-indigo-500 bg-indigo-50/50 dark:bg-indigo-950/30' : 'border-zinc-200 dark:border-zinc-800'} ${loading ? 'opacity-60' : ''}`}
+              onDragOver={(e) => { if (hasFiles(e)) { e.preventDefault(); setDragging(true); } }}
+              onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false); }}
+              onDrop={(e) => { if (!hasFiles(e)) return; e.preventDefault(); setDragging(false); void upload(e.dataTransfer.files); }}>
               {shown.map((e) => {
                 const canPreview = e.kind === 'file' && connected && !!previewType(e.name) && (e.size ?? 0) <= (via === 'extension' ? EXT_PREVIEW_BYTES : MAX_PREVIEW_BYTES);
                 const inside = e.kind === 'folder' && connected;

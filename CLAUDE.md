@@ -1199,6 +1199,10 @@ de proveedor externo). Son documentos del cliente, así que **nada de su conteni
   origen de Marea; si no contesta en 2,5 s abre Marea en otra) y, al llegar su primera carpeta, se abre la pedida. El puente
   lee cualquier sitio (`/sites/…` o `/teams/…`) del mismo dominio de SharePoint, con la sesión de la persona. Si SharePoint
   bloquea los marcadores, el código se pega en la consola.
+- **Subir archivos** (nov 2026; La Caixa no deja descargar fuera de sus ordenadores, pero sí subir): con una carpeta abierta
+  con la extensión, «Subir archivos» o arrastrarlos a la lista (`uploadFiles` en `sharepointStore.ts`, operación `upload` de
+  `spDocs`, la del Asistente: hasta 15 MB, nunca sustituye). Va del Mac a SharePoint con la sesión de la persona, como
+  «Cargar»; al acabar se relee la carpeta y se ve cuántos se han subido y por qué no los demás. Con el marcador, no.
 - **Versión del marcador** (`BRIDGE_VERSION`, `v` en el «hola»): el código de un marcador se queda como estaba al
   arrastrarlo, así que Marea no se conecta con uno antiguo y pide volver a arrastrarlo (`OLD_BOOKMARKLET`). Si se cambia
   el protocolo del puente, hay que subir la versión en los dos sitios. El marcador lleva dentro la dirección de Marea desde

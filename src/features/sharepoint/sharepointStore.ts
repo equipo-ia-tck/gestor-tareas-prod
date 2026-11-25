@@ -118,6 +118,47 @@ export async function openWithExtension(url: string) {
   }
 }
 
+/** Tope por archivo al subir (como en el Asistente: va en base64 por la extensión). */
+export const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
+
+export interface UploadResult { name: string; error: string | null }
+
+const toBase64 = (buf: ArrayBuffer) => {
+  const bytes = new Uint8Array(buf);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+};
+
+/** ¿Se puede subir a la carpeta que se ve? Solo con la extensión (el marcador solo lee). */
+export const canUpload = () => state.via === 'extension' && !!extSite && !!state.snapshot;
+
+/**
+ * Sube archivos de este ordenador a la carpeta que se ve, con la extensión y la sesión de SharePoint de la persona (lo mismo
+ * que «Cargar» en SharePoint; si La Caixa no deja, SharePoint da el error). Nunca sustituye un archivo que ya exista. Al
+ * acabar vuelve a leer la carpeta.
+ */
+export async function uploadFiles(files: File[], onProgress?: (done: number, total: number) => void): Promise<UploadResult[]> {
+  const site = extSite;
+  const folder = state.snapshot?.path;
+  if (state.via !== 'extension' || !site || !folder) throw new Error('Para subir archivos abre la carpeta con la extensión de Chrome.');
+  const results: UploadResult[] = [];
+  for (const [i, file] of files.entries()) {
+    onProgress?.(i, files.length);
+    if (file.size > MAX_UPLOAD_BYTES) { results.push({ name: file.name, error: 'pesa más de 15 MB: súbelo en SharePoint' }); continue; }
+    try {
+      await extDocs('upload', { siteUrl: site, folder, name: file.name, base64: toBase64(await file.arrayBuffer()) }, 180_000);
+      results.push({ name: file.name, error: null });
+    } catch (e) {
+      results.push({ name: file.name, error: (e as Error).message });
+    }
+  }
+  onProgress?.(files.length, files.length);
+  // Si mientras tanto se ha cambiado de carpeta, no se pisa la que se ve.
+  if (results.some((r) => !r.error) && state.snapshot?.path === folder) await openFolder(folder);
+  return results;
+}
+
 /** Un PDF o una imagen, como `blob:` de esta pestaña (quien lo pide revoca la URL al cerrar la vista previa). */
 export async function loadFile(path: string, type: string, maxBytes: number): Promise<string> {
   if (state.via === 'extension' && extSite) {
