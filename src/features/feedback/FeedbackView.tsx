@@ -325,26 +325,34 @@ const Wrapper = ({ bare, className, children }: { bare: boolean; className: stri
 function ReplyBox({ f }: { f: Feedback }) {
   const toast = useToast();
   const [text, setText] = useState(f.reply ?? '');
-  const [saved, setSaved] = useState(f.reply ?? '');
+  const [saved, setSaved] = useState({ reply: f.reply ?? '', at: f.replyAt ?? null });
   const [saving, setSaving] = useState(false);
+  const changed = text.trim() !== saved.reply.trim();
   const save = async () => {
-    if (text.trim() === saved.trim() || saving) return;
+    if (!changed || saving) return;
     setSaving(true);
     try {
       const r = await sync().replyFeedback(f.id, text);
-      setSaved(r.reply ?? '');
+      setSaved({ reply: r.reply ?? '', at: r.replyAt ?? null });
       setText(r.reply ?? '');
-      toast(r.reply ? 'Respuesta guardada: la verá quien lo envió' : 'Respuesta quitada');
+      toast(r.reply ? `Respuesta enviada a ${f.authorName || 'quien lo envió'}` : 'Respuesta quitada');
     } catch (e) { toast(e instanceof Error ? e.message : String(e)); }
     setSaving(false);
   };
   return (
     <div className="mt-2">
-      <textarea value={text} onChange={(e) => setText(e.target.value)} onBlur={() => void save()} rows={text ? 2 : 1} maxLength={2000}
-        onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void save(); }}
-        placeholder="Respuesta para quien lo envió (opcional; la ve en «Mis solicitudes»)"
+      <textarea value={text} onChange={(e) => setText(e.target.value)} rows={2} maxLength={2000}
+        onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); e.stopPropagation(); void save(); } }}
+        placeholder={`Respuesta para ${f.authorName || 'quien lo envió'} (la ve en «Mis solicitudes»)`}
         className="w-full resize-y rounded-md border border-zinc-200 bg-transparent px-2 py-1 text-xs outline-none focus:border-indigo-400 dark:border-zinc-700" />
-      {saving && <p className="text-[11px] text-zinc-400">Guardando…</p>}
+      <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px]">
+        <button type="button" onClick={() => void save()} disabled={!changed || saving}
+          className="rounded bg-indigo-600 px-2 py-0.5 font-medium text-white hover:bg-indigo-500 disabled:opacity-40">
+          {saving ? 'Enviando…' : text.trim() || !saved.reply ? 'Enviar respuesta' : 'Quitar respuesta'}
+        </button>
+        {changed && !saving && <span className="text-amber-600 dark:text-amber-400">Sin enviar</span>}
+        {!changed && saved.reply && <span className="text-emerald-700 dark:text-emerald-400">✓ Enviada{saved.at ? ` el ${when(saved.at)}` : ''}: la ve en «Mis solicitudes»</span>}
+      </div>
     </div>
   );
 }
