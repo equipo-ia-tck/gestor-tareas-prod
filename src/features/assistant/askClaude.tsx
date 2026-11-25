@@ -34,40 +34,18 @@ export const claudeUrl = (question: string, id?: string) => `https://claude.ai/n
 export const newRequestId = () => `m-${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}`;
 
 /** Abre Claude en una ventana estrecha a la derecha de la pantalla (si el navegador no deja, en una pestaña). */
-/** La ventana de Claude que ha abierto Marea (para cerrarla cuando llega la respuesta). */
-let claudeWindow: Window | null = null;
-
 export function openClaude(question: string, id?: string) {
   const url = claudeUrl(question, id);
   const width = Math.min(560, Math.round(window.screen.availWidth * 0.4));
   const left = window.screen.availWidth - width;
   const win = window.open(url, 'marea-claude', `popup,width=${width},height=${window.screen.availHeight},left=${left},top=0`);
-  claudeWindow = win;
   if (!win) window.open(url, '_blank', 'noopener');
   track('assistant-claude', 'open');
 }
 
-/** ¿Cerrar la ventana de Claude al llegar la respuesta? (De cada persona; sí por defecto.) */
-const CLOSE_KEY = 'gestor-tareas:claude-close-on-answer';
-export const closeOnAnswer = () => { try { return localStorage.getItem(CLOSE_KEY) !== 'false'; } catch { return true; } };
-const setCloseOnAnswer = (v: boolean) => { try { localStorage.setItem(CLOSE_KEY, String(v)); } catch { /* sin almacenamiento */ } };
-
-/**
- * Cierra la ventana de Claude que abrió Marea y vuelve aquí. Solo la nuestra (la abrió este script, así que el navegador
- * deja cerrarla); la conversación sigue en el historial de Claude.
- */
-function closeClaude(): boolean {
-  const win = claudeWindow;
-  claudeWindow = null;
-  if (!win || win.closed || !closeOnAnswer()) return false;
-  try { win.close(); } catch { return false; }
-  window.focus();
-  return true;
-}
-
 // --- La respuesta de vuelta ---
 
-interface Reply { requestId: string; status: 'waiting' | 'done' | 'error' | 'timeout'; answer: string; error?: string; at: number; closed?: boolean }
+interface Reply { requestId: string; status: 'waiting' | 'done' | 'error' | 'timeout'; answer: string; error?: string; at: number }
 
 // Por respuesta del Asistente (su id), mientras dure la sesión.
 const replies = new Map<string, Reply>();
@@ -108,10 +86,8 @@ function watch(entryId: string) {
       const answer = await fetchAnswer(cur.requestId);
       if (replies.get(entryId)?.requestId !== cur.requestId) return; // se pidió otra vez
       if (answer && answer !== cur.answer) {
-        // La primera vez que llega, se cierra la ventana de Claude (si se abrió desde aquí) y se vuelve a Marea.
-        const closed = !doneAt ? closeClaude() : cur.closed;
         doneAt ||= Date.now();
-        setReply(entryId, { ...cur, status: 'done', answer, at: Date.now(), closed });
+        setReply(entryId, { ...cur, status: 'done', answer, at: Date.now() });
         track('assistant-claude', 'answer');
       }
     } catch (e) {
@@ -153,10 +129,7 @@ function ClaudeReply({ entryId, question }: { entryId: string; question: string 
       {r.status === 'done' ? (
         <>
           <Markdown text={r.answer} />
-          <p className="mt-1.5 text-[11px] text-zinc-400">
-            Redactada por Claude con el conector de Marea.{r.closed ? ' He cerrado su ventana: la conversación sigue en tu historial de Claude' : ' La conversación sigue en Claude por si quieres preguntarle más'}
-            {r.closed && <a href="https://claude.ai/recents" target="_blank" rel="noreferrer" className="ml-1 inline-flex items-center gap-0.5 text-orange-700 hover:underline dark:text-orange-300">abrirla<ExternalLink className="size-3" /></a>}.
-          </p>
+          <p className="mt-1.5 text-[11px] text-zinc-400">Redactada por Claude con el conector de Marea. La conversación sigue en Claude por si quieres preguntarle más.</p>
         </>
       ) : r.status === 'waiting' ? (
         <p className="flex items-center gap-1.5 text-zinc-600 dark:text-zinc-300">
@@ -237,18 +210,6 @@ export function ClaudeCard() {
           </li>
         </ol>
       )}
-      <CloseSetting />
     </section>
-  );
-}
-
-/** Cerrar o no la ventana de Claude al llegar la respuesta. */
-function CloseSetting() {
-  const [on, setOn] = useState(closeOnAnswer);
-  return (
-    <label className="mt-2 flex cursor-pointer items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-300">
-      <input type="checkbox" className="accent-orange-600" checked={on} onChange={(e) => { setCloseOnAnswer(e.target.checked); setOn(e.target.checked); }} />
-      Cerrar la ventana de Claude cuando llegue la respuesta
-    </label>
   );
 }
