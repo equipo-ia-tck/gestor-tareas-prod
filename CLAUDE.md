@@ -1238,7 +1238,11 @@ como es texto sin adjuntos, pesa poco (los 3 zips de prueba, ~700 páginas, ~2,6
 
 ### Más adelante (MCP)
 
-- **Notion**: cada persona conecta en Claude el conector oficial de Notion (no pasa por Marea).
+- **Notion**: cada persona conecta en Claude el **conector oficial de Notion** (no pasa por Marea ni se mete en nuestro
+  conector: nada de guardar tokens de Notion). Claude admite varios conectores en el mismo chat, así que con Marea y Notion
+  conectados los cruza en una sola conversación. El mensaje de «Preguntar a Claude» (`claudePrompt` en `askClaude.tsx`) invita
+  a usar también Notion «si lo tienes conectado», así la respuesta combinada vuelve a Marea por `responder_en_marea` igual que
+  la de solo Marea. La tarjeta `ClaudeCard` lo explica como paso opcional.
 - **Escritura** (crear tareas, mover estados) más adelante, si el solo-lectura cuaja. Rally por el conector necesitaría el OK
   de José.
 
