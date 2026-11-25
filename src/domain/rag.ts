@@ -44,7 +44,7 @@ export function fuseRanks(lists: string[][], k = 60): string[] {
 
 export interface RagSource { n: number; chunk: Chunk; text: string }
 
-/** Lo que cabe del contexto: unos 6.500 caracteres (~2.000 tokens) en un modelo con ventana de 4.096. */
+/** Lo que cabe del contexto: unos 6.500 caracteres (~2.000 tokens) en un modelo con ventana de 4.096 (el grande pide más). */
 export const CONTEXT_CHARS = 6500;
 const MAX_SOURCES = 8;
 const MAX_PER_SOURCE = 1600;
@@ -53,12 +53,12 @@ const MAX_PER_SOURCE = 1600;
  * Los trozos que se le dan al modelo, numerados para citarlos: en el orden de la búsqueda, sin repetir, recortados y
  * hasta llenar el presupuesto. Los trozos vacíos (un proyecto sin más) no aportan.
  */
-export function pickContext(ranked: Chunk[], maxChars = CONTEXT_CHARS): RagSource[] {
+export function pickContext(ranked: Chunk[], maxChars = CONTEXT_CHARS, maxSources = MAX_SOURCES): RagSource[] {
   const out: RagSource[] = [];
   const seen = new Set<string>();
   let used = 0;
   for (const chunk of ranked) {
-    if (out.length >= MAX_SOURCES) break;
+    if (out.length >= maxSources) break;
     if (seen.has(chunk.id)) continue;
     seen.add(chunk.id);
     let text = chunkText(chunk).trim();

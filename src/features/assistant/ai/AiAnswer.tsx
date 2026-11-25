@@ -5,7 +5,7 @@ import type { Chunk } from '../../../domain/knowledge';
 import { buildMessages, citedSources, fuseRanks, isNotFound, NOT_FOUND, pickContext, splitCitations, type RagSource } from '../../../domain/rag';
 import { usePersistentState } from '../../../hooks/usePersistentState';
 import { track } from '../../usage/track';
-import { generate, MODELS, modelCached, modelLabel, removeModel, semanticSearch, startLlm, useAi, type ModelSize } from './engine';
+import { aiBudget, generate, MODELS, modelCached, modelLabel, removeModel, semanticSearch, startLlm, useAi, type ModelSize } from './engine';
 
 /** ¿Respuestas con IA activadas en este navegador? (Es decisión de cada persona: descarga ~2 GB.) */
 export const useAiEnabled = () => usePersistentState<boolean>('asistente-ia', false);
@@ -30,10 +30,11 @@ async function answer(id: string, query: string, keywordHits: Chunk[], all: Chun
   const abort = new AbortController();
   setResult(id, { status: 'searching', text: '', sources: [], abort });
   try {
-    const semantic = await semanticSearch(query, all, 20).catch(() => [] as Chunk[]);
+    const budget = aiBudget();
+    const semantic = await semanticSearch(query, all, budget.semantic).catch(() => [] as Chunk[]);
     const byId = new Map([...keywordHits, ...semantic].map((c) => [c.id, c]));
     const ranked = fuseRanks([keywordHits.map((c) => c.id), semantic.map((c) => c.id)]).map((x) => byId.get(x)!).filter(Boolean);
-    const sources = pickContext(ranked);
+    const sources = pickContext(ranked, budget.chars, budget.sources);
     if (!sources.length) {
       setResult(id, { status: 'done', text: NOT_FOUND, sources: [] });
       return;

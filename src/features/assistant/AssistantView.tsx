@@ -186,7 +186,7 @@ export function AssistantView() {
           }
           return push(q, { kind: 'choose', act: intent, ids: found.slice(0, 10).map((t) => t.id) });
         }
-        case 'search': return push(q, { kind: 'search', query: q, hits: index.search(q, { limit: 14 }), rag: index.search(q, { limit: 30 }).map((h) => h.chunk) });
+        case 'search': return push(q, { kind: 'search', query: q, hits: index.search(q, { limit: 14 }), rag: index.search(q, { limit: 40 }).map((h) => h.chunk) });
       }
     } catch (e) {
       push(q, { kind: 'message', tone: 'warn', text: (e as Error).message });

@@ -5,8 +5,8 @@ import { chunkKey, chunkText, cosine, type ChatMessage } from '../../../domain/r
 
 /**
  * Motor de IA del Asistente, todo en el navegador (sin servidor, sin APIs, sin tokens; nada sale del ordenador):
- *  · Modelo de lenguaje: Qwen2.5-3B-Instruct (o, si se elige, el grande: Qwen2.5-7B-Instruct) con WebLLM en la gráfica
- *    (WebGPU). ~2 GB (~5 GB el grande) que se descargan una vez y quedan en la caché del navegador.
+ *  · Modelo de lenguaje: Qwen2.5-3B-Instruct (o, si se elige, el grande: Qwen3.5-9B, con ventana de 16k y unas 20 partes de documentación) con WebLLM en la gráfica
+ *    (WebGPU). ~2 GB (~6,5 GB el grande) que se descargan una vez y quedan en la caché del navegador.
  *  · Búsqueda por significado: embeddings multilingual-e5-small con transformers.js. Los vectores se guardan solo en
  *    memoria de la pestaña (los documentos de CaixaBank no se guardan en ningún sitio).
  */
@@ -34,15 +34,37 @@ export interface AiState {
  * números de 16 bits si la gráfica los admite (más rápido y ligero); si no, el de 32.
  */
 export type ModelSize = 'normal' | 'grande';
-export const MODELS: Record<ModelSize, { f16: string; f32: string; label: string; download: string; hint: string }> = {
-  normal: { f16: 'Qwen2.5-3B-Instruct-q4f16_1-MLC', f32: 'Qwen2.5-3B-Instruct-q4f32_1-MLC', label: 'Qwen2.5 3B', download: '~2 GB', hint: 'rápido, va en casi cualquier ordenador' },
-  grande: { f16: 'Qwen2.5-7B-Instruct-q4f16_1-MLC', f32: 'Qwen2.5-7B-Instruct-q4f32_1-MLC', label: 'Qwen2.5 7B', download: '~5 GB', hint: 'responde bastante mejor; para un Mac con chip M o una gráfica con 6 GB o más' },
+export interface ModelInfo {
+  f16: string; f32: string; label: string; download: string; hint: string;
+  /** Ventana del modelo (tokens): pregunta + documentación + respuesta. */
+  context: number;
+  /** Cuánta documentación se le da (caracteres y trozos), cuántos trozos trae la búsqueda por significado y cuánto puede escribir. */
+  budget: { chars: number; sources: number; semantic: number; maxTokens: number };
+  /** Modelos que «piensan en voz alta» (Qwen3): se les pide que no lo hagan. */
+  thinking?: boolean;
+}
+export const MODELS: Record<ModelSize, ModelInfo> = {
+  normal: {
+    f16: 'Qwen2.5-3B-Instruct-q4f16_1-MLC', f32: 'Qwen2.5-3B-Instruct-q4f32_1-MLC', label: 'Qwen2.5 3B', download: '~2 GB',
+    hint: 'rápido, va en casi cualquier ordenador; lee unas 8 partes de la documentación',
+    context: 4096, budget: { chars: 6500, sources: 8, semantic: 20, maxTokens: 450 },
+  },
+  grande: {
+    f16: 'Qwen3.5-9B-q4f16_1-MLC', f32: 'Qwen3.5-9B-q4f32_1-MLC', label: 'Qwen3.5 9B', download: '~6,5 GB',
+    hint: 'responde mucho mejor y lee unas 20 partes de la documentación; para un Mac con chip M y 16 GB o más',
+    context: 16384, budget: { chars: 26000, sources: 20, semantic: 40, maxTokens: 800 }, thinking: true,
+  },
 };
 export const MODEL_F16 = MODELS.normal.f16;
 export const MODEL_F32 = MODELS.normal.f32;
+const infoOf = (id: string) => Object.values(MODELS).find((m) => m.f16 === id || m.f32 === id) ?? MODELS.normal;
 /** Nombre del modelo cargado (para «Redactada por…»). */
-export const modelLabel = (id: string) => (Object.values(MODELS).find((m) => m.f16 === id || m.f32 === id) ?? MODELS.normal).label;
-const ALL_MODELS = Object.values(MODELS).flatMap((m) => [m.f16, m.f32]);
+export const modelLabel = (id: string) => infoOf(id).label;
+/** Cuánta documentación se le da al modelo cargado. */
+export const aiBudget = () => infoOf(state.model).budget;
+/** El grande de antes (Qwen2.5 7B): ya no se ofrece, pero «Borrar el modelo» también lo quita. */
+const OLD_MODELS = ['Qwen2.5-7B-Instruct-q4f16_1-MLC', 'Qwen2.5-7B-Instruct-q4f32_1-MLC'];
+const ALL_MODELS = [...Object.values(MODELS).flatMap((m) => [m.f16, m.f32]), ...OLD_MODELS];
 
 let state: AiState = { llm: 'off', progress: 0, progressText: '', error: null, model: MODEL_F16, embed: 'off', embedProgress: 0, indexed: 0, total: 0, embedError: null };
 const listeners = new Set<() => void>();
@@ -113,7 +135,7 @@ export function startLlm(size: ModelSize = 'normal'): Promise<void> {
       llmWorker = new Worker(new URL('./llmWorker.ts', import.meta.url), { type: 'module' });
       engine = await CreateWebWorkerMLCEngine(llmWorker, model, {
         initProgressCallback: (r) => set({ progress: r.progress, progressText: r.text }),
-      });
+      }, { context_window_size: MODELS[size].context });
       loadedSize = size;
       set({ llm: 'ready', progress: 1, progressText: '' });
     } catch (e) {
@@ -142,6 +164,11 @@ export async function removeModel(): Promise<void> {
 
 let busy: Promise<unknown> = Promise.resolve();
 
+/** Quita lo que un modelo «pensante» escriba entre <think> y </think> (también si aún no lo ha cerrado). */
+export function withoutThinking(text: string): string {
+  return text.replace(/<think>[\s\S]*?(<\/think>\s*|$)/g, '').replace(/^\s+/, '');
+}
+
 /**
  * Genera la respuesta en streaming. `onText` recibe el texto acumulado. Las peticiones van en cola (el modelo responde
  * de una en una). `signal` la para.
@@ -153,14 +180,18 @@ export function generate(messages: ChatMessage[], onText: (text: string) => void
     const stop = () => engine?.interruptGenerate();
     signal?.addEventListener('abort', stop);
     try {
-      const stream = await engine.chat.completions.create({ messages, stream: true, temperature: 0.1, top_p: 0.9, max_tokens: 450 });
-      let text = '';
+      const info = infoOf(state.model);
+      const stream = await engine.chat.completions.create({
+        messages, stream: true, temperature: 0.1, top_p: 0.9, max_tokens: info.budget.maxTokens,
+        ...(info.thinking ? { extra_body: { enable_thinking: false } } : {}),
+      });
+      let raw = '';
       for await (const part of stream) {
-        text += part.choices[0]?.delta?.content ?? '';
-        onText(text);
+        raw += part.choices[0]?.delta?.content ?? '';
+        onText(withoutThinking(raw));
       }
       await engine.resetChat();
-      return text;
+      return withoutThinking(raw);
     } finally {
       signal?.removeEventListener('abort', stop);
     }

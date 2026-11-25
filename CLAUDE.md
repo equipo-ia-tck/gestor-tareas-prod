@@ -1329,9 +1329,12 @@ que los documentos (también los de CaixaBank) salgan del ordenador. RAG **local
   `shader-f16`, si no `q4f32`). Necesita WebGPU (Chrome/Edge); sin él, `unsupported` y se queda la respuesta sin IA
   (`extractAnswer`). «Borrar el modelo» lo quita de la caché.
 - **Modelo normal o grande** (nov 2026; `MODELS`, `asistente-ia-modelo` en localStorage, elegido en el panel): Normal =
-  Qwen2.5-3B (~2 GB) y Grande = **Qwen2.5-7B-Instruct** (~5 GB, responde bastante mejor; para un Mac con chip M o una
-  gráfica con 6 GB o más). Cambiar suelta el que hay y carga el otro (`startLlm(size)`); si la gráfica no tiene memoria
-  para el grande, lo dice. «Borrar el modelo» borra los dos. Un test comprueba que los cuatro ids existen en WebLLM.
+  Qwen2.5-3B (~2 GB, ventana 4k, 8 trozos y ~6.500 caracteres) y Grande = **Qwen3.5-9B** (~6,5 GB; ventana de **16k**
+  con `context_window_size`, **20 trozos** y ~26.000 caracteres, 40 de la búsqueda por significado y 40 por palabras,
+  respuestas de hasta 800 tokens; para un Mac con chip M y 16 GB o más). Qwen3 «piensa en voz alta»: se le pide
+  `enable_thinking: false` y `withoutThinking` quita cualquier `<think>…</think>`. Cambiar suelta el modelo que hay y carga
+  el otro (`startLlm(size)`); si la gráfica no tiene memoria para el grande, lo dice. «Borrar el modelo» borra todos (también
+  el Qwen2.5-7B que fue el grande un día). Un test comprueba que los ids existen en WebLLM y que el contexto cabe.
 - **Nunca en blanco**: si la IA responde «No lo encuentro» o falla, debajo sale la frase que mejor responde sin IA
   (`extractAnswer`, el `Lead` de siempre, prop `fallback` de `AiAnswer`) con su enlace.
 - **Motor** (`features/assistant/ai/engine.ts`): el modelo va en un worker (`llmWorker.ts`, `CreateWebWorkerMLCEngine`), en
