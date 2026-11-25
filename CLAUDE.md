@@ -998,6 +998,12 @@ de Outlook de WPP, también en la app publicada.
   **Outlook web** (`outlookWebMeetingUrl`, `outlook.office.com/calendar/deeplink/compose` con `online=true`) en una pestaña,
   para crearla con esa cuenta. Teams web no admite crear reuniones por enlace (sale «Teams clásico ya no está disponible»).
   La pendiente lleva `calendar` y se quita al llegar del otro calendario (`realMeetings` lo incluye).
+- **Directorio de La Caixa en «Reunión nueva»** (nov 2026; su .ics no trae asistentes y un flujo en su entorno sacaría su
+  calendario fuera): en «Asistentes», desde 3 letras, la extensión (1.7.0, operación `people` de `spDocs`) busca lo escrito
+  con la sesión de SharePoint de la persona, como «Compartir» en SharePoint (`clientPeoplePickerSearchUser`; si no deja, el
+  buscador de personas de SharePoint), en un sitio por dominio de las carpetas guardadas (`directorySites`). Bloque
+  «Directorio de La Caixa» con nombre, cargo y email (`useDirectory`, `features/calendar/directory.ts`). Solo se busca lo
+  escrito y se queda en memoria; Marea no guarda ningún listado.
 - **Personas de La Caixa** (`isCaixaEmail`: `@caixabank.com`, `@proveedorexterno.com` y sus subdominios, `CAIXA_DOMAINS`):
   en su ficha, «Chat en el navegador» abre Teams web sin la app (`teamsWebUrl` admite también `/l/chat/…`, tipo `chat`) y
   «Nueva reunión» abre con el entorno La Caixa ya elegido (`NewMeeting` `env`), aunque Ajustes diga abrir Teams en la app.

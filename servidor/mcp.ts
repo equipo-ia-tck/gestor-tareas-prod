@@ -25,7 +25,7 @@ export async function saveAnswer(config: { url: string; key: string }, token: st
 export type SpAsk = (op: 'folder' | 'search' | 'read', args: Record<string, unknown>) => Promise<unknown>;
 
 const SP_WAIT_MS = 40_000;
-const NO_TAB = 'Tu pestaña de Marea no contesta. Para que Claude pueda mirar en SharePoint: abre Marea en Chrome (con la extensión «Marea · Lista» 1.6.0 o posterior), entra en SharePoint y marca «Dejar que Claude lea mis carpetas». Después vuelve a pedirlo.';
+const NO_TAB = 'Tu pestaña de Marea no contesta. Para que Claude pueda mirar en SharePoint: abre Marea en Chrome (con la extensión «Marea · Lista» al día), entra en SharePoint y marca «Dejar que Claude lea mis carpetas». Después vuelve a pedirlo.';
 
 /**
  * Pide algo de SharePoint a la pestaña de Marea de la persona (migración 018) y espera la respuesta: la petición se deja

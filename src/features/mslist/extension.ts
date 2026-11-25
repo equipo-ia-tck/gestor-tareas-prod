@@ -7,7 +7,7 @@ import type { MsListResult } from '../../domain/msListParse';
  */
 
 /** Versión de `extension/manifest.json` (un test comprueba que coinciden): si la instalada es anterior, se avisa. */
-export const LATEST_EXTENSION = '1.6.0';
+export const LATEST_EXTENSION = '1.7.0';
 
 /** ¿La versión instalada es anterior a la última? */
 export function isOutdated(installed: string | null): boolean {
@@ -60,10 +60,10 @@ export function extSync(listUrl: string, changes: unknown[], wantList: boolean):
 
 /**
  * Documentación del Asistente y carpetas de la pantalla SharePoint por la extensión (`resolve`, `search`, `list`, `texts`,
- * `upload`, `folder`, `file`, `text`; ver
+ * `upload`, `folder`, `file`, `text`, `people`; ver
  * `features/assistant/spDocs.ts`). Lanza el error que devuelva SharePoint.
  */
-export function extDocs<T>(op: 'resolve' | 'search' | 'list' | 'texts' | 'upload' | 'folder' | 'file' | 'text', args: Record<string, unknown>, timeoutMs = 60_000): Promise<T> {
+export function extDocs<T>(op: 'resolve' | 'search' | 'list' | 'texts' | 'upload' | 'folder' | 'file' | 'text' | 'people', args: Record<string, unknown>, timeoutMs = 60_000): Promise<T> {
   const id = crypto.randomUUID();
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => { waiting.delete(id); reject(new Error('La extensión no ha contestado a tiempo.')); }, timeoutMs);

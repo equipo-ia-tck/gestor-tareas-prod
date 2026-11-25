@@ -9,6 +9,7 @@
  * - `upload`: sube un archivo a la carpeta (sin sustituir uno que ya exista).
  * - `folder`: un nivel de una carpeta (subcarpetas y archivos con tamaño y fecha) para navegarla en la pantalla SharePoint.
  * - `file`: un PDF o una imagen (hasta 10 MB) en base64, para verlo dentro de Marea.
+ * - `people`: buscar personas del directorio (nombre, email y cargo), para invitarlas a reuniones.
  * - `text`: el texto de un archivo (Word, PowerPoint, Excel, texto…) para Claude, si la persona lo permite.
  *
  * Se convierte en texto con `toString()` (como `spWork`): no puede usar nada de fuera de la función ni este archivo
@@ -299,6 +300,63 @@ export async function spDocs(op: string, args: Any): Promise<Any> {
     let bin = '';
     for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
     return { base64: btoa(bin), size: buf.byteLength };
+  }
+
+  // Personas del directorio de esa organización, como el buscador de «Compartir» de SharePoint (para invitar a reuniones).
+  // Solo lo que se escribe, hasta 10; nombre, email y cargo. Si el selector no deja (p. ej. a invitados), se prueba con el
+  // buscador de personas de SharePoint.
+  if (op === 'people') {
+    const site = String(args.siteUrl);
+    sp(site);
+    const query = String(args.query || '').trim().slice(0, 80);
+    if (query.length < 2) return { people: [] };
+    const out: Any[] = [];
+    const seen: Record<string, boolean> = {};
+    const push = (name: string, email: string, title: string) => {
+      const e = String(email || '').trim().toLowerCase();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e) || seen[e]) return;
+      seen[e] = true;
+      out.push({ name: String(name || e), email: e, title: String(title || '') });
+    };
+    let pickerError: Any = null;
+    try {
+      const ctx = await fetch(site + '/_api/contextinfo', { method: 'POST', headers: { Accept: J }, credentials: 'include' });
+      if (!ctx.ok) throw fail(ctx.status, 'SharePoint respondió ' + ctx.status + '.');
+      const digest = (await ctx.json()).FormDigestValue;
+      const r = await fetch(site + '/_api/SP.UI.ApplicationPages.ClientPeoplePickerWebServiceInterface.clientPeoplePickerSearchUser', {
+        method: 'POST', credentials: 'include',
+        headers: { Accept: J, 'Content-Type': 'application/json;odata=verbose', 'X-RequestDigest': digest },
+        body: JSON.stringify({ queryParams: { __metadata: { type: 'SP.UI.ApplicationPages.ClientPeoplePickerQueryParameters' },
+          QueryString: query, MaximumEntitySuggestions: 10, AllowEmailAddresses: false, AllowOnlyEmailAddresses: false,
+          AllowMultipleEntities: true, PrincipalType: 1, PrincipalSource: 15, SharePointGroupID: 0 } }),
+      });
+      if (!r.ok) throw fail(r.status, 'SharePoint respondió ' + r.status + '.');
+      const body: Any = await r.json();
+      const raw = body.value ?? (body.d && body.d.ClientPeoplePickerSearchUser) ?? '[]';
+      for (const p of (typeof raw === 'string' ? JSON.parse(raw) : raw) || []) {
+        const d = p.EntityData || {};
+        push(p.DisplayText, d.Email || (String(p.Key || '').split('|').pop() || ''), d.Title || d.Department || '');
+      }
+    } catch (e) {
+      pickerError = e;
+    }
+    if (!out.length) {
+      try {
+        const words = query.replace(/["'*]/g, ' ').split(/\s+/).filter(Boolean).map((w) => w + '*').join(' ');
+        const r = await get(site + "/_api/search/query?querytext='" + q(words) + "'&sourceid='b09a7990-05ea-4af9-81ef-edfab16c4e31'"
+          + "&selectproperties='PreferredName,WorkEmail,JobTitle'&rowlimit=10");
+        const rows: Any[] = (((r.PrimaryQueryResult || {}).RelevantResults || {}).Table || {}).Rows || [];
+        for (const row of rows) {
+          const c: Any = {};
+          for (const cell of row.Cells || []) c[cell.Key] = cell.Value;
+          push(c.PreferredName, c.WorkEmail, c.JobTitle);
+        }
+      } catch (e) {
+        if (pickerError) throw pickerError;
+        throw e;
+      }
+    }
+    return { people: out.slice(0, 10) };
   }
 
   throw new Error('Operación desconocida.');

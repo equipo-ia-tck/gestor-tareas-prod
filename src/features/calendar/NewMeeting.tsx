@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type KeyboardEvent } from 'react';
 import { track } from '../usage/track';
-import { Video, X } from 'lucide-react';
+import { Building2, Loader2, Video, X } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
 import { Modal } from '../../components/Modal';
 import { Avatar } from '../../components/ui/Badges';
@@ -13,6 +13,7 @@ import type { ISODate } from '../../domain/types';
 import { openTeams, useTeamsApp } from '../../hooks/useTeamsApp';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { EXTRA_COLOR, addPendingMeeting, useOutlook } from './outlook';
+import { useDirectory } from './directory';
 
 const DURATIONS = [15, 30, 45, 60, 90, 120];
 
@@ -84,6 +85,11 @@ export function NewMeeting({ date: initialDate, time: initialTime, title: initia
       && (fold(c.name).includes(q) || c.email.toLowerCase().includes(q))).slice(0, 6)
     : [];
 
+  // Directorio de La Caixa (SharePoint, con la extensión): quien no está ya en tus contactos ni invitado.
+  const directory = useDirectory(query);
+  const fromDirectory = directory.people.filter((p) => !attendees.some((a) => a.email.toLowerCase() === p.email)
+    && !suggestions.some((c) => c.email.toLowerCase() === p.email));
+
   function add(c: { name: string; email: string }) {
     if (!attendees.some((a) => a.email.toLowerCase() === c.email.toLowerCase())) setAttendees([...attendees, c]);
     setQuery('');
@@ -93,6 +99,7 @@ export function NewMeeting({ date: initialDate, time: initialTime, title: initia
     if ((e.key === 'Enter' || e.key === ',' || e.key === ';') && query.trim()) {
       e.preventDefault();
       if (suggestions[0]) add(suggestions[0]);
+      else if (fromDirectory[0]) { add(fromDirectory[0]); track('calendar', 'directory-invite'); }
       else if (isEmail(query)) add({ name: query.trim(), email: query.trim() });
       else setError('Escribe un email completo o elige a alguien de la lista.');
     } else if (e.key === 'Backspace' && !query && attendees.length) {
@@ -155,14 +162,30 @@ export function NewMeeting({ date: initialDate, time: initialTime, title: initia
             <input value={query} onChange={(e) => { setQuery(e.target.value); setError(null); }} onKeyDown={onKey}
               placeholder={attendees.length ? '' : 'Asistentes: nombre o email'} className="min-w-32 flex-1 bg-transparent py-0.5 outline-none" />
           </div>
-          {suggestions.length > 0 && (
-            <ul className="absolute inset-x-0 top-full z-10 mt-1 overflow-hidden rounded-md border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+          {(suggestions.length > 0 || fromDirectory.length > 0 || (directory.loading && directory.q.length >= 3)) && (
+            <ul className="absolute inset-x-0 top-full z-10 mt-1 max-h-72 overflow-y-auto rounded-md border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
               {suggestions.map((c) => (
                 <li key={c.email}>
                   <button type="button" onClick={() => add(c)} className="flex w-full items-center gap-2 px-2 py-1.5 text-left hover:bg-zinc-100 dark:hover:bg-zinc-800">
                     <Avatar name={c.name} size={20} />
                     <span className="flex-1 truncate">{c.name}</span>
                     <span className="truncate text-xs text-zinc-400">{c.email}</span>
+                  </button>
+                </li>
+              ))}
+              {(fromDirectory.length > 0 || directory.loading) && (
+                <li className="flex items-center gap-1.5 border-t border-zinc-100 bg-zinc-50 px-2 py-1 text-[11px] font-semibold tracking-wide text-zinc-500 uppercase dark:border-zinc-800 dark:bg-zinc-800/60">
+                  <Building2 className="size-3.5" />Directorio de La Caixa
+                  {directory.loading && <Loader2 className="ml-auto size-3.5 animate-spin" />}
+                </li>
+              )}
+              {fromDirectory.map((p) => (
+                <li key={p.email}>
+                  <button type="button" onClick={() => { add(p); track('calendar', 'directory-invite'); }} title={p.title || p.email}
+                    className="flex w-full items-center gap-2 px-2 py-1.5 text-left hover:bg-zinc-100 dark:hover:bg-zinc-800">
+                    <Avatar name={p.name} size={20} />
+                    <span className="min-w-0 flex-1 truncate">{p.name}{p.title && <span className="ml-1.5 text-xs text-zinc-400">{p.title}</span>}</span>
+                    <span className="truncate text-xs text-zinc-400">{p.email}</span>
                   </button>
                 </li>
               ))}

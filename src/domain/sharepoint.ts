@@ -153,3 +153,18 @@ export function folderLocation(raw: string): { origin: string; path: string } | 
   if (!/^\/(sites|teams)\/[^/]+\/.+/i.test(path) || path.includes('..')) return null;
   return { origin: u.origin, path };
 }
+
+/**
+ * Sitios de SharePoint donde buscar personas para las reuniones (el directorio de La Caixa): uno por dominio, sacado de
+ * las carpetas guardadas (`/sites/X` o `/teams/X`; si no, la raíz). Como mucho dos dominios.
+ */
+export function directorySites(folders: { url: string }[]): string[] {
+  const byOrigin = new Map<string, string>();
+  for (const f of folders) {
+    const where = folderLocation(f.url);
+    if (!where || byOrigin.has(where.origin)) continue;
+    const site = /^\/(?:sites|teams)\/[^/]+/i.exec(where.path)?.[0] ?? '';
+    byOrigin.set(where.origin, where.origin + site.split('/').map(encodeURIComponent).join('/'));
+  }
+  return [...byOrigin.values()].slice(0, 2);
+}
