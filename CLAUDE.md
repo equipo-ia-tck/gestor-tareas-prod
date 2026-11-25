@@ -982,6 +982,12 @@ de Outlook de WPP, también en la app publicada.
   verde (`EXTRA_COLOR`) en la agenda, la lista y el mes, con su interruptor en «Mis calendarios» (`calendar-extra`) y
   «Calendario X» en la ficha; su «Unirse en el navegador» abre siempre Teams web con `teamsWebUrl` (launcher con `msLaunch=false`, para enlaces `/l/meetup-join/` y los cortos `/meet/`, que traen casi todas; para que la página de Teams no lance la app, que va con la cuenta de WPP). Ajustes → Calendario de Outlook → «Otro calendario» (`ExtraSettings`): nombre y enlace.
   Un solo calendario extra por persona.
+- **Zonas horarias** (`domain/timezones.ts`, nov 2026): una hora con `TZID` ya no se toma como hora de aquí; se pasa de
+  esa zona a la de quien mira (una reunión puesta desde Argentina a las 10:00 sale a las 14:00 en Madrid, 15:00 en verano).
+  Por orden: el `VTIMEZONE` del propio .ics (reglas STANDARD/DAYLIGHT con `BYMONTH` y `BYDAY`), el nombre IANA con `Intl` y
+  los nombres de Windows más habituales (`WINDOWS_ZONES`); una zona desconocida se deja como viene. Las repeticiones se
+  cuentan en los días de la zona de la reunión y cada una se convierte (cambia de hora aquí con el cambio de horario), y la
+  hora de fin sale de la duración. Tests en `tests/timezones.test.ts`.
 - **Reunión nueva con entorno** (`NewMeeting`, `meeting-env` en localStorage): WPP abre Teams como siempre
   (`teamsMeetingUrl`, app o navegador según Ajustes); La Caixa (el nombre del otro calendario) abre la reunión rellenada en
   **Outlook web** (`outlookWebMeetingUrl`, `outlook.office.com/calendar/deeplink/compose` con `online=true`) en una pestaña,

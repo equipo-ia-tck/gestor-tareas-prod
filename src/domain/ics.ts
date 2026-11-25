@@ -1,5 +1,6 @@
 import { addDays, toISODate, weekdayOf } from './dates';
 import type { ISODate } from './types';
+import { parseZones, zonedToUtc, type ZoneTable } from './timezones';
 
 /** Reunión leída de un archivo .ics (Outlook, Teams, Google Calendar…). */
 export interface CalendarEvent {
@@ -50,20 +51,40 @@ function parseProp(line: string): Prop | null {
 
 const unescape = (s: string) => s.replace(/\\n/gi, '\n').replace(/\\([,;\\])/g, '$1');
 
-/**
- * Fecha y hora locales de un DTSTART. Con "Z" es UTC y se pasa a la hora local; con TZID se toma
- * tal cual (lo normal es que sea la zona de la propia usuaria); sin hora es un día completo.
- */
-function parseDate(p: Prop): { date: ISODate; time: string | null } | null {
-  const m = /^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})?(Z)?)?$/.exec(p.value.trim());
+/** Fecha y hora tal como vienen en el .ics, con su zona (`Z` = UTC, `tzid` = la del TZID). */
+interface RawDate { date: ISODate; h: number | null; mi: number; utc: boolean; tzid: string | null }
+
+function parseRaw(p: Prop, value = p.value): RawDate | null {
+  const m = /^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})?(Z)?)?$/.exec(value.trim());
   if (!m) return null;
   const [, y, mo, d, h, mi, , z] = m;
-  if (!h) return { date: `${y}-${mo}-${d}`, time: null };
-  if (z) {
-    const local = new Date(Date.UTC(+y, +mo - 1, +d, +h, +mi));
-    return { date: toISODate(local), time: `${String(local.getHours()).padStart(2, '0')}:${String(local.getMinutes()).padStart(2, '0')}` };
+  return { date: `${y}-${mo}-${d}`, h: h ? Number(h) : null, mi: mi ? Number(mi) : 0, utc: !!z, tzid: p.params.TZID ?? null };
+}
+
+const hhmm = (h: number, mi: number) => `${String(h).padStart(2, '0')}:${String(mi).padStart(2, '0')}`;
+
+/** Instante UTC (ms) de una fecha con hora, o null si no se sabe su zona (se toma como hora de aquí). */
+function instantOf(raw: RawDate, date: ISODate, zones: ZoneTable): number | null {
+  if (raw.h == null) return null;
+  const [y, mo, d] = date.split('-').map(Number);
+  if (raw.utc) return Date.UTC(y, mo - 1, d, raw.h, raw.mi);
+  return raw.tzid ? zonedToUtc(y, mo, d, raw.h, raw.mi, raw.tzid, zones) : null;
+}
+
+/**
+ * Fecha y hora locales (las de quien mira) de un DTSTART en el día `date` (el suyo, o el de una repetición). Con «Z» es
+ * UTC; con TZID se pasa de esa zona a la de aquí (una reunión puesta desde Argentina a las 10:00 sale a las 14:00 en
+ * Madrid); sin zona, o con una que no se reconoce, se deja como viene. Sin hora es un día completo.
+ */
+function localOf(raw: RawDate, date: ISODate, zones: ZoneTable): { date: ISODate; time: string | null; at: number | null } {
+  if (raw.h == null) return { date, time: null, at: null };
+  const at = instantOf(raw, date, zones);
+  if (at == null) {
+    const [y, mo, d] = date.split('-').map(Number);
+    return { date, time: hhmm(raw.h, raw.mi), at: new Date(y, mo - 1, d, raw.h, raw.mi).getTime() };
   }
-  return { date: `${y}-${mo}-${d}`, time: `${h}:${mi}` };
+  const local = new Date(at);
+  return { date: toISODate(local), time: hhmm(local.getHours(), local.getMinutes()), at };
 }
 
 function person(p: Prop): { name: string; email: string } {
@@ -102,12 +123,13 @@ function expandRule(rule: string, start: ISODate, from: ISODate, to: ISODate, ex
  */
 export function parseIcs(text: string, from: ISODate, to: ISODate): CalendarEvent[] {
   const lines = unfold(text);
+  const zones = parseZones(lines);
   const events: CalendarEvent[] = [];
   let props: Prop[] | null = null;
   for (const line of lines) {
     if (line.startsWith('BEGIN:VEVENT')) { props = []; continue; }
     if (line.startsWith('END:VEVENT')) {
-      if (props) events.push(...toEvents(props, from, to));
+      if (props) events.push(...toEvents(props, from, to, zones));
       props = null;
       continue;
     }
@@ -119,13 +141,27 @@ export function parseIcs(text: string, from: ISODate, to: ISODate): CalendarEven
   return [...seen.values()].sort((a, b) => a.date.localeCompare(b.date) || (a.time ?? '').localeCompare(b.time ?? ''));
 }
 
-function toEvents(props: Prop[], from: ISODate, to: ISODate): CalendarEvent[] {
+function toEvents(props: Prop[], from: ISODate, to: ISODate, zones: ZoneTable): CalendarEvent[] {
   const get = (n: string) => props.find((p) => p.name === n);
   if (get('STATUS')?.value.toUpperCase() === 'CANCELLED') return [];
-  const start = get('DTSTART') ? parseDate(get('DTSTART')!) : null;
-  if (!start) return [];
-  const finish = get('DTEND') ? parseDate(get('DTEND')!) : null;
-  const end = start.time && finish?.time && finish.date === start.date ? finish.time : null;
+  const rawStart = get('DTSTART') ? parseRaw(get('DTSTART')!) : null;
+  if (!rawStart) return [];
+  const rawEnd = get('DTEND') ? parseRaw(get('DTEND')!) : null;
+  const first = localOf(rawStart, rawStart.date, zones);
+  const firstEnd = rawEnd ? localOf(rawEnd, rawEnd.date, zones) : null;
+  // Duración (para la hora de fin de cada repetición, que se calcula desde su inicio ya en hora de aquí).
+  const duration = first.at != null && firstEnd?.at != null ? firstEnd.at - first.at : null;
+  /** Una ocurrencia en el día `date` (de la zona de la reunión), ya en hora de aquí, con su hora de fin si acaba ese día. */
+  const occurrence = (date: ISODate) => {
+    const start = localOf(rawStart, date, zones);
+    let end: string | null = null;
+    if (start.at != null && duration != null && duration > 0) {
+      const e = new Date(start.at + duration);
+      if (toISODate(e) === start.date) end = hhmm(e.getHours(), e.getMinutes());
+    }
+    return { date: start.date, time: start.time, end };
+  };
+  const start = occurrence(rawStart.date);
   const description = unescape(get('DESCRIPTION')?.value ?? '');
   const location = unescape(get('LOCATION')?.value ?? '');
   const teams = get('X-MICROSOFT-SKYPETEAMSMEETINGURL')?.value
@@ -141,13 +177,17 @@ function toEvents(props: Prop[], from: ISODate, to: ISODate): CalendarEvent[] {
   const base = {
     uid: get('UID')?.value ?? `${start.date}-${get('SUMMARY')?.value}`,
     title: unescape(get('SUMMARY')?.value ?? 'Reunión'),
-    time: start.time, end, attendees, organizer, description, location, url: teams, showAs,
+    attendees, organizer, description, location, url: teams, showAs,
   };
   const rrule = get('RRULE')?.value;
   const recurrenceId = get('RECURRENCE-ID');
   if (rrule && !recurrenceId) {
-    const exdates = new Set(props.filter((p) => p.name === 'EXDATE').flatMap((p) => p.value.split(',').map((v) => parseDate({ ...p, value: v })?.date ?? '')));
-    return expandRule(rrule, start.date, from, to, exdates).map((date) => ({ ...base, date }));
+    // Las repeticiones se cuentan en los días de la zona de la reunión y cada una se pasa a la hora de aquí (puede caer
+    // en otro día si la diferencia horaria es grande); por eso se expande con un día de margen y se filtra después.
+    const exdates = new Set(props.filter((p) => p.name === 'EXDATE').flatMap((p) => p.value.split(',').map((v) => parseRaw(p, v)?.date ?? '')));
+    return expandRule(rrule, rawStart.date, addDays(from, -1), addDays(to, 1), exdates)
+      .map((date) => ({ ...base, ...occurrence(date) }))
+      .filter((e) => e.date >= from && e.date <= to);
   }
-  return start.date >= from && start.date <= to ? [{ ...base, date: start.date }] : [];
+  return start.date >= from && start.date <= to ? [{ ...base, ...start }] : [];
 }
