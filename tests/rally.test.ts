@@ -2,7 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
 import { Api } from './fakeAccounts.ts';
 import { mentionsIn, commentHtml, fieldValue, htmlToText, joinQuery, MOVE_COMMENTS, TS_MOVE_COMMENTS, blockedReasonText, messageHtml, moveComment, normalizeBaseUrl, Rally, rallyCategory, toRallyItem } from '../servidor/rally.ts';
-import { workRuleFields, groupRally, isRallyId, rallyColumnOf, linkedTask, rallyIdsOf, rallyMoves, rallyPushes, taskFromRally, tasksByRallyId, type RallyItem } from '../src/domain/rally';
+import { uploadedAt, workRuleFields, groupRally, isRallyId, rallyColumnOf, linkedTask, rallyIdsOf, rallyMoves, rallyPushes, taskFromRally, tasksByRallyId, type RallyItem } from '../src/domain/rally';
 import { DEFAULT_ITEM_TYPES } from '../src/domain/workflows';
 import { makeTask } from './factories';
 
@@ -521,7 +521,7 @@ describe('Rally: mover', () => {
       { path: '/attachmentcontent/create', body: { AttachmentContent: { Content: content } } },
       { path: '/attachment/create', body: { Attachment: { Artifact: '/defect/5', Content: '/attachmentcontent/900', ContentType: 'image/png', Name: 'captura.png', Size: 4 } } },
     ]);
-    expect(file).toEqual({ name: 'captura.png', size: 4 });
+    expect(file).toEqual({ name: 'captura.png', size: 4, date: expect.any(String), author: 'Marta' });
     await expect(rally.attach(marta, { kind: 'DE', objectId: '5', name: 'x', content: '!!' })).rejects.toThrow(/no válido/);
   });
 
@@ -968,5 +968,15 @@ describe('Rally: cambios para la analítica (herramienta o Rally)', () => {
     const r = await rally.activity(marta, { from: '2026-11-10T00:00:00Z', to: '2026-11-18T00:00:00Z', projects: '10' });
     expect(r.changes).toEqual([]);
     expect(r.errors).toEqual([expect.objectContaining({ kinds: ['flow', 'ready', 'blocked', 'create'] })]);
+  });
+});
+
+describe('hora de subida de los adjuntos', () => {
+  const now = new Date(2026, 10, 25, 18, 0);
+  it('hoy, ayer o la fecha con la hora', () => {
+    expect(uploadedAt(new Date(2026, 10, 25, 12, 40).toISOString(), now)).toBe('hoy, 12:40');
+    expect(uploadedAt(new Date(2026, 10, 24, 9, 5).toISOString(), now)).toBe('ayer, 09:05');
+    expect(uploadedAt(new Date(2026, 10, 18, 15, 13).toISOString(), now)).toMatch(/^18 nov 2026, 15:13$/);
+    expect(uploadedAt('no es fecha', now)).toBe('');
   });
 });

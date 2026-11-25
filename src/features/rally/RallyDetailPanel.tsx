@@ -1,7 +1,7 @@
 import { track } from '../usage/track';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ExternalLink, Paperclip, Pencil, Trash2, Plus, Send, Upload, X } from 'lucide-react';
-import { unlinkedMentions, type RallyDetail, type RallyItem, type RallyRef } from '../../domain/rally';
+import { unlinkedMentions, uploadedAt, type RallyDetail, type RallyItem, type RallyRef } from '../../domain/rally';
 import type { Task } from '../../domain/types';
 import { MAX_UPLOAD, rallyApi, toBase64, tooBigMessage } from './rallyApi';
 import { RallyFlags } from './RallyFlags';
@@ -480,7 +480,14 @@ function Attachments({ item, files }: { item: RallyItem; files: RallyDetail['att
             {all.map((f, i) => (
               <li key={i} className="flex items-center gap-2">
                 <Paperclip className="size-3.5 shrink-0 text-zinc-400" />
-                <a href={item.url} target="_blank" rel="noreferrer" className="min-w-0 flex-1 truncate hover:underline" title="Se abre en Rally">{f.name}</a>
+                <span className="min-w-0 flex-1">
+                  <a href={item.url} target="_blank" rel="noreferrer" className="block truncate hover:underline" title="Se abre en Rally">{f.name}</a>
+                  {f.date && (
+                    <span className="block truncate text-xs text-zinc-500 dark:text-zinc-400" title={`Subido el ${new Date(f.date).toLocaleString('es-ES')}${f.author ? ` por ${f.author}` : ''}`}>
+                      Subido {uploadedAt(f.date)}{f.author ? ` · ${f.author}` : ''}
+                    </span>
+                  )}
+                </span>
                 <span className="shrink-0 text-xs text-zinc-400">{formatSize(f.size)}</span>
                 {f.objectId && (
                   <button type="button" onClick={() => void remove(f)} disabled={!!deleting} title={`Eliminar ${f.name} de Rally`} aria-label={`Eliminar ${f.name} de Rally`}

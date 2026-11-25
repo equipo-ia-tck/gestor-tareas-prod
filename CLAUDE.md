@@ -440,7 +440,7 @@ Petición de la usuaria (oct 2026): traer Rally al gestor sin tocar el resto (en
   anidadas de dos en dos (`joinQuery`). Escribe tres cosas: la columna (FlowState, o ScheduleState/State) al mover, comentarios
   (`conversationpost/create`) y adjuntos (`attachmentcontent` + `attachment`, máx. 25 MB). Los comentarios propios de la discusión se editan y eliminan (lápiz y papelera; `editComment` conserva las
   menciones que tenía con `mentionsIn`, `deleteComment`; `comment-edit` y `comment-delete`). Los adjuntos también se eliminan desde la ficha
-  (papelera con confirmación; `deleteAttachment`: DELETE del adjunto y de su contenido, `POST /api/rally/attachment-delete`). Crear devuelve `CreateResult` y
+  (papelera con confirmación; `deleteAttachment`: DELETE del adjunto y de su contenido, `POST /api/rally/attachment-delete`). Cada adjunto enseña debajo del nombre cuándo se subió y quién (`CreationDate` y `User` de Rally, `toAttachment`; «hoy, 12:40», «ayer…» o la fecha, `uploadedAt`). Crear devuelve `CreateResult` y
   actualizar `OperationResult`. Hace falta una clave Full Access para escribir.
 - **Crear en Rally** (`rally.create`, `POST /api/rally/create`): User Story, Defect, Defect Suite (`DS`) y Test Set en un
   proyecto; tareas dentro de una US o un defecto (`WorkProduct`). «Nuevo en Rally» (`RallyCreateForm`) es un panel lateral

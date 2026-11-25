@@ -97,6 +97,18 @@ export function normalizeBaseUrl(input: unknown): string {
 }
 
 const refName = (v: unknown) => (v && typeof v === 'object' ? String((v as RallyObject)._refObjectName ?? '') || null : null);
+
+/** Adjunto tal como lo enseña la app: nombre, tamaño, cuándo se subió y quién lo subió. */
+function toAttachment(f: RallyObject): RallyDetail['attachments'][number] {
+  const author = refName(f.User);
+  return {
+    name: String(f.Name ?? ''),
+    size: Number(f.Size ?? 0),
+    ...(f.ObjectID ? { objectId: String(f.ObjectID) } : {}),
+    ...(f.CreationDate ? { date: String(f.CreationDate) } : {}),
+    ...(author ? { author } : {}),
+  };
+}
 const refId = (v: unknown) => (v && typeof v === 'object' ? String((v as RallyObject)._ref ?? '').split('/').pop() ?? null : null);
 
 const ENTITIES: Record<string, string> = { nbsp: ' ', amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
@@ -1286,9 +1298,9 @@ export class Rally {
     const contentType = /^[\w.+-]+\/[\w.+-]+$/.test(String(input.contentType ?? '')) ? String(input.contentType) : 'application/octet-stream';
     const stored = await this.post(a, '/attachmentcontent/create', { AttachmentContent: { Content: content } });
     const ref = this.relative(a, stored._ref) ?? `/attachmentcontent/${String(stored.ObjectID ?? '')}`;
-    const file = await this.post(a, '/attachment/create?fetch=Name,Size,ObjectID',
+    const file = await this.post(a, '/attachment/create?fetch=Name,Size,ObjectID,CreationDate,User',
       { Attachment: { Artifact: `/${entry[0]}/${input.objectId}`, Content: ref, ContentType: contentType, Name: name, Size: size } });
-    return { name: String(file.Name ?? name), size: Number(file.Size ?? size), ...(file.ObjectID ? { objectId: String(file.ObjectID) } : {}) };
+    return { ...toAttachment({ ...file, Name: file.Name ?? name, Size: file.Size ?? size, CreationDate: file.CreationDate ?? new Date().toISOString() }), author: refName(file.User) ?? a.rally_user };
   }
 
   /**
@@ -1378,7 +1390,7 @@ export class Rally {
     const [tags, posts, files, milestones, edit, ...lists] = await Promise.all([
       fetchSub('Tags', 'Name'),
       fetchSub('Discussion', 'Text,User,CreationDate,ObjectID', 'CreationDate'),
-      fetchSub('Attachments', 'Name,Size,ObjectID'),
+      fetchSub('Attachments', 'Name,Size,ObjectID,CreationDate,User', 'CreationDate'),
       editable ? fetchSub('Milestones', 'Name') : Promise.resolve([] as RallyObject[]),
       editable ? this.editParents(a, type, o) : Promise.resolve(null),
       ...RELATED.map(([k]) => fetchSub(k, FETCH)),
@@ -1397,7 +1409,7 @@ export class Rally {
         items: lists[i].map((r) => toRallyItem(r, a.base_url, a.rally_user_id)).filter((x): x is RallyItem => !!x),
       })).filter((g) => g.items.length),
       discussion: posts.map((p) => this.toPost(a, p)),
-      attachments: files.map((f) => ({ name: String(f.Name ?? ''), size: Number(f.Size ?? 0), ...(f.ObjectID ? { objectId: String(f.ObjectID) } : {}) })),
+      attachments: files.map(toAttachment),
     };
   }
 

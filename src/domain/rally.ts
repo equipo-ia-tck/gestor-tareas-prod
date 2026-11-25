@@ -201,8 +201,8 @@ export interface RallyDetail {
   related: { label: string; items: RallyItem[] }[];
   /** `objectId` del comentario en Rally y `mine` si lo escribió la persona conectada (puede editarlo o eliminarlo). */
   discussion: { author: string | null; date: string; text: string; objectId?: string; mine?: boolean }[];
-  /** `objectId`: el del adjunto en Rally (para eliminarlo). */
-  attachments: { name: string; size: number; objectId?: string }[];
+  /** `objectId`: el del adjunto en Rally (para eliminarlo). `date`: cuándo se subió (ISO); `author`: quién lo subió. */
+  attachments: { name: string; size: number; objectId?: string; date?: string; author?: string | null }[];
   /** Valores para el formulario de edición (no está en los test cases, que no se editan desde aquí). */
   edit?: RallyEditValues;
 }
@@ -458,4 +458,16 @@ export function mentionQuery(text: string, caret: number): { start: number; quer
   // Como mucho tres palabras («@Ana María López»); más, ya no es un nombre.
   if (query.split(' ').length > 3) return null;
   return { start: caret - query.length - 1, query };
+}
+
+/** Cuándo se subió un adjunto: «hoy, 12:40», «ayer, 09:05» o «18 nov 2026, 15:13». */
+export function uploadedAt(iso: string, now = new Date()): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const time = d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+  const day = (x: Date) => `${x.getFullYear()}-${x.getMonth()}-${x.getDate()}`;
+  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+  if (day(d) === day(now)) return `hoy, ${time}`;
+  if (day(d) === day(yesterday)) return `ayer, ${time}`;
+  return `${d.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })}, ${time}`;
 }
