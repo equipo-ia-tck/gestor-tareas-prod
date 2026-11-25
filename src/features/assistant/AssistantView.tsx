@@ -45,6 +45,27 @@ type Answer =
 
 interface Entry { id: string; question: string; answer: Answer }
 
+/**
+ * Envuelve el resultado de una búsqueda. La entrada más reciente se ve entera; las anteriores se pliegan a una línea «Ver
+ * respuesta» para no llenar la pantalla. Los hijos siguen montados (solo ocultos con `hidden`), así la IA no se recalcula al
+ * plegar. Al llegar una pregunta nueva, la anterior se pliega sola.
+ */
+function Collapsible({ collapsed, children }: { collapsed: boolean; children: ReactNode }) {
+  const [open, setOpen] = useState(!collapsed);
+  useEffect(() => { setOpen(!collapsed); }, [collapsed]);
+  return (
+    <>
+      {collapsed && (
+        <button type="button" onClick={() => setOpen((o) => !o)}
+          className="mb-1 inline-flex items-center gap-1 text-xs font-medium text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-100">
+          {open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}{open ? 'Ocultar respuesta' : 'Ver respuesta'}
+        </button>
+      )}
+      <div className={open ? '' : 'hidden'}>{children}</div>
+    </>
+  );
+}
+
 // La conversación se queda mientras dure la sesión (aunque se cambie de pantalla).
 let history: Entry[] = [];
 
@@ -177,6 +198,9 @@ export function AssistantView() {
     <TaskList tasks={ids.map((id) => taskById.get(id)).filter((t): t is Task => !!t)} today={today} projects={projectMap} onEdit={editTask} empty={empty} />
   );
 
+  // Solo la respuesta de búsqueda más reciente (las responde la IA) se ve entera; las anteriores quedan plegadas para no
+  // llenar la pantalla. `entries` va de la más nueva a la más vieja, así que la primera de tipo «search» es la última hecha.
+  const latestAiId = entries.find((x) => x.answer.kind === 'search')?.id;
   const render = (e: Entry): ReactNode => {
     const a = e.answer;
     switch (a.kind) {
@@ -276,7 +300,7 @@ export function AssistantView() {
         const fromConfluence = local.filter((h) => isConfluenceChunk(h.chunk));
         const source = answer && sourceOf(answer.hit, isConfluenceChunk(answer.hit.chunk) ? 'Confluence' : sources.find((c) => c === folderOf(answer.hit.chunk.ref))?.folderName);
         return (
-          <>
+          <Collapsible collapsed={e.id !== latestAiId}>
             {aiOn
               ? <AiAnswer entryId={e.id} query={a.query} keywordHits={a.rag ?? a.hits.map((h) => h.chunk)} chunks={chunks} today={today}
                   onTask={(id) => { const t = taskById.get(id); if (t) editTask(t); }} />
@@ -290,7 +314,7 @@ export function AssistantView() {
             {sources.map((c, i) => <SharePointHits key={c.id} source={c} query={a.query} skip={new Set(local.map((h) => h.chunk.ref))} lead={!answer && i === 0} />)}
             <SearchAnswer hits={a.hits.filter((h) => h.chunk.source !== 'doc' && h.chunk.source !== 'list')} list={list} />
             <AskClaudeButton entryId={e.id} question={a.query} />
-          </>
+          </Collapsible>
         );
       }
     }
