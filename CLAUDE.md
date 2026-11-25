@@ -793,7 +793,7 @@ En Vercel no hay servidor que lea la carpeta de OneDrive del Mac, así que el Ma
   `tests/supabase.test.ts`.
 - **Botón flotante** «Feedback» abajo a la derecha en todas las pantallas (`features/feedback/FeedbackButton.tsx`; se aparta
   cuando el panel de detalle es columna): tipo (Mejora · Algo roto · Otro) y texto; la pantalla (`location.hash`) y el
-  navegador van solos. El usuario no ve después lo que envió (decisión de la usuaria).
+  navegador van solos. Lo enviado se sigue en «Mis solicitudes» (ver migración 016, más abajo).
 - **Más → Feedback** (`#/feedback`, solo administradores en la barra lateral y en la pantalla): filtros por estado (Abiertos =
   Nuevo + En curso) y tipo, cambiar el estado y «→ Tarea» (tarea con etiqueta `feedback`, el texto y los datos en la
   descripción; el feedback guarda `task_id` y pasa a En curso si era Nuevo). Si falta la migración, el error lo dice.
@@ -844,6 +844,13 @@ En Vercel no hay servidor que lea la carpeta de OneDrive del Mac, así que el Ma
   el ancho y comparten cabecera y filtros (estado, tipo, parte de la web, impacto, persona y texto); en el Tablero, el
   estado deja solo sus columnas y el Panel cuenta lo filtrado. El estado `blocked` necesita la migración
   `008_feedback_bloqueado.sql` (después de 007); sin ella, el error lo dice.
+
+- **Mis solicitudes** (migración `016_mis_solicitudes.sql`, después de 006 a 008; nov 2026, cambia la decisión de que el
+  usuario no viera lo enviado): `my_feedback()` devuelve a cada cuenta solo lo suyo (sin navegador, tarea ni usuario) con su
+  estado. Columnas `reply` y `reply_at`: el administrador escribe una respuesta opcional en cada feedback (`ReplyBox`, se
+  guarda al salir del campo, `admin_reply_feedback`; vacío la quita). Para quien no es administrador, `#/feedback` es «Mis
+  solicitudes» (`MyFeedback`: Todas/Abiertas, estado, respuesta y último cambio) y sale en Más con ese nombre; el
+  formulario del botón enlaza allí.
 
 ## Fase 31: pantalla Rally como la lista de Rally (rama `rally-como-rally`)
 

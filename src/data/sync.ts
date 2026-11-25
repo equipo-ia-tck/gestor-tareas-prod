@@ -93,6 +93,8 @@ function friendly(message: string): string {
     return 'Falta preparar la analítica en Supabase: un administrador tiene que ejecutar supabase/migrations/009_analitica.sql y 010_analitica_kpis.sql.';
   if (/could not find the function public\.(admin_set_screens|admin_set_default_screens)\b/i.test(message))
     return 'Falta preparar las pantallas en Supabase: un administrador tiene que ejecutar supabase/migrations/013_pantallas.sql.';
+  if (/could not find the function public\.(my_feedback|admin_reply_feedback)\b/i.test(message))
+    return 'Falta preparar «Mis solicitudes» en Supabase: un administrador tiene que ejecutar supabase/migrations/016_mis_solicitudes.sql.';
   if (/feedback_status_check/i.test(message))
     return 'Falta el estado «Bloqueado» del feedback en Supabase: un administrador tiene que ejecutar supabase/migrations/008_feedback_bloqueado.sql.';
   return message;
@@ -294,6 +296,9 @@ export class SyncClient {
       p_screen: `${window.innerWidth}×${window.innerHeight}`, p_user_agent: navigator.userAgent,
     });
   adminFeedback = () => this.rpc<Feedback[]>('admin_feedback');
+  /** Lo que ha enviado la persona y su estado (migración 016). */
+  myFeedback = () => this.rpc<Feedback[]>('my_feedback');
+  replyFeedback = (id: string, reply: string) => this.rpc<Feedback>('admin_reply_feedback', { p_id: id, p_reply: reply });
   updateFeedback = (id: string, patch: { status?: FeedbackStatus; taskId?: string }) =>
     this.rpc<Feedback>('admin_update_feedback', { p_id: id, p_status: patch.status ?? null, p_task_id: patch.taskId ?? null });
 

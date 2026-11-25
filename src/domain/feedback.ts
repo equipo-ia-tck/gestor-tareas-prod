@@ -1,4 +1,4 @@
-/** Feedback de los usuarios (tabla `feedback` de Supabase, migraciones 006 y 007). Solo lo leen los administradores. */
+/** Feedback de los usuarios (tabla `feedback` de Supabase, migraciones 006 a 008 y 016). Todo lo leen los administradores; cada persona, lo suyo. */
 import type { Priority } from './types';
 
 /** `other` solo existe en lo enviado con el primer formulario. */
@@ -27,6 +27,9 @@ export interface Feedback {
   status: FeedbackStatus;
   /** Tarea del gestor creada a partir de él. */
   taskId: string | null;
+  /** Respuesta del administrador, que ve quien lo envió (migración 016; vacío = sin respuesta). */
+  reply?: string;
+  replyAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
