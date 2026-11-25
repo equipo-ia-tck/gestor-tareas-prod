@@ -15,6 +15,7 @@ import { useRallyItem, useRallyLookup } from '../rally/rallyStore';
 import { moveToRallyColumn, moveToNeedReview } from '../rally/rallyStates';
 import { useToast } from '../../components/Toast';
 import { isRallyId, RALLY_COLUMNS, rallyColumnOf } from '../../domain/rally';
+import { LIST_TYPE_ID, listBoardColumn, listStateForColumn } from '../../domain/msList';
 import { Popover } from '../../components/ui/Popover';
 import { usePersistentState } from '../../hooks/usePersistentState';
 
@@ -125,7 +126,11 @@ export function RallyBoard({ tasks, defaults, showProject = true }: Omit<Props, 
       const col = RALLY_COLUMNS.find((c) => c.name === t.board_column);
       return col && stateForCategory(findType(itemTypes, t.type_id), col.category).id === stateOf(itemTypes, t).id ? col.name : null;
     };
-    const columnOf = new Map(visible.map((t) => [t.id, rallyColumnOf(rallyOf(t.external_id)?.state, stateOf(itemTypes, t).category, chosen(t))]));
+    // Los elementos de la Lista van por su estado (backlog → New, in progress → In-Progress, dependencia → Need Review,
+    // completada → Accepted); el resto, por Rally o por su grupo.
+    const columnFor = (t: Task) => (t.type_id === LIST_TYPE_ID && listBoardColumn(stateOf(itemTypes, t).name))
+      || rallyColumnOf(rallyOf(t.external_id)?.state, stateOf(itemTypes, t).category, chosen(t));
+    const columnOf = new Map(visible.map((t) => [t.id, columnFor(t)]));
     return RALLY_COLUMNS.map(({ name, category, color }) => ({
       id: name,
       label: name,
@@ -147,7 +152,14 @@ export function RallyBoard({ tasks, defaults, showProject = true }: Omit<Props, 
         if (!local.length) return;
         void repo.batch(moveLabel(local.length, name), async () => {
           for (const t of local) {
-            const state = stateForCategory(findType(itemTypes, t.type_id), category);
+            const type = findType(itemTypes, t.type_id);
+            const listState = t.type_id === LIST_TYPE_ID ? listStateForColumn(type, name) : undefined;
+            if (listState) {
+              // Elemento de la Lista: pasa al estado de esa columna (Defined, Blocked y Completed, al más parecido).
+              if (listState.id !== t.state_id) await repo.setState(t.id, listState.id);
+              continue;
+            }
+            const state = stateForCategory(type, category);
             if (state.id !== t.state_id) await repo.setState(t.id, state.id);
             await repo.updateTask(t.id, { board_column: name });
           }

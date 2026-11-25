@@ -1065,6 +1065,11 @@ API de SharePoint no admite CORS, así que lo hace un **marcador del navegador**
   grupo; sin coincidencia, por grupo como antes.
   Con **solo «Lista»** elegido en los tipos, el Tablero (y el de cada proyecto) usa sus estados como columnas (`Board` con
   ese tipo, en `BoardContent`) en vez de las 7 de Rally; soltar una tarjeta llama a `setState` y el cambio va a la lista.
+  Con **todos los tipos** (las 7 columnas de Rally), los elementos de la Lista van por su estado y no por su grupo (petición
+  de la usuaria, nov 2026; `listBoardColumn`): backlog → New, in progress → In-Progress, dependencia → Need Review y
+  completada → Accepted (sin mayúsculas ni tildes, con variantes como «in progres» o «en curso»). Al soltar
+  (`listStateForColumn`), cada columna lleva a su estado, y Defined, Blocked y Completed al más parecido (backlog,
+  dependencia y completada), así la tarjeta salta a su columna. Solo afecta a las tareas de tipo Lista.
 - **Versión de la extensión**: al cambiar `spWork` o la extensión, sube `version` en `extension/manifest.json` y
   `LATEST_EXTENSION` en `features/mslist/extension.ts` (un test comprueba que coinciden); si la instalada es anterior, la
   pantalla Lista avisa y explica cómo actualizarla (descargar, sustituir la carpeta y recargar en `chrome://extensions`).

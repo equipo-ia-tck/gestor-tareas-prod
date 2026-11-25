@@ -189,3 +189,34 @@ export function taskFromListItem(item: MsListItem, config: MsListConfig, project
     raw_input: listKey(item.id),
   };
 }
+
+/**
+ * Columnas del Tablero (las 7 de Rally) para los estados de la Lista, cuando se ven todos los tipos. Decisión de la
+ * usuaria (nov 2026): backlog → New, in progress → In-Progress, dependencia → Need Review, completada → Accepted. Se
+ * reconocen sin mayúsculas ni tildes y con variantes («in progres», «en curso», «completado»). Los demás estados van por
+ * su grupo, como cualquier tarea.
+ */
+const LIST_COLUMN_RULES: { column: string; match: (name: string) => boolean }[] = [
+  { column: 'New', match: (n) => n.startsWith('backlog') },
+  { column: 'In-Progress', match: (n) => /^(in ?progres|en curso)/.test(n) },
+  { column: 'Need Review', match: (n) => n.startsWith('dependencia') },
+  { column: 'Accepted', match: (n) => n.startsWith('completad') },
+];
+const nameKey = (name: string) => fold(name).replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+
+/** Columna del Tablero de un estado de la Lista (null si no es uno de los cuatro). */
+export function listBoardColumn(stateName: string): string | null {
+  const n = nameKey(stateName);
+  return LIST_COLUMN_RULES.find((r) => r.match(n))?.column ?? null;
+}
+
+/** A qué columna «propia» lleva soltar en cada columna del Tablero (las otras tres van al estado más parecido). */
+const DROP_TARGET: Record<string, string> = {
+  New: 'New', Defined: 'New', 'In-Progress': 'In-Progress', 'Need Review': 'Need Review', Blocked: 'Need Review', Completed: 'Accepted', Accepted: 'Accepted',
+};
+
+/** Estado de la Lista al soltar una tarea en una columna del Tablero (undefined si la lista no tiene ese estado). */
+export function listStateForColumn(type: ItemType, column: string): WorkflowState | undefined {
+  const target = DROP_TARGET[column];
+  return target ? type.states.find((st) => listBoardColumn(st.name) === target) : undefined;
+}
