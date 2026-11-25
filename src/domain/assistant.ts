@@ -176,11 +176,21 @@ export function parseIntent(input: string, ctx: IntentContext): Intent {
     ].filter(Boolean);
     return { kind: 'tasks', query: { when, person, projectId: project?.id, category }, label: `Tareas ${parts.join(' ')}` };
   }
-  if (asksTasks && !/\b(sobre|de que|como|donde|cuando|por que|que es)\b/.test(f)) return { kind: 'tasks', query: { when: 'today' }, label: 'Tareas para hoy' };
+  // «¿Qué tengo?», «¿qué cosas tengo pendientes?»: solo si no dice nada más. Con otras palabras («qué evar se usan para las
+  // cosas de onboarding») es una pregunta para buscar.
+  if (asksTasks && !/\b(sobre|de que|como|donde|cuando|por que|que es)\b/.test(f) && onlyAsksTasks(f)) return { kind: 'tasks', query: { when: 'today' }, label: 'Tareas para hoy' };
 
   // ---- Buscar en todo ----
   const sources: ChunkSource[] | undefined = /\b(documento|documentacion|guia|manual|proceso|procedimiento|politica|como se)\b/.test(f) ? ['doc', 'note'] : undefined;
   return { kind: 'search', query: text, sources };
+}
+
+/** Palabras de «qué tengo que hacer» y de relleno: si la pregunta no tiene otras, pide la lista de tareas. */
+const TASK_ONLY_WORDS = new Set(('que tengo tenemos tiene me nos toca tocan hay queda quedan mis mi tus las los el la lo de del a al para por '
+  + 'hacer pendiente pendientes tarea tareas cosa cosas elemento elementos ahora aun todavia y o en con dime ensename muestrame '
+  + 'cuales cual son es hoy todo todas todos').split(' '));
+function onlyAsksTasks(f: string): boolean {
+  return f.replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(Boolean).every((w) => TASK_ONLY_WORDS.has(w));
 }
 
 /** Tareas que responden a una consulta (las completadas solo si se piden «hechas»). */

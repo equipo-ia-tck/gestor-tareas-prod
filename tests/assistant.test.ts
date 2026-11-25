@@ -11,6 +11,15 @@ const projects = [project('p1', 'Caixa'), project('p2', 'Imagin', 'p1'), project
 const ctx = { today, people: ['Ana Ruiz', 'Diana López', 'Luis', 'Marc Crespo'], projects };
 const intent = (t: string) => parseIntent(t, ctx);
 
+describe('Asistente: «cosas» no tapa una pregunta', () => {
+  it('las tareas de hoy solo si no se pregunta nada más', () => {
+    expect(intent('que evar se usan para las cosas de onboarding')).toMatchObject({ kind: 'search' });
+    expect(intent('¿Qué cosas tengo pendientes?')).toMatchObject({ kind: 'tasks', label: 'Tareas para hoy' });
+    expect(intent('qué tengo')).toMatchObject({ kind: 'tasks' });
+    expect(intent('mis tareas')).toMatchObject({ kind: 'tasks' });
+  });
+});
+
 describe('Asistente: lo que entiende', () => {
   it('tareas con periodo, persona, proyecto y estado', () => {
     expect(intent('¿Qué tengo hoy?')).toMatchObject({ kind: 'tasks', query: { when: 'today' } });

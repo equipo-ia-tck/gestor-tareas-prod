@@ -1103,6 +1103,8 @@ Petición de la usuaria: algo a lo que preguntar y pedir cosas sobre el proyecto
   «quién es X». **Órdenes**: «crea una tarea …» (pasa por `parseCapture` y `submitCapture`: fechas, #proyecto, @persona,
   !1…), «recuérdame …», «crea una nota Título: texto», «completa / reabre / pon X en curso / mueve X a mañana / pospón X /
   añade X a mi día» (`matchTasks` por título; si hay varias, se elige; todo con «Deshacer»). Lo demás, a buscar.
+  «¿Qué tengo?» / «¿qué cosas tengo pendientes?» dan las tareas de hoy solo si no dicen nada más (`onlyAsksTasks`): «qué evar
+  se usan para las cosas de onboarding» va a buscar.
 - **Buscador** (`domain/knowledge.ts`): trozos de tareas, notas (por apartados), personas, proyectos y documentos
   (`splitSections`: títulos Markdown, líneas en mayúsculas o terminadas en «:», párrafos de ~700 caracteres) con BM25
   (`SearchIndex`: título doble, todas las palabras y frase exacta pesan más, prefijos de 4+ letras), palabras sin tildes,
