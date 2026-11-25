@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { SearchIndex } from '../src/domain/knowledge.ts';
 import {
   activityLog, CATEGORY_KEYS, chunksOf, listProjects, listTasks, MCP_INSTRUCTIONS, noteDetail, personDetail, projectDetail,
-  search, searchDocs, sharePointFolders, taskDetail, WHEN_KEYS, type MareaData,
+  search, searchDocs, sharePointFolders, taskDetail, findFolder, formatSpFolder, formatSpRead, formatSpSearch, WHEN_KEYS, type MareaData,
 } from '../src/domain/mcpTools.ts';
 import type { ConfluencePage } from '../src/domain/confluence.ts';
 import type { TeamUser } from './auth.ts';
@@ -20,6 +20,44 @@ export async function saveAnswer(config: { url: string; key: string }, token: st
   const m = body?.message ?? `Supabase respondió ${res.status}`;
   throw new Error(/save_assistant_answer|function|404/i.test(m) && res.status === 404
     ? 'Falta preparar Marea: una administradora tiene que ejecutar supabase/migrations/015_respuestas_claude.sql.' : m);
+}
+
+export type SpAsk = (op: 'folder' | 'search' | 'read', args: Record<string, unknown>) => Promise<unknown>;
+
+const SP_WAIT_MS = 40_000;
+const NO_TAB = 'Tu pestaña de Marea no contesta. Para que Claude pueda mirar en SharePoint: abre Marea en Chrome (con la extensión «Marea · Lista» 1.6.0 o posterior), entra en SharePoint y marca «Dejar que Claude lea mis carpetas». Después vuelve a pedirlo.';
+
+/**
+ * Pide algo de SharePoint a la pestaña de Marea de la persona (migración 018) y espera la respuesta: la petición se deja
+ * en Supabase, la pestaña la hace con su extensión y contesta, y al recogerla se borra.
+ */
+export async function askSharePoint(config: { url: string; key: string }, token: string, op: 'folder' | 'search' | 'read', args: Record<string, unknown>,
+  fetchImpl: Fetch = fetch, waitMs = SP_WAIT_MS, stepMs = 700): Promise<unknown> {
+  const call = async <T>(fn: string, body: Record<string, unknown>): Promise<T> => {
+    const res = await fetchImpl(`${config.url}/rest/v1/rpc/${fn}`, {
+      method: 'POST',
+      headers: { apikey: config.key, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (res.ok) return (await res.json().catch(() => null)) as T;
+    const err = (await res.json().catch(() => null)) as { message?: string } | null;
+    const m = err?.message ?? `Supabase respondió ${res.status}`;
+    throw new Error(res.status === 404 && /sp_/.test(fn)
+      ? 'Falta preparar Marea: una administradora tiene que ejecutar supabase/migrations/018_sharepoint_claude.sql.' : m);
+  };
+  const id = await call<string>('sp_request', { p_op: op, p_args: args });
+  const until = Date.now() + waitMs;
+  let taken = false;
+  while (Date.now() < until) {
+    await new Promise((r) => setTimeout(r, stepMs));
+    const r = await call<{ status: string; result?: unknown; error?: string | null }>('sp_collect', { p_id: id });
+    if (r.status === 'done') return r.result;
+    if (r.status === 'error') throw new Error(r.error || 'SharePoint ha dado un error.');
+    if (r.status === 'gone') throw new Error(NO_TAB);
+    if (r.status === 'working') taken = true;
+  }
+  await call('sp_cancel', { p_id: id }).catch(() => {});
+  throw new Error(taken ? 'SharePoint está tardando demasiado (archivo o carpeta muy grande). Prueba con algo más concreto.' : NO_TAB);
 }
 
 /**
@@ -95,6 +133,7 @@ const text = (t: string) => ({ content: [{ type: 'text' as const, text: t }] });
 export function mareaServer(
   load: () => Promise<{ data: MareaData; index: () => SearchIndex }>,
   save?: (id: string, question: string, answer: string) => Promise<void>,
+  sharepoint?: SpAsk,
 ): McpServer {
   const server = new McpServer({ name: 'marea', title: 'Marea', version: '1.0.0' }, { instructions: MCP_INSTRUCTIONS });
   const run = (fn: (d: MareaData, index: () => SearchIndex) => string) => async () => {
@@ -187,6 +226,58 @@ export function mareaServer(
     },
     annotations: readOnly,
   }, async (a) => run((d) => sharePointFolders(d, a.proyecto, a.texto))());
+
+  if (sharepoint) {
+    /** Lo que se le pide a la pestaña de Marea, con el enlace de la carpeta guardada si se ha dicho cuál. */
+    const sp = (fn: (d: MareaData) => Promise<string>) => async () => {
+      try {
+        const { data } = await load();
+        return text(await fn(data));
+      } catch (e) {
+        return { ...text(`No se ha podido mirar en SharePoint: ${e instanceof Error ? e.message : String(e)}`), isError: true };
+      }
+    };
+    const folderArg = (d: MareaData, raw?: string) => {
+      if (!raw?.trim()) return {};
+      const f = findFolder(d, raw);
+      if (!f) throw new Error(`No hay ninguna carpeta guardada «${raw}». Usa carpetas_sharepoint para ver las que hay.`);
+      return { folderUrl: f.folder.url };
+    };
+    const spRead = { readOnlyHint: true, openWorldHint: true };
+
+    server.registerTool('sharepoint_ver_carpeta', {
+      title: 'Ver una carpeta de SharePoint',
+      description: 'Lo que hay dentro de una carpeta de SharePoint guardada en Marea (o de una subcarpeta suya): subcarpetas y archivos con tamaño, fecha, ruta y enlace. Solo dentro de las carpetas guardadas. Lo hace la pestaña de Marea de la persona: puede tardar unos segundos.',
+      inputSchema: {
+        carpeta: z.string().optional().describe('Nombre o enlace de la carpeta guardada, o nombre del proyecto (ver carpetas_sharepoint)'),
+        ruta: z.string().optional().describe('Ruta de una subcarpeta que salió antes («/sites/…/Guías/2026»)'),
+      },
+      annotations: spRead,
+    }, async (a) => sp(async (d) => {
+      if (!a.carpeta && !a.ruta) throw new Error('Di qué carpeta (usa carpetas_sharepoint para ver las guardadas).');
+      return formatSpFolder(await sharepoint('folder', { ...folderArg(d, a.carpeta), ...(a.ruta ? { path: a.ruta } : {}) }) as Parameters<typeof formatSpFolder>[0]);
+    })());
+
+    server.registerTool('sharepoint_buscar', {
+      title: 'Buscar en las carpetas de SharePoint',
+      description: 'Busca con el buscador de SharePoint dentro de las carpetas guardadas en Marea (todas o una): título, resumen con las palabras, ruta y enlace de cada documento. Lee Word, PDF, PowerPoint y Excel. Lo nuevo puede tardar en salir (SharePoint indexa con retraso).',
+      inputSchema: {
+        consulta: z.string().min(1).describe('Palabras a buscar, p. ej. «guía etiquetado login»'),
+        carpeta: z.string().optional().describe('Solo en esta carpeta guardada (nombre, enlace o proyecto)'),
+      },
+      annotations: spRead,
+    }, async (a) => sp(async (d) => formatSpSearch(a.consulta, await sharepoint('search', { ...folderArg(d, a.carpeta), query: a.consulta }) as Parameters<typeof formatSpSearch>[1]))());
+
+    server.registerTool('sharepoint_leer', {
+      title: 'Leer un documento de SharePoint',
+      description: 'El texto de un documento de una carpeta guardada en Marea: Word (.docx), PowerPoint (.pptx), Excel (.xlsx), texto, CSV o HTML. Los PDF y los formatos antiguos (.doc, .ppt, .xls) no: de esos usa el resumen de sharepoint_buscar. Los largos van por partes.',
+      inputSchema: {
+        archivo: z.string().min(1).describe('Ruta o enlace del archivo (de sharepoint_ver_carpeta o sharepoint_buscar)'),
+        parte: z.number().int().min(1).optional().describe('Parte a leer si el documento es largo (empieza en 1)'),
+      },
+      annotations: spRead,
+    }, async (a) => sp(async () => formatSpRead(await sharepoint('read', { path: a.archivo }) as Parameters<typeof formatSpRead>[0], a.parte))());
+  }
 
   server.registerTool('mi_registro', {
     title: 'Mi registro de actividad',

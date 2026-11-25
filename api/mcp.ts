@@ -4,7 +4,7 @@
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { SearchIndex } from '../src/domain/knowledge.ts';
 import { bearerOf, SupabaseAuth } from '../servidor/auth.ts';
-import { chunksOf, loadMarea, mareaServer, saveAnswer } from '../servidor/mcp.ts';
+import { askSharePoint, chunksOf, loadMarea, mareaServer, saveAnswer } from '../servidor/mcp.ts';
 
 const config = { url: (process.env.VITE_SUPABASE_URL ?? '').replace(/\/$/, ''), key: process.env.VITE_SUPABASE_ANON_KEY ?? '' };
 const auth = new SupabaseAuth(config);
@@ -58,7 +58,8 @@ export default {
       const entry = await loadMarea(config, token, user);
       const data = { ...entry.data, base: origin };
       return { data, index: () => (entry.index ??= new SearchIndex(chunksOf(data))) };
-    }, (id, question, answer) => saveAnswer(config, token, id, question, answer));
+    }, (id, question, answer) => saveAnswer(config, token, id, question, answer),
+    (op, args) => askSharePoint(config, token, op, args));
     const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     await server.connect(transport);
     const res = await transport.handleRequest(request);

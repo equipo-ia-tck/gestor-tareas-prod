@@ -11,6 +11,7 @@ import { MeetingPrompt } from '../features/rally/MeetingPrompt';
 import { AnalystPrompt } from '../features/rally/AnalystPrompt';
 import { RallySync } from '../features/rally/RallySync';
 import { ListaBridge } from '../features/mslist/ListaBridge';
+import { SharePointClaudeBridge } from '../features/sharepoint/SharePointClaude';
 import { ListaView } from '../features/mslist/ListaView';
 import { AssistantView } from '../features/assistant/AssistantView';
 import { LogView } from '../features/log/LogView';
@@ -92,6 +93,7 @@ function Main({ route }: { route: Route }) {
         <ReminderCenter />
         <RallySync />
         <ListaBridge />
+        <SharePointClaudeBridge />
         <AnalystPrompt />
         <NeedReviewPrompt />
         <MeetingPrompt />

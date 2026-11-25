@@ -1235,6 +1235,26 @@ Claude. Confluence (export mensual, aprobado por José y Mati) va en la fase 2. 
   que Claude cite. Las instrucciones del servidor (`MCP_INSTRUCTIONS`) llevan el glosario (US, TS, DE…).
 - Privacidad: sin plan Team de Claude, cada persona debe desactivar en Claude el uso de sus conversaciones para entrenar.
 
+### Claude dentro de las carpetas de SharePoint (fase 38, nov 2026, visto bueno de José)
+
+El conector corre en Vercel y no tiene la sesión de SharePoint de nadie; la tiene la extensión de Chrome. Así que va de paso
+por Supabase (`supabase/migrations/018_sharepoint_claude.sql`, después de 001 a 017):
+
+- **Conector** (`askSharePoint` en `servidor/mcp.ts`): `sp_request` deja la petición y espera hasta 40 s con `sp_collect`, que al
+  recogerla **borra la fila**; si nadie contesta, `sp_cancel` y le dice a Claude que abra Marea. Lo no recogido se borra a los
+  10 min y como mucho hay 30 por persona. Herramientas `sharepoint_ver_carpeta`, `sharepoint_buscar` (buscador de SharePoint
+  dentro de las carpetas, con resumen) y `sharepoint_leer` (texto por partes de 60.000 caracteres, `textPart`). La carpeta se
+  dice por nombre, enlace o proyecto (`findFolder`); formato en `formatSpFolder`/`formatSpSearch`/`formatSpRead`.
+- **Pestaña de Marea** (`SharePointClaudeBridge` en `Main`, `features/sharepoint/claudeBridge.ts`): solo con «Dejar que Claude
+  lea mis carpetas» (`ClaudeAccessCard` en la pantalla SharePoint, `sharepoint-claude` en localStorage, apagado por defecto) y
+  la extensión 1.6.0. Se entera por tiempo real (`onSpRequest`) y, por si se corta, cada 15 s y al volver (`sp_pending`);
+  `sp_take` hace que solo una pestaña la atienda. **Solo dentro de las carpetas guardadas** (personales o de un proyecto que
+  ve): `rootFor`/`serverPath` (`domain/spClaude.ts`) rechazan rutas fuera, `..` y otros dominios; las búsquedas se limitan a
+  la carpeta y se filtran. Solo lee. Lo último pedido se ve en la tarjeta (en memoria).
+- **Extensión 1.6.0**: operación `text` en `spDocs.ts` (Word, PowerPoint por diapositivas, Excel por hojas con `|`, texto,
+  CSV, HTML; hasta 15 MB y 400.000 caracteres). Los PDF y los formatos antiguos no: Claude usa el resumen de la búsqueda.
+- El texto de los documentos pasa por Supabase un momento y llega a Claude (Anthropic): es lo que aprobó José.
+
 ### Fase 2 (fase 38): documentación de Confluence en el MCP
 
 El equipo descarga una vez al mes el export **HTML** de los espacios de Confluence (aprobado por José y Mati: solo cómo trabaja

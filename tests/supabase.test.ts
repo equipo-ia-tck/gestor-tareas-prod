@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
  * Prueba la base de datos de Supabase (supabase/migrations) en un Postgres de verdad (PGlite), imitando
  * lo mínimo de Supabase: roles anon/authenticated y auth.uid()/auth.email() de la sesión.
  */
-const MIGRATION = ['001_equipo.sql', '002_baja_y_contrasenas.sql', '003_alta_sin_invitacion.sql', '004_claves_conectores.sql', '005_calendario_subido.sql', '006_feedback.sql', '007_feedback_formulario.sql', '008_feedback_bloqueado.sql', '009_analitica.sql', '010_analitica_kpis.sql', '011_rally_herramienta.sql', '012_calendario_ics.sql', '013_pantallas.sql', '015_respuestas_claude.sql', '016_mis_solicitudes.sql', '017_feedback_orden.sql'].map((f) => readFileSync(`supabase/migrations/${f}`, 'utf8')).join('\n');
+const MIGRATION = ['001_equipo.sql', '002_baja_y_contrasenas.sql', '003_alta_sin_invitacion.sql', '004_claves_conectores.sql', '005_calendario_subido.sql', '006_feedback.sql', '007_feedback_formulario.sql', '008_feedback_bloqueado.sql', '009_analitica.sql', '010_analitica_kpis.sql', '011_rally_herramienta.sql', '012_calendario_ics.sql', '013_pantallas.sql', '015_respuestas_claude.sql', '016_mis_solicitudes.sql', '017_feedback_orden.sql', '018_sharepoint_claude.sql'].map((f) => readFileSync(`supabase/migrations/${f}`, 'utf8')).join('\n');
 let db: PGlite;
 
 const SUPABASE_STUB = `
@@ -465,5 +465,30 @@ describe('base de datos del equipo en Supabase', () => {
     await expect(rpc(marta, 'save_assistant_answer', { p_id: 'NO VALE', p_question: '', p_answer: 'x' })).rejects.toThrow();
     await expect(rpc(marta, 'save_assistant_answer', { p_id: 'q-vacia1', p_question: '', p_answer: '' })).rejects.toThrow(/vacía/);
     await expect(as(marta, "insert into assistant_answers (id, owner, answer) values ('q-directa', '00000000-0000-4000-8000-000000000001', 'x')")).rejects.toThrow();
+  });
+  it('SharePoint para Claude (018): la petición va de paso, solo a su dueña, y se borra al recogerla', async () => {
+    const marta = await newUser('marta@vml.com');
+    await rpc(marta, 'register_profile', { p_name: 'Marta', p_code: '' });
+    const ana = await newUser('ana@vml.com');
+    await rpc(ana, 'register_profile', { p_name: 'Ana', p_code: '' });
+    const id = await rpc(marta, 'sp_request', { p_op: 'folder', p_args: { folderUrl: 'https://x.sharepoint.com/a' } }) as string;
+    expect(await rpc(ana, 'sp_pending')).toEqual([]);
+    expect(await rpc(ana, 'sp_take', { p_id: id })).toBeNull();
+    expect(await rpc(marta, 'sp_pending')).toEqual([{ id, op: 'folder', args: { folderUrl: 'https://x.sharepoint.com/a' } }]);
+    expect(await rpc(marta, 'sp_collect', { p_id: id })).toEqual({ status: 'pending' });
+    expect(await rpc(marta, 'sp_take', { p_id: id })).toMatchObject({ id, op: 'folder' });
+    expect(await rpc(marta, 'sp_take', { p_id: id })).toBeNull(); // otra pestaña ya no la coge
+    await rpc(ana, 'sp_answer', { p_id: id, p_result: { hack: true }, p_error: null });
+    expect(await rpc(marta, 'sp_collect', { p_id: id })).toEqual({ status: 'working' });
+    await rpc(marta, 'sp_answer', { p_id: id, p_result: { entries: [1] }, p_error: null });
+    expect(await rpc(ana, 'sp_collect', { p_id: id })).toEqual({ status: 'gone' });
+    expect(await rpc(marta, 'sp_collect', { p_id: id })).toEqual({ status: 'done', result: { entries: [1] }, error: null });
+    expect(await as(marta, 'select id from sp_requests')).toEqual([]);
+    const bad = await rpc(marta, 'sp_request', { p_op: 'read', p_args: {} }) as string;
+    await rpc(marta, 'sp_take', { p_id: bad });
+    await rpc(marta, 'sp_answer', { p_id: bad, p_result: null, p_error: 'No es de una carpeta guardada.' });
+    expect(await rpc(marta, 'sp_collect', { p_id: bad })).toEqual({ status: 'error', result: null, error: 'No es de una carpeta guardada.' });
+    await expect(rpc(marta, 'sp_request', { p_op: 'upload', p_args: {} })).rejects.toThrow(/no válida/);
+    await expect(as(marta, "insert into sp_requests (owner, op) values ('00000000-0000-4000-8000-000000000001', 'read')")).rejects.toThrow();
   });
 });

@@ -14,6 +14,7 @@ import { foldersOf, newFolder, saveFolders } from './folders';
 import { cancelWaiting, extensionReady, handleBridgeMessage, loadFile, openFolder, openForBridge, openWithExtension, setSnapshot, showFolder, useSharePointSnapshot } from './sharepointStore';
 import { isOutdated, LATEST_EXTENSION, useExtension } from '../mslist/extension';
 import { navigate } from '../../app/router';
+import { ClaudeAccessCard } from './SharePointClaude';
 
 const card = 'rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900';
 const title = 'mb-3 flex items-center gap-2 text-sm font-semibold';
@@ -34,6 +35,7 @@ export function SharePointView() {
         <span>Marea solo guarda el nombre y el enlace de cada carpeta. Los documentos se quedan en SharePoint y se abren con tus
           permisos de CaixaBank. Lo que veas con el marcador no se guarda en ningún sitio: al cerrar esta pestaña desaparece.</span>
       </p>
+      <ClaudeAccessCard />
       {/* Mis carpetas a la izquierda y su contenido a la derecha (en pantallas estrechas, una debajo de otra). */}
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
         <FolderList />

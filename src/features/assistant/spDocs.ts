@@ -9,6 +9,7 @@
  * - `upload`: sube un archivo a la carpeta (sin sustituir uno que ya exista).
  * - `folder`: un nivel de una carpeta (subcarpetas y archivos con tamaño y fecha) para navegarla en la pantalla SharePoint.
  * - `file`: un PDF o una imagen (hasta 10 MB) en base64, para verlo dentro de Marea.
+ * - `text`: el texto de un archivo (Word, PowerPoint, Excel, texto…) para Claude, si la persona lo permite.
  *
  * Se convierte en texto con `toString()` (como `spWork`): no puede usar nada de fuera de la función ni este archivo
  * puede tener imports.
@@ -127,6 +128,75 @@ export async function spDocs(op: string, args: Any): Promise<Any> {
     return { total: files.length, files: files.slice(0, 40).map((f) => ({ name: f.name, url: f.url, modified: f.modified, size: f.size, folder: f.folder })) };
   }
 
+  // Archivos de Office (.docx, .pptx, .xlsx): son un ZIP con XML dentro. Se leen sin librerías.
+  const unzip = async (zip: Uint8Array, want: (name: string) => boolean): Promise<Record<string, string>> => {
+    const out: Record<string, string> = {};
+    const v = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
+    let e = -1;
+    for (let i = zip.length - 22; i >= Math.max(0, zip.length - 65557); i--) if (v.getUint32(i, true) === 0x06054b50) { e = i; break; }
+    if (e < 0) return out;
+    let p = v.getUint32(e + 16, true);
+    const count = v.getUint16(e + 10, true);
+    const dec = new TextDecoder();
+    for (let n = 0; n < count && p + 46 <= zip.length; n++) {
+      const method = v.getUint16(p + 10, true);
+      const size = v.getUint32(p + 20, true);
+      const nl = v.getUint16(p + 28, true);
+      const el = v.getUint16(p + 30, true);
+      const cl = v.getUint16(p + 32, true);
+      const local = v.getUint32(p + 42, true);
+      const name = dec.decode(zip.subarray(p + 46, p + 46 + nl));
+      if (want(name)) {
+        const begin = local + 30 + v.getUint16(local + 26, true) + v.getUint16(local + 28, true);
+        const data = zip.slice(begin, begin + size);
+        out[name] = method === 0 ? dec.decode(data) : await new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text();
+      }
+      p += 46 + nl + el + cl;
+    }
+    return out;
+  };
+  const ent = (t: string) => t.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+  const runs = (xml: string, tag: string) => ent((xml.match(new RegExp('<' + tag + '(?: [^>]*)?>[^<]*</' + tag + '>', 'g')) || []).map((x) => x.replace(/<[^>]+>/g, '')).join(''));
+  const num = (name: string) => Number((/(\d+)\.xml$/.exec(name) || [])[1] || 0);
+  /** Texto de un archivo según su extensión (null si no se sabe leer). */
+  const fileText = async (name: string, r: Response): Promise<string | null> => {
+    if (/\.docx$/i.test(name)) {
+      const xml = (await unzip(new Uint8Array(await r.arrayBuffer()), (n) => n === 'word/document.xml'))['word/document.xml'] || '';
+      const paras = xml.match(/<w:p[ >][\s\S]*?<\/w:p>/g) || [];
+      return paras.map((para) => {
+        const t = runs(para, 'w:t');
+        const h = /<w:pStyle w:val="(?:Heading|Ttulo|Titulo|Título)(\d)"/i.exec(para);
+        return h && t.trim() ? '#'.repeat(Number(h[1])) + ' ' + t.trim() : t;
+      }).join('\n');
+    }
+    if (/\.pptx$/i.test(name)) {
+      const slides = await unzip(new Uint8Array(await r.arrayBuffer()), (n) => /^ppt\/slides\/slide\d+\.xml$/.test(n));
+      return Object.keys(slides).sort((a, b) => num(a) - num(b)).map((k) => {
+        const paras = (slides[k].match(/<a:p>[\s\S]*?<\/a:p>/g) || []).map((x) => runs(x, 'a:t')).filter((t) => t.trim());
+        return '## Diapositiva ' + num(k) + '\n' + paras.join('\n');
+      }).join('\n\n');
+    }
+    if (/\.xlsx$/i.test(name)) {
+      const files = await unzip(new Uint8Array(await r.arrayBuffer()), (n) => n === 'xl/sharedStrings.xml' || n === 'xl/workbook.xml' || /^xl\/worksheets\/sheet\d+\.xml$/.test(n));
+      const shared = (files['xl/sharedStrings.xml'] || '').match(/<si>[\s\S]*?<\/si>/g)?.map((x) => runs(x, 't')) || [];
+      const names = ((files['xl/workbook.xml'] || '').match(/<sheet [^>]*name="[^"]*"/g) || []).map((x) => ent((/name="([^"]*)"/.exec(x) || [])[1] || ''));
+      return Object.keys(files).filter((k) => k.indexOf('worksheets/') > 0).sort((a, b) => num(a) - num(b)).map((k) => {
+        const rows = (files[k].match(/<row[ >][\s\S]*?<\/row>/g) || []).slice(0, 2000).map((row) =>
+          (row.match(/<c [^>]*?(?:\/>|>[\s\S]*?<\/c>)/g) || []).map((c) => {
+            const v = (/<v>([^<]*)<\/v>/.exec(c) || [])[1];
+            if (/ t="s"/.test(c)) return shared[Number(v)] || '';
+            if (/ t="inlineStr"/.test(c)) return runs(c, 't');
+            return v == null ? '' : ent(v);
+          }).join(' | ')).filter((t) => t.replace(/[\s|]/g, ''));
+        return '## Hoja ' + (names[num(k) - 1] || num(k)) + '\n' + rows.join('\n');
+      }).join('\n\n');
+    }
+    if (/\.(txt|md|markdown|csv|json|xml)$/i.test(name)) return r.text();
+    if (/\.html?$/i.test(name)) return ent((await r.text()).replace(/<(script|style)[\s\S]*?<\/\1>/gi, '').replace(/<\/(p|div|li|h\d|tr)>/gi, '\n').replace(/<[^>]+>/g, ' '));
+    return null;
+  };
+  const download = (site: string, path: string) => fetch(site + "/_api/web/GetFileByServerRelativePath(decodedurl=@f)/$value?@f='" + q(path) + "'", { credentials: 'include' });
+
   // Texto de los archivos de la carpeta que se pueden leer sin librerías (Word .docx, texto, Markdown, CSV, HTML), para
   // encontrarlos al momento, sin esperar a que SharePoint los meta en su buscador. `known` (enlace → fecha) evita
   // volver a descargar los que no han cambiado.
@@ -138,51 +208,13 @@ export async function spDocs(op: string, args: Any): Promise<Any> {
     const files = (await walk(site, String(args.folder))).filter((f) => readable.test(f.name) && f.size <= 5 * 1024 * 1024);
     const out: Any[] = [];
     let budget = 3 * 1024 * 1024;
-    const unzipXml = async (zip: Uint8Array, name: string): Promise<string> => {
-      const v = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
-      let e = -1;
-      for (let i = zip.length - 22; i >= Math.max(0, zip.length - 65557); i--) if (v.getUint32(i, true) === 0x06054b50) { e = i; break; }
-      if (e < 0) return '';
-      let p = v.getUint32(e + 16, true);
-      const count = v.getUint16(e + 10, true);
-      const dec = new TextDecoder();
-      for (let n = 0; n < count && p + 46 <= zip.length; n++) {
-        const method = v.getUint16(p + 10, true);
-        const size = v.getUint32(p + 20, true);
-        const nl = v.getUint16(p + 28, true);
-        const el = v.getUint16(p + 30, true);
-        const cl = v.getUint16(p + 32, true);
-        const local = v.getUint32(p + 42, true);
-        if (dec.decode(zip.subarray(p + 46, p + 46 + nl)) === name) {
-          const start = local + 30 + v.getUint16(local + 26, true) + v.getUint16(local + 28, true);
-          const data = zip.slice(start, start + size);
-          if (method === 0) return dec.decode(data);
-          return new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text();
-        }
-        p += 46 + nl + el + cl;
-      }
-      return '';
-    };
-    const ent = (t: string) => t.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
     for (const f of files) {
       if (known[f.url] && known[f.url] === f.modified) { out.push({ url: f.url, unchanged: true }); continue; }
       if (budget <= 0) break;
       try {
-        const r = await fetch(site + "/_api/web/GetFileByServerRelativePath(decodedurl=@f)/$value?@f='" + q(f.path) + "'", { credentials: 'include' });
+        const r = await download(site, f.path);
         if (!r.ok) continue;
-        let text = '';
-        if (/\.docx$/i.test(f.name)) {
-          const xml = await unzipXml(new Uint8Array(await r.arrayBuffer()), 'word/document.xml');
-          const paras = xml.match(/<w:p[ >][\s\S]*?<\/w:p>/g) || [];
-          text = paras.map((para) => {
-            const t = ent((para.match(/<w:t[^>]*>[^<]*<\/w:t>/g) || []).map((x) => x.replace(/<[^>]+>/g, '')).join(''));
-            const h = /<w:pStyle w:val="(?:Heading|Ttulo|Titulo|Título)(\d)"/i.exec(para);
-            return h && t.trim() ? '#'.repeat(Number(h[1])) + ' ' + t.trim() : t;
-          }).join('\n');
-        } else {
-          text = await r.text();
-          if (/\.html?$/i.test(f.name)) text = ent(text.replace(/<(script|style)[\s\S]*?<\/\1>/gi, '').replace(/<\/(p|div|li|h\d|tr)>/gi, '\n').replace(/<[^>]+>/g, ' '));
-        }
+        let text = (await fileText(f.name, r)) || '';
         text = text.replace(/\n{3,}/g, '\n\n').trim().slice(0, 600000);
         budget -= text.length;
         out.push({ name: f.name, url: f.url, modified: f.modified, folder: f.folder, text });
@@ -191,6 +223,25 @@ export async function spDocs(op: string, args: Any): Promise<Any> {
       }
     }
     return { files: out, total: files.length };
+  }
+
+  // El texto de un archivo (Word, PowerPoint, Excel, texto, CSV, HTML; hasta 15 MB) para que Claude lo lea, si la persona
+  // lo ha permitido. Nada se guarda: va a Marea, que lo pasa al conector.
+  if (op === 'text') {
+    const site = String(args.siteUrl);
+    sp(site);
+    const path = String(args.path);
+    const name = path.split('/').pop() || '';
+    if (/\.(pdf|doc|ppt|xls)$/i.test(name)) throw new Error('«' + name + '» no se puede leer como texto (solo Word .docx, PowerPoint .pptx, Excel .xlsx, texto, CSV y HTML). Ábrelo en SharePoint.');
+    const r = await download(site, path);
+    if (r.status === 401 || r.status === 403) throw fail(r.status, 'SharePoint no deja abrirlo (' + r.status + '): ¿has iniciado sesión en SharePoint en Chrome?');
+    if (r.status === 404) throw fail(404, 'No existe «' + name + '» en SharePoint (o no tienes acceso).');
+    if (!r.ok) throw fail(r.status, 'SharePoint respondió ' + r.status + ' al abrir el archivo.');
+    if (Number(r.headers.get('content-length') || 0) > 15 * 1024 * 1024) throw new Error('«' + name + '» pesa más de 15 MB: ábrelo en SharePoint.');
+    const text = await fileText(name, r);
+    if (text == null) throw new Error('«' + name + '» no se puede leer como texto (solo Word .docx, PowerPoint .pptx, Excel .xlsx, texto, CSV y HTML). Ábrelo en SharePoint.');
+    const clean = text.replace(/\n{3,}/g, '\n\n').trim();
+    return { name, text: clean.slice(0, 400000), truncated: clean.length > 400000 };
   }
 
   if (op === 'upload') {

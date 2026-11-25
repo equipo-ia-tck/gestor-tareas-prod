@@ -1,6 +1,7 @@
 import type { Table, Transaction } from 'dexie';
 import { useSyncExternalStore } from 'react';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import type { SpRequest } from '../domain/spClaude';
 import { DEFAULT_ITEM_TYPES } from '../domain/workflows';
 import type { Space } from '../domain/spaces';
 import type { TasksDB } from './db';
@@ -97,6 +98,8 @@ function friendly(message: string): string {
     return 'Falta preparar el orden del feedback en Supabase: un administrador tiene que ejecutar supabase/migrations/017_feedback_orden.sql.';
   if (/could not find the function public\.(my_feedback|admin_reply_feedback)\b/i.test(message))
     return 'Falta preparar «Mis solicitudes» en Supabase: un administrador tiene que ejecutar supabase/migrations/016_mis_solicitudes.sql.';
+  if (/could not find the function public\.sp_(pending|take|answer|request)\b/i.test(message))
+    return 'Falta preparar SharePoint para Claude en Supabase: un administrador tiene que ejecutar supabase/migrations/018_sharepoint_claude.sql.';
   if (/feedback_status_check/i.test(message))
     return 'Falta el estado «Bloqueado» del feedback en Supabase: un administrador tiene que ejecutar supabase/migrations/008_feedback_bloqueado.sql.';
   return message;
@@ -305,6 +308,22 @@ export class SyncClient {
   replyFeedback = (id: string, reply: string) => this.rpc<Feedback>('admin_reply_feedback', { p_id: id, p_reply: reply });
   updateFeedback = (id: string, patch: { status?: FeedbackStatus; taskId?: string }) =>
     this.rpc<Feedback>('admin_update_feedback', { p_id: id, p_status: patch.status ?? null, p_task_id: patch.taskId ?? null });
+
+  // ---------- SharePoint para Claude (migración 018): las peticiones de Claude, de paso hacia la extensión ----------
+
+  spPending = () => this.rpc<SpRequest[]>('sp_pending');
+  spTake = (id: string) => this.rpc<SpRequest | null>('sp_take', { p_id: id });
+  spAnswer = (id: string, result: unknown, error: string | null) =>
+    this.rpc<void>('sp_answer', { p_id: id, p_result: result ?? null, p_error: error });
+  /** Avisa al momento de cada petición nueva de Claude (tiempo real; las pestañas ocultas espacian los temporizadores). */
+  onSpRequest(cb: (id: string) => void): () => void {
+    const uid = this.state.user?.id;
+    const channel = this.supabase.channel(`sharepoint-claude-${crypto.randomUUID()}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'sp_requests', ...(uid ? { filter: `owner=eq.${uid}` } : {}) },
+        (p) => { const id = (p.new as { id?: unknown }).id; if (typeof id === 'string') cb(id); })
+      .subscribe();
+    return () => { void this.supabase.removeChannel(channel); };
+  }
 
   // ---------- Analítica de uso (migración 009): la apunta la app; la leen solo los administradores ----------
 

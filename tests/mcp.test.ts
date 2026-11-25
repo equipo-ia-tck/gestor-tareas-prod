@@ -172,7 +172,7 @@ describe('función /api/mcp', () => {
 
     const tools = await (await api.fetch(rpc({ jsonrpc: '2.0', id: 2, method: 'tools/list' }))).json();
     expect(tools.result.tools.map((t: { name: string }) => t.name)).toEqual(
-      expect.arrayContaining(['buscar', 'buscar_en_documentacion', 'listar_tareas', 'ver_tarea', 'ver_nota', 'ver_persona', 'ver_proyecto', 'listar_proyectos', 'carpetas_sharepoint', 'mi_registro', 'responder_en_marea']));
+      expect.arrayContaining(['buscar', 'buscar_en_documentacion', 'listar_tareas', 'ver_tarea', 'ver_nota', 'ver_persona', 'ver_proyecto', 'listar_proyectos', 'carpetas_sharepoint', 'sharepoint_ver_carpeta', 'sharepoint_buscar', 'sharepoint_leer', 'mi_registro', 'responder_en_marea']));
 
     const folders = await (await api.fetch(rpc({ jsonrpc: '2.0', id: 9, method: 'tools/call', params: { name: 'carpetas_sharepoint', arguments: {} } }))).json();
     expect(folders.result.content[0].text).toContain('Mis guías');

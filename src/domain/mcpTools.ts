@@ -5,6 +5,7 @@ import { pageChunks, type ConfluencePage } from './confluence.ts';
 import { mentionsOf } from './notes.ts';
 import { ancestry, withDescendants } from './projects.ts';
 import { fold, nameKey } from './text.ts';
+import { textPart, type SpEntry } from './spClaude.ts';
 import type { SharePointFolder } from './sharepoint';
 import type { ActivityEntry, ISODate, ItemType, Note, Person, Project, StateCategory, Task } from './types';
 
@@ -418,6 +419,64 @@ export function sharePointFolders(d: MareaData, project?: string, text?: string)
   ].filter((x) => x !== null).join('\n');
 }
 
+/** Carpeta guardada por nombre, enlace o proyecto (la persona dice «la carpeta Entregables» o «la de Caixa»). */
+export function findFolder(d: MareaData, raw: string): { folder: SharePointFolder; where: string } | null {
+  const all = [
+    ...(d.folders ?? []).map((folder) => ({ folder, where: 'personal' })),
+    ...d.projects.flatMap((p) => (p.folders ?? []).map((folder) => ({ folder, where: `proyecto ${projectName(d, p.id)}` }))),
+  ];
+  const q = fold(raw.trim()).replace(/\/+$/, '');
+  if (!q) return null;
+  return all.find((x) => fold(x.folder.url).replace(/\/+$/, '') === q)
+    ?? all.find((x) => fold(x.folder.name) === q)
+    ?? all.find((x) => fold(x.folder.name).includes(q))
+    ?? (() => { const p = findProject(d, raw); return p ? all.find((x) => x.where === `proyecto ${projectName(d, p.id)}`) ?? null : null; })()
+    ?? null;
+}
+
+const size = (n: number | null) => n == null ? '' : n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`;
+
+/** Una carpeta de SharePoint (lo que devuelve la pestaña de Marea). */
+export function formatSpFolder(r: { folder: string; path: string; url: string; entries: SpEntry[]; truncated: boolean }): string {
+  const dirs = r.entries.filter((e) => e.kind === 'folder');
+  const files = r.entries.filter((e) => e.kind === 'file');
+  return [
+    `# ${r.path.split('/').pop()} (carpeta guardada «${r.folder}»)`,
+    `SharePoint: ${r.url}`,
+    dirs.length ? `\n## Subcarpetas (${dirs.length})` : null,
+    ...dirs.map((e) => `- ${e.name}${e.size != null ? ` · ${e.size} elementos` : ''} · ruta: ${e.path}`),
+    files.length ? `\n## Archivos (${files.length})` : null,
+    ...files.map((e) => `- ${e.name} · ${size(e.size)}${e.modified ? ` · ${e.modified.slice(0, 10)}` : ''} · ruta: ${e.path} · ${e.url}`),
+    !r.entries.length ? '\nLa carpeta está vacía.' : null,
+    r.truncated ? `\n(Hay más elementos de los que se muestran.)` : null,
+    '\nPara ver una subcarpeta usa sharepoint_ver_carpeta con su ruta; para leer un archivo, sharepoint_leer con su ruta.',
+  ].filter((x) => x !== null).join('\n');
+}
+
+export function formatSpSearch(query: string, r: { results: { folder: string; hits: { title: string; url: string; summary: string; author: string; modified: string; path: string }[] }[]; errors: string[] }): string {
+  const total = r.results.reduce((n, x) => n + x.hits.length, 0);
+  if (!total) return [`No hay nada sobre «${query}» en las carpetas guardadas (el buscador de SharePoint tarda en indexar lo nuevo: prueba sharepoint_ver_carpeta).`, ...r.errors.map((e) => `- No se ha podido buscar en ${e}`)].join('\n');
+  return [
+    `Resultados de SharePoint para «${query}»:`,
+    ...r.results.filter((x) => x.hits.length).map((x) => [`\n## En «${x.folder}»`, ...x.hits.map((h) =>
+      `- ${h.title}${h.author ? ` · ${h.author}` : ''}${h.modified ? ` · ${h.modified.slice(0, 10)}` : ''}\n  ${h.summary}\n  ruta: ${h.path} · ${h.url}`)].join('\n')),
+    ...r.errors.map((e) => `\n(No se ha podido buscar en ${e})`),
+    '\nPara leer uno entero usa sharepoint_leer con su ruta.',
+  ].join('\n');
+}
+
+export function formatSpRead(r: { folder: string; name: string; url: string; text: string; truncated: boolean }, part = 1): string {
+  const p = textPart(r.text, part);
+  return [
+    `# ${r.name} (carpeta guardada «${r.folder}»)`,
+    `SharePoint: ${r.url}`,
+    p.parts > 1 ? `Parte ${p.part} de ${p.parts}${p.part < p.parts ? ` (pide la parte ${p.part + 1} para seguir)` : ''}.` : null,
+    '',
+    p.text || '(El archivo no tiene texto.)',
+    r.truncated && p.part === p.parts ? '\n(El archivo es muy largo: aquí acaba lo que se puede leer.)' : null,
+  ].filter((x) => x !== null).join('\n');
+}
+
 export function listProjects(d: MareaData): string {
   const map = new Map(d.projects.map((p) => [p.id, p]));
   const rows = d.projects.map((p) => ({ p, path: ancestry(p.id, map).map((x) => x.name).join(' / ') }))
@@ -453,7 +512,10 @@ También da acceso a la documentación del equipo (export de Confluence): cómo 
 para qué sirve cada cosa. Se busca con «buscar_en_documentacion».
 
 Las carpetas de SharePoint que el equipo guarda en Marea (por proyecto o personales) se consultan con «carpetas_sharepoint»: solo
-nombre y enlace, nunca el contenido de los documentos. Para «¿dónde está la documentación / los entregables de X?», dalas con su enlace.
+nombre y enlace. Para «¿dónde está la documentación / los entregables de X?», dalas con su enlace.
+Si la persona lo ha activado en Marea, también se puede mirar dentro de esas carpetas (solo de esas): «sharepoint_ver_carpeta»,
+«sharepoint_buscar» y «sharepoint_leer» (texto de Word, PowerPoint, Excel y archivos de texto; los PDF no). Lo hace su pestaña de Marea
+en Chrome, así que puede tardar unos segundos o pedir que la abra. Cita siempre el documento con su enlace de SharePoint.
 
 Glosario: US = User Story (en Rally, normalmente una guía de etiquetado); TS = Test Scenario / Test Set (la validación de una US);
 DE = defecto; FE = feature; TA = tarea de Rally. Los IDs de Rally tienen la forma US1234567 o TS92615. «Para hablar» son temas
@@ -463,6 +525,6 @@ Cómo responder:
 - Responde en español y cita siempre de dónde sale cada dato (título de la tarea, nota o página y su enlace a Marea, Rally o Confluence).
 - Preguntas abiertas sobre el trabajo diario del equipo («¿qué se habló de…?») → «buscar»; sobre cómo funciona algo, procesos o conceptos
   («¿cómo se valida una guía?», «¿qué es…?») → «buscar_en_documentacion»; para listas de tareas → «listar_tareas».
-- Si algo no está en Marea ni en la documentación, dilo; no lo inventes. Este conector no puede crear ni cambiar nada en Marea.
+- Si algo no está en Marea ni en la documentación, dilo; no lo inventes. Este conector no puede crear ni cambiar nada en Marea ni en SharePoint.
 - Si el mensaje trae un «id de Marea» (viene del botón «Preguntar a Claude» del Asistente), al terminar llama una vez a
   «responder_en_marea» con ese id y tu respuesta completa en Markdown, con los enlaces: así la persona la ve en Marea.`;

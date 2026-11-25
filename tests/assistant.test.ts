@@ -250,6 +250,54 @@ describe('Asistente: documentación en SharePoint', async () => {
     expect(hits[0].chunk.title).toBe('a.docx');
     expect(hits[0].snippet).toContain('La evar 69 es para el login');
   });
+
+  it('lee el texto de un archivo suelto (Word, PowerPoint, Excel) para Claude; los PDF no', async () => {
+    const zipOf = (entries: Record<string, string>) => {
+      const parts: Buffer[] = [];
+      const dirs: Buffer[] = [];
+      let offset = 0;
+      for (const [n, text] of Object.entries(entries)) {
+        const raw = Buffer.from(text);
+        const data = deflateRawSync(raw);
+        const name = Buffer.from(n);
+        const local = Buffer.alloc(30);
+        local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(8, 8); local.writeUInt32LE(data.length, 18); local.writeUInt32LE(raw.length, 22); local.writeUInt16LE(name.length, 26);
+        const dir = Buffer.alloc(46);
+        dir.writeUInt32LE(0x02014b50, 0); dir.writeUInt16LE(8, 10); dir.writeUInt32LE(data.length, 20); dir.writeUInt32LE(raw.length, 24); dir.writeUInt16LE(name.length, 28); dir.writeUInt32LE(offset, 42);
+        parts.push(local, name, data);
+        dirs.push(dir, name);
+        offset += local.length + name.length + data.length;
+      }
+      const dir = Buffer.concat(dirs);
+      const end = Buffer.alloc(22);
+      const count = Object.keys(entries).length;
+      end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(count, 8); end.writeUInt16LE(count, 10); end.writeUInt32LE(dir.length, 12); end.writeUInt32LE(offset, 16);
+      return new Uint8Array(Buffer.concat([...parts, dir, end]));
+    };
+    const pptx = zipOf({
+      'ppt/slides/slide2.xml': '<p:sld><a:p><a:r><a:t>Segunda</a:t></a:r></a:p></p:sld>',
+      'ppt/slides/slide1.xml': '<p:sld><a:p><a:r><a:t>Plan </a:t></a:r><a:r><a:t>Q1</a:t></a:r></a:p><a:p><a:r><a:t>evar 69</a:t></a:r></a:p></p:sld>',
+    });
+    const xlsx = zipOf({
+      'xl/workbook.xml': '<workbook><sheets><sheet name="Evars" sheetId="1" r:id="rId1"/></sheets></workbook>',
+      'xl/sharedStrings.xml': '<sst><si><t>Variable</t></si><si><t>Uso</t></si><si><t>login &amp; SSO</t></si></sst>',
+      'xl/worksheets/sheet1.xml': '<worksheet><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c></row>'
+        + '<row r="2"><c r="A2"><v>69</v></c><c r="B2" t="s"><v>2</v></c></row></sheetData></worksheet>',
+    });
+    const files: Record<string, Uint8Array> = { 'plan.pptx': pptx, 'evars.xlsx': xlsx, 'a.docx': docx };
+    const fake = (async (url: string) => {
+      const name = Object.keys(files).find((n) => decodeURIComponent(url).includes(n));
+      return name ? new Response(files[name] as BodyInit) : new Response('no', { status: 404 });
+    }) as typeof fetch;
+    await withFetch(fake, async () => {
+      expect(await spDocs('text', { siteUrl: SITE, path: `${FOLDER}/plan.pptx` })).toEqual({ name: 'plan.pptx', text: '## Diapositiva 1\nPlan Q1\nevar 69\n\n## Diapositiva 2\nSegunda', truncated: false });
+      expect((await spDocs('text', { siteUrl: SITE, path: `${FOLDER}/evars.xlsx` })).text).toBe('## Hoja Evars\nVariable | Uso\n69 | login & SSO');
+      expect((await spDocs('text', { siteUrl: SITE, path: `${FOLDER}/a.docx` })).text).toBe('# Medición\nLa evar 69 es para el login & SSO');
+      await expect(spDocs('text', { siteUrl: SITE, path: `${FOLDER}/informe.pdf` })).rejects.toThrow(/no se puede leer como texto/);
+      await expect(spDocs('text', { siteUrl: SITE, path: `${FOLDER}/falta.txt` })).rejects.toThrow(/No existe/);
+      await expect(spDocs('text', { siteUrl: 'https://evil.es', path: '/x.docx' })).rejects.toThrow(/no es de SharePoint/);
+    });
+  });
 });
 
 describe('Pantallas de cada cuenta', () => {
