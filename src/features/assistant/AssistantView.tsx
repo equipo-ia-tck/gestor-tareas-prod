@@ -26,7 +26,7 @@ import { currentItems, loadListaConfig, useLista } from '../mslist/listaStore';
 import { folderKey, folderState, loadFolderDocs, useFolderDocs } from './folderDocs';
 import { confluenceChunks, isConfluenceChunk, loadConfluenceDocs, useConfluenceDocs } from './confluenceDocs';
 import { kqlFrom, summaryMarks } from './spDocs';
-import { AiAnswer, AiPanel, useAiEnabled } from './ai/AiAnswer';
+import { AiAnswer, AiPanel, useAiEnabled, useAiModel } from './ai/AiAnswer';
 import { AskClaudeButton, ClaudeCard } from './askClaude';
 import { InventoryAnswer, inventoryFor } from './InventoryAnswer';
 import { indexChunks, startLlm, useAi } from './ai/engine';
@@ -108,9 +108,10 @@ export function AssistantView() {
   const index = useMemo(() => new SearchIndex(chunks), [chunks]);
   // IA local (si la persona la ha activado): se carga el modelo y se indexa por significado en segundo plano.
   const [aiEnabled] = useAiEnabled();
+  const [aiModel] = useAiModel();
   const ai = useAi();
   const aiOn = aiEnabled && ai.llm !== 'unsupported' && ai.llm !== 'error';
-  useEffect(() => { if (aiEnabled) void startLlm(); }, [aiEnabled]);
+  useEffect(() => { if (aiEnabled) void startLlm(aiModel); }, [aiEnabled, aiModel]);
   useEffect(() => {
     if (!aiEnabled) return;
     const t = setTimeout(() => void indexChunks(chunks), 1500);
@@ -306,7 +307,8 @@ export function AssistantView() {
           <Collapsible collapsed={e.id !== latestAiId}>
             {inv ? <InventoryAnswer inv={inv} /> : aiOn
               ? <AiAnswer entryId={e.id} query={a.query} keywordHits={a.rag ?? a.hits.map((h) => h.chunk)} chunks={chunks} today={today}
-                  onTask={(id) => { const t = taskById.get(id); if (t) editTask(t); }} />
+                  onTask={(id) => { const t = taskById.get(id); if (t) editTask(t); }}
+                  fallback={answer && source ? <Lead text={answer.sentence.text} marks={answer.sentence.marks} source={source.label} href={source.href} external={source.external} /> : undefined} />
               : answer && source && <Lead text={answer.sentence.text} marks={answer.sentence.marks} source={source.label} href={source.href} external={source.external} />}
             {sources.map((c) => {
               const mine = local.filter((h) => folderOf(h.chunk.ref) === c);

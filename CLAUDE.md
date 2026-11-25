@@ -1328,6 +1328,12 @@ que los documentos (también los de CaixaBank) salgan del ordenador. RAG **local
   descarga una vez **Qwen2.5-3B-Instruct** de WebLLM (~2 GB, en la caché del navegador; `q4f16` si la gráfica admite
   `shader-f16`, si no `q4f32`). Necesita WebGPU (Chrome/Edge); sin él, `unsupported` y se queda la respuesta sin IA
   (`extractAnswer`). «Borrar el modelo» lo quita de la caché.
+- **Modelo normal o grande** (nov 2026; `MODELS`, `asistente-ia-modelo` en localStorage, elegido en el panel): Normal =
+  Qwen2.5-3B (~2 GB) y Grande = **Qwen2.5-7B-Instruct** (~5 GB, responde bastante mejor; para un Mac con chip M o una
+  gráfica con 6 GB o más). Cambiar suelta el que hay y carga el otro (`startLlm(size)`); si la gráfica no tiene memoria
+  para el grande, lo dice. «Borrar el modelo» borra los dos. Un test comprueba que los cuatro ids existen en WebLLM.
+- **Nunca en blanco**: si la IA responde «No lo encuentro» o falla, debajo sale la frase que mejor responde sin IA
+  (`extractAnswer`, el `Lead` de siempre, prop `fallback` de `AiAnswer`) con su enlace.
 - **Motor** (`features/assistant/ai/engine.ts`): el modelo va en un worker (`llmWorker.ts`, `CreateWebWorkerMLCEngine`), en
   cola y con «Parar» (`interruptGenerate`). Búsqueda por significado con transformers.js en otro worker (`embedWorker.ts`,
   `Xenova/multilingual-e5-small` q8 en WASM, ~120 MB, prefijos `passage:`/`query:`): `indexChunks` calcula en segundo plano

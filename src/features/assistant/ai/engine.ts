@@ -5,8 +5,8 @@ import { chunkKey, chunkText, cosine, type ChatMessage } from '../../../domain/r
 
 /**
  * Motor de IA del Asistente, todo en el navegador (sin servidor, sin APIs, sin tokens; nada sale del ordenador):
- *  · Modelo de lenguaje: Qwen2.5-3B-Instruct con WebLLM en la gráfica (WebGPU). ~2 GB que se descargan una vez y quedan
- *    en la caché del navegador.
+ *  · Modelo de lenguaje: Qwen2.5-3B-Instruct (o, si se elige, el grande: Qwen2.5-7B-Instruct) con WebLLM en la gráfica
+ *    (WebGPU). ~2 GB (~5 GB el grande) que se descargan una vez y quedan en la caché del navegador.
  *  · Búsqueda por significado: embeddings multilingual-e5-small con transformers.js. Los vectores se guardan solo en
  *    memoria de la pestaña (los documentos de CaixaBank no se guardan en ningún sitio).
  */
@@ -28,10 +28,21 @@ export interface AiState {
   embedError: string | null;
 }
 
-/** Modelo con números de 16 bits si la gráfica los admite (más rápido y ligero); si no, el de 32. */
-export const MODEL_F16 = 'Qwen2.5-3B-Instruct-q4f16_1-MLC';
-export const MODEL_F32 = 'Qwen2.5-3B-Instruct-q4f32_1-MLC';
-export const MODEL_LABEL = 'Qwen2.5 3B';
+/**
+ * Modelos que se pueden elegir (cada persona, en el panel): el normal, ligero y rápido, y el grande, que razona y redacta
+ * bastante mejor pero pesa más del doble y necesita una gráfica con memoria (un Mac con chip M va bien). De cada uno, con
+ * números de 16 bits si la gráfica los admite (más rápido y ligero); si no, el de 32.
+ */
+export type ModelSize = 'normal' | 'grande';
+export const MODELS: Record<ModelSize, { f16: string; f32: string; label: string; download: string; hint: string }> = {
+  normal: { f16: 'Qwen2.5-3B-Instruct-q4f16_1-MLC', f32: 'Qwen2.5-3B-Instruct-q4f32_1-MLC', label: 'Qwen2.5 3B', download: '~2 GB', hint: 'rápido, va en casi cualquier ordenador' },
+  grande: { f16: 'Qwen2.5-7B-Instruct-q4f16_1-MLC', f32: 'Qwen2.5-7B-Instruct-q4f32_1-MLC', label: 'Qwen2.5 7B', download: '~5 GB', hint: 'responde bastante mejor; para un Mac con chip M o una gráfica con 6 GB o más' },
+};
+export const MODEL_F16 = MODELS.normal.f16;
+export const MODEL_F32 = MODELS.normal.f32;
+/** Nombre del modelo cargado (para «Redactada por…»). */
+export const modelLabel = (id: string) => (Object.values(MODELS).find((m) => m.f16 === id || m.f32 === id) ?? MODELS.normal).label;
+const ALL_MODELS = Object.values(MODELS).flatMap((m) => [m.f16, m.f32]);
 
 let state: AiState = { llm: 'off', progress: 0, progressText: '', error: null, model: MODEL_F16, embed: 'off', embedProgress: 0, indexed: 0, total: 0, embedError: null };
 const listeners = new Set<() => void>();
@@ -59,53 +70,73 @@ export async function webgpuSupport(): Promise<{ ok: boolean; f16: boolean; reas
   }
 }
 
-/** ¿El modelo ya está descargado en este navegador? */
-export async function modelCached(): Promise<boolean> {
+/** ¿Ese modelo ya está descargado en este navegador? */
+export async function modelCached(size: ModelSize = 'normal'): Promise<boolean> {
   try {
     const { hasModelInCache } = await import('./webllm');
-    return (await hasModelInCache(MODEL_F16)) || (await hasModelInCache(MODEL_F32));
+    return (await hasModelInCache(MODELS[size].f16)) || (await hasModelInCache(MODELS[size].f32));
   } catch {
     return false;
   }
 }
 
 let engine: WebWorkerMLCEngine | null = null;
+let llmWorker: Worker | null = null;
+let loadedSize: ModelSize | null = null;
 let loading: Promise<void> | null = null;
 
-/** Descarga (la primera vez) y carga el modelo. Se puede llamar varias veces: solo carga una. */
-export function startLlm(): Promise<void> {
-  if (engine) return Promise.resolve();
-  if (loading) return loading;
+/**
+ * Descarga (la primera vez) y carga el modelo elegido. Se puede llamar varias veces: solo carga uno; si ya hay otro
+ * cargado, lo suelta y carga el nuevo.
+ */
+export function startLlm(size: ModelSize = 'normal'): Promise<void> {
+  if (engine && loadedSize === size) return Promise.resolve();
+  if (loading) return loading.then(() => startLlm(size));
   loading = (async () => {
+    if (engine) {
+      try { await engine.unload(); } catch { /* ya estaba suelto */ }
+      llmWorker?.terminate();
+      engine = null;
+      llmWorker = null;
+      loadedSize = null;
+    }
     set({ llm: 'checking', error: null });
     const gpu = await webgpuSupport();
     if (!gpu.ok) {
       set({ llm: 'unsupported', error: gpu.reason ?? 'Sin WebGPU.' });
       return;
     }
-    const model = gpu.f16 ? MODEL_F16 : MODEL_F32;
+    const model = gpu.f16 ? MODELS[size].f16 : MODELS[size].f32;
     set({ llm: 'loading', model, progress: 0, progressText: 'Preparando…' });
     try {
       const { CreateWebWorkerMLCEngine } = await import('./webllm');
-      const worker = new Worker(new URL('./llmWorker.ts', import.meta.url), { type: 'module' });
-      engine = await CreateWebWorkerMLCEngine(worker, model, {
+      llmWorker = new Worker(new URL('./llmWorker.ts', import.meta.url), { type: 'module' });
+      engine = await CreateWebWorkerMLCEngine(llmWorker, model, {
         initProgressCallback: (r) => set({ progress: r.progress, progressText: r.text }),
       });
+      loadedSize = size;
       set({ llm: 'ready', progress: 1, progressText: '' });
     } catch (e) {
       engine = null;
-      set({ llm: 'error', error: (e as Error).message || String(e) });
+      llmWorker?.terminate();
+      llmWorker = null;
+      const message = (e as Error).message || String(e);
+      set({ llm: 'error', error: size === 'grande' && /memory|buffer|limit|device/i.test(message)
+        ? `la gráfica no tiene memoria para el modelo grande (${message}). Vuelve al normal.` : message });
     }
   })().finally(() => { loading = null; });
   return loading;
 }
 
-/** Libera la gráfica y borra el modelo descargado de este navegador. */
+/** Libera la gráfica y borra los modelos descargados de este navegador. */
 export async function removeModel(): Promise<void> {
   try { await engine?.unload(); } catch { /* ya estaba descargado */ }
+  llmWorker?.terminate();
   engine = null;
+  llmWorker = null;
+  loadedSize = null;
   const { deleteModelAllInfoInCache } = await import('./webllm');
-  for (const m of [MODEL_F16, MODEL_F32]) await deleteModelAllInfoInCache(m).catch(() => undefined);
+  for (const m of ALL_MODELS) await deleteModelAllInfoInCache(m).catch(() => undefined);
   set({ llm: 'off', progress: 0, progressText: '', error: null });
 }
 

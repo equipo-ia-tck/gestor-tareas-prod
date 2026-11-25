@@ -5,10 +5,12 @@ import type { Chunk } from '../../../domain/knowledge';
 import { buildMessages, citedSources, fuseRanks, isNotFound, NOT_FOUND, pickContext, splitCitations, type RagSource } from '../../../domain/rag';
 import { usePersistentState } from '../../../hooks/usePersistentState';
 import { track } from '../../usage/track';
-import { generate, MODEL_LABEL, modelCached, removeModel, semanticSearch, startLlm, useAi } from './engine';
+import { generate, MODELS, modelCached, modelLabel, removeModel, semanticSearch, startLlm, useAi, type ModelSize } from './engine';
 
 /** ¿Respuestas con IA activadas en este navegador? (Es decisión de cada persona: descarga ~2 GB.) */
 export const useAiEnabled = () => usePersistentState<boolean>('asistente-ia', false);
+/** Qué modelo usa esta persona en este navegador: el normal o el grande. */
+export const useAiModel = () => usePersistentState<ModelSize>('asistente-ia-modelo', 'normal');
 
 interface Result { status: 'searching' | 'writing' | 'done' | 'error' | 'stopped'; text: string; sources: RagSource[]; error?: string; abort?: AbortController }
 
@@ -50,8 +52,10 @@ async function answer(id: string, query: string, keywordHits: Chunk[], all: Chun
  * Respuesta redactada por la IA local a partir de lo que encuentra la búsqueda (documentos, notas, Lista, fichas,
  * tareas), con las fuentes numeradas y enlazadas. Si el modelo aún se está cargando, espera y responde después.
  */
-export function AiAnswer({ entryId, query, keywordHits, chunks, today, onTask }: {
+export function AiAnswer({ entryId, query, keywordHits, chunks, today, onTask, fallback }: {
   entryId: string; query: string; keywordHits: Chunk[]; chunks: Chunk[]; today: string; onTask: (id: string) => void;
+  /** Lo que se enseña si la IA no lo encuentra o falla (la frase que mejor responde, sin IA): así nunca queda en blanco. */
+  fallback?: ReactNode;
 }) {
   useResults();
   const ai = useAi();
@@ -71,11 +75,19 @@ export function AiAnswer({ entryId, query, keywordHits, chunks, today, onTask }:
     if (ai.llm === 'unsupported' || ai.llm === 'error' || ai.llm === 'off') return null;
     return box(<>{head()}<p className="flex items-center gap-1.5 text-zinc-500"><Loader2 className="size-3.5 animate-spin" />Cargando el modelo{ai.progress ? ` (${Math.round(ai.progress * 100)} %)` : ''}… Responderé en cuanto esté.</p></>);
   }
-  if (r.status === 'error') return box(<>{head()}<p className="text-amber-700 dark:text-amber-300">No he podido responder: {r.error}</p></>);
+  if (r.status === 'error') return <>{box(<>{head()}<p className="text-amber-700 dark:text-amber-300">No he podido responder: {r.error}</p></>)}{fallback}</>;
   if (r.status === 'searching') return box(<>{head()}<p className="flex items-center gap-1.5 text-zinc-500"><Loader2 className="size-3.5 animate-spin" />Buscando en la documentación…</p></>);
 
   const cited = citedSources(r.text, r.sources.length);
   const notFound = r.status !== 'writing' && isNotFound(r.text);
+  if (notFound) {
+    return (
+      <>
+        {box(<>{head()}<p className="text-zinc-600 dark:text-zinc-300">La IA no lo ha encontrado con seguridad.{fallback ? ' Esto es lo más parecido que hay en la documentación:' : ' Mira abajo lo que ha salido en la búsqueda o pregunta a Claude.'}</p></>)}
+        {fallback}
+      </>
+    );
+  }
   return box(
     <>
       {head(r.status === 'writing' && (
@@ -93,7 +105,7 @@ export function AiAnswer({ entryId, query, keywordHits, chunks, today, onTask }:
           })}
         </ol>
       )}
-      {r.status !== 'writing' && <p className="mt-1.5 text-[11px] text-zinc-400">Redactada por {MODEL_LABEL} en tu ordenador con lo encontrado. Puede equivocarse: comprueba la fuente.</p>}
+      {r.status !== 'writing' && <p className="mt-1.5 text-[11px] text-zinc-400">Redactada por {modelLabel(ai.model)} en tu ordenador con lo encontrado. Puede equivocarse: comprueba la fuente.</p>}
     </>,
   );
 }
@@ -144,15 +156,34 @@ function SourceLink({ chunk: c, onTask, label, compact }: { chunk: Chunk; onTask
 /** Panel lateral: activar la IA, estado de la descarga y del índice, y borrar el modelo. */
 export function AiPanel() {
   const [enabled, setEnabled] = useAiEnabled();
+  const [size, setSize] = useAiModel();
   const ai = useAi();
   const pct = (n: number) => `${Math.round(n * 100)} %`;
+  const m = MODELS[size];
 
+  const confirmDownload = async (s: ModelSize) => {
+    const cached = await modelCached(s);
+    if (!cached && !confirm(`Se descargará el modelo ${MODELS[s].label} (${MODELS[s].download}) en este navegador, una sola vez. Mejor con wifi y el ordenador enchufado. ¿Seguimos?`)) return null;
+    return cached;
+  };
   const enable = async () => {
-    const cached = await modelCached();
-    if (!cached && !confirm(`Se descargará el modelo ${MODEL_LABEL} (unos 2 GB) en este navegador, una sola vez. Mejor con wifi y el ordenador enchufado. ¿Seguimos?`)) return;
+    const cached = await confirmDownload(size);
+    if (cached === null) return;
     setEnabled(true);
     track('assistant-ai', cached ? 'enable' : 'download');
-    void startLlm();
+    void startLlm(size);
+  };
+  const choose = async (s: ModelSize) => {
+    if (s === size) return;
+    if (enabled) {
+      const cached = await confirmDownload(s);
+      if (cached === null) return;
+      track('assistant-ai', `model-${s}`);
+      setSize(s);
+      void startLlm(s);
+    } else {
+      setSize(s);
+    }
   };
   const disable = async (remove: boolean) => {
     if (remove && !confirm('¿Borrar el modelo de este navegador? Para volver a usar la IA habrá que descargarlo otra vez.')) return;
@@ -164,19 +195,28 @@ export function AiPanel() {
     <section className="rounded-lg border border-violet-200 p-3 text-sm dark:border-violet-900">
       <h2 className="mb-1 flex items-center gap-1.5 font-semibold"><Sparkles className="size-4 text-violet-500" />Respuestas con IA</h2>
       <p className="mb-2 text-xs text-zinc-500 dark:text-zinc-400">
-        Un modelo de IA ({MODEL_LABEL}) redacta la respuesta con lo que encuentra en la documentación, las notas, la Lista y tus tareas, y
+        Un modelo de IA ({m.label}) redacta la respuesta con lo que encuentra en la documentación, las notas, la Lista y tus tareas, y
         cita de dónde sale cada cosa. Funciona <strong>en tu ordenador</strong>: no se envía nada a ningún sitio y no cuesta nada.
       </p>
+      <fieldset className="mb-2 space-y-1" disabled={ai.llm === 'loading' || ai.llm === 'checking'}>
+        <legend className="mb-0.5 text-xs font-medium text-zinc-600 dark:text-zinc-300">Modelo</legend>
+        {(Object.keys(MODELS) as ModelSize[]).map((k) => (
+          <label key={k} className="flex cursor-pointer items-start gap-1.5 text-xs">
+            <input type="radio" name="ai-model" className="mt-0.5 accent-violet-600" checked={size === k} onChange={() => void choose(k)} />
+            <span><strong>{k === 'normal' ? 'Normal' : 'Grande'}</strong> · {MODELS[k].label}, {MODELS[k].download} · <span className="text-zinc-500">{MODELS[k].hint}</span></span>
+          </label>
+        ))}
+      </fieldset>
       {!enabled ? (
         <button type="button" onClick={() => void enable()} className="inline-flex items-center gap-1.5 rounded-md bg-violet-600 px-3 py-1 text-xs font-medium text-white hover:bg-violet-500">
-          <Download className="size-3.5" />Activar (descarga ~2 GB una vez)
+          <Download className="size-3.5" />Activar (descarga {m.download} una vez)
         </button>
       ) : (
         <>
           {ai.llm === 'unsupported' && <p className="mb-2 rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-800 dark:bg-amber-950/50 dark:text-amber-200">Este ordenador no puede usar la IA: {ai.error} Seguirás teniendo las respuestas sin IA.</p>}
           {ai.llm === 'error' && (
             <p className="mb-2 rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-800 dark:bg-amber-950/50 dark:text-amber-200">
-              No se ha podido cargar el modelo: {ai.error} <button type="button" onClick={() => void startLlm()} className="font-medium underline">Reintentar</button>
+              No se ha podido cargar el modelo: {ai.error} <button type="button" onClick={() => void startLlm(size)} className="font-medium underline">Reintentar</button>
             </p>
           )}
           {(ai.llm === 'loading' || ai.llm === 'checking') && (
@@ -186,7 +226,7 @@ export function AiPanel() {
               {ai.progressText && <p className="mt-1 line-clamp-2 text-[11px] text-zinc-400">{ai.progressText}</p>}
             </div>
           )}
-          {ai.llm === 'ready' && <p className="mb-1 flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-300"><Cpu className="size-3.5" />Modelo listo · {ai.model.includes('f16') ? 'gráfica con f16' : 'gráfica sin f16 (algo más lento)'}</p>}
+          {ai.llm === 'ready' && <p className="mb-1 flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-300"><Cpu className="size-3.5" />{modelLabel(ai.model)} listo · {ai.model.includes('f16') ? 'gráfica con f16' : 'gráfica sin f16 (algo más lento)'}</p>}
           <p className="mb-2 text-xs text-zinc-500">
             Búsqueda por significado: {ai.embed === 'error' ? <span className="text-amber-700 dark:text-amber-300">falla ({ai.embedError}); se busca solo por palabras</span>
               : ai.embed === 'ready' ? `${ai.total} trozos indexados`
