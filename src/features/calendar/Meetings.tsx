@@ -1,3 +1,4 @@
+import { looksCapped, OUTLOOK_CAP } from '../../domain/outlookEvents';
 import { useEffect, useState, type FormEvent } from 'react';
 import { track } from '../usage/track';
 import { CalendarClock, FileText, MapPin, RefreshCw, Users, Video } from 'lucide-react';
@@ -222,6 +223,11 @@ function UploadSettings() {
         <p className={`mt-1 text-xs ${stale ? 'text-amber-600' : 'text-zinc-500'}`}>
           ✓ {cloud.events.length} reuniones subidas el {clock(cloud.uploadedAt)}
           {stale ? ': hace más de una hora. ¿Está el Mac encendido y el flujo de Power Automate activo?' : '.'}
+        </p>
+      )}
+      {cloud && looksCapped(cloud.events.length) && (
+        <p className="mt-1 text-xs font-medium text-amber-700 dark:text-amber-400">
+          Es el máximo que deja pasar tu flujo ({OUTLOOK_CAP}): faltan reuniones. Habla con un administrador para cambiarlo a 1000.
         </p>
       )}
       {token ? (

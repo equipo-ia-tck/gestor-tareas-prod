@@ -132,3 +132,11 @@ export function outlookToCalendar(events: OutlookEvent[], from: ISODate, to: ISO
   }
   return out.sort((a, b) => a.date.localeCompare(b.date) || (a.time ?? '').localeCompare(b.time ?? ''));
 }
+
+/**
+ * ¿Parece que el flujo de Power Automate se ha quedado en su tope? «Obtener vista de calendario de eventos (V3)» devuelve
+ * como mucho 256 si no se cambia «Recuento superior» (hay que ponerlo a 1000). Lo subido son las reuniones sin las
+ * canceladas, así que un calendario cortado se queda un poco por debajo: de 240 a 256.
+ */
+export const OUTLOOK_CAP = 256;
+export const looksCapped = (count: number) => count >= OUTLOOK_CAP - 16 && count <= OUTLOOK_CAP;

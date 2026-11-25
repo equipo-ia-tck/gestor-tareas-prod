@@ -19,6 +19,8 @@ import { WeekView } from '../views/WeekView';
 import { MeetingItem } from './Meetings';
 import { EXTRA_COLOR, hasCalendar, hasExtra, loadOutlook, useMeetings, useOutlook } from './outlook';
 import { WeekAgenda } from './WeekAgenda';
+import { Modal } from '../../components/Modal';
+import { looksCapped, OUTLOOK_CAP } from '../../domain/outlookEvents';
 
 const WEEKDAYS = ['lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom'];
 const LETTERS = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
@@ -77,6 +79,8 @@ export function CalendarView({ initial }: { initial?: 'week' | 'month' }) {
   // Analítica: si tiene a la vista las tareas en el calendario (la última elección cuenta).
   useEffect(() => { trackState('calendar-tasks', '', showTasks ? 1 : 0); }, [showTasks]);
   const [showDone, setShowDone] = usePersistentState('calendar-done', false);
+  // Aviso de tope del flujo: sale cada vez que se entra al Calendario mientras siga pasando.
+  const [capNotice, setCapNotice] = useState(true);
 
   const days = visibleDays(mode, cursor);
   const grid = monthGrid(cursor);
@@ -100,9 +104,31 @@ export function CalendarView({ initial }: { initial?: 'week' | 'month' }) {
   const step = (dir: 1 | -1) => setCursor(mode === 'month' ? addMonths(cursor, dir) : addDays(cursor, mode === 'day' ? dir : dir * 7));
   const connected = hasCalendar(outlook.status);
   const extra = hasExtra(outlook) ? outlook.extra : null;
+  // Las reuniones llegan justo al tope del flujo de Power Automate (256): faltan las últimas. Se avisa al entrar.
+  const capped = !!outlook.events && looksCapped(outlook.events.length);
 
   return (
     <div className="flex h-full overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+      {capped && capNotice && (
+        <Modal title="Faltan reuniones en tu calendario" onClose={() => setCapNotice(false)}>
+          <div className="space-y-3 text-sm">
+            <p>
+              Tienes <b>{outlook.events!.length} reuniones</b> subidas, justo el máximo que deja pasar tu flujo de Power Automate
+              ({OUTLOOK_CAP}). Las últimas semanas pueden no salir en Marea.
+            </p>
+            <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 font-medium text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+              Habla con un administrador para cambiar tu flujo a 1000 reuniones.
+            </p>
+            <p className="text-xs text-zinc-500">
+              El cambio está en el paso «Obtener vista de calendario de eventos (V3)» → Parámetros avanzados → «Recuento superior» («Recompte superior» en catalán): 1000.
+            </p>
+            <div className="flex justify-end">
+              <button type="button" onClick={() => setCapNotice(false)} autoFocus
+                className="rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-500">Entendido</button>
+            </div>
+          </div>
+        </Modal>
+      )}
       {sidebar && (
         <aside className="hidden w-60 shrink-0 flex-col gap-5 overflow-y-auto border-r border-zinc-200 bg-zinc-50/70 p-3 lg:flex dark:border-zinc-800 dark:bg-zinc-900/40">
           <h1 className="px-1 text-lg font-semibold">Calendario</h1>
