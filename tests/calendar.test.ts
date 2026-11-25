@@ -127,3 +127,10 @@ describe('oneDriveDirs (Mac y Windows)', () => {
     expect(findGestorFile('calendario.json', 'NO_EXISTE_VAR', home)).toBe(join(home, 'OneDrive - WPP', 'Gestor', 'calendario.json'));
   });
 });
+
+describe('tope del flujo de Power Automate', async () => {
+  const { looksCapped } = await import('../src/domain/outlookEvents');
+  it('avisa cerca de 256 reuniones (sin las canceladas), no con menos ni con el flujo a 1000', () => {
+    expect([100, 239, 240, 246, 255, 256, 257, 312, 1000].map(looksCapped)).toEqual([false, false, true, true, true, true, false, false, false]);
+  });
+});

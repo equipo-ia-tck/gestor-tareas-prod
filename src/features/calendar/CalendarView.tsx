@@ -19,6 +19,7 @@ import { WeekView } from '../views/WeekView';
 import { MeetingItem } from './Meetings';
 import { EXTRA_COLOR, hasCalendar, hasExtra, loadOutlook, useMeetings, useOutlook } from './outlook';
 import { WeekAgenda } from './WeekAgenda';
+import { looksCapped, OUTLOOK_CAP } from '../../domain/outlookEvents';
 
 const WEEKDAYS = ['lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom'];
 const LETTERS = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
@@ -77,6 +78,8 @@ export function CalendarView({ initial }: { initial?: 'week' | 'month' }) {
   // Analítica: si tiene a la vista las tareas en el calendario (la última elección cuenta).
   useEffect(() => { trackState('calendar-tasks', '', showTasks ? 1 : 0); }, [showTasks]);
   const [showDone, setShowDone] = usePersistentState('calendar-done', false);
+  // Aviso de tope del flujo: sale cada vez que se entra al Calendario mientras siga pasando.
+  const [capNotice, setCapNotice] = useState(true);
 
   const days = visibleDays(mode, cursor);
   const grid = monthGrid(cursor);
@@ -100,9 +103,31 @@ export function CalendarView({ initial }: { initial?: 'week' | 'month' }) {
   const step = (dir: 1 | -1) => setCursor(mode === 'month' ? addMonths(cursor, dir) : addDays(cursor, mode === 'day' ? dir : dir * 7));
   const connected = hasCalendar(outlook.status);
   const extra = hasExtra(outlook) ? outlook.extra : null;
+  // Las reuniones llegan justo al tope del flujo de Power Automate (256): faltan las últimas. Se avisa al entrar.
+  const capped = !!outlook.events && looksCapped(outlook.events.length);
 
   return (
-    <div className="flex h-full overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+    <div className="relative flex h-full overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+      {capped && capNotice && (
+        <CapNotice onClose={() => setCapNotice(false)}>
+          <div className="space-y-3 text-sm">
+            <p>
+              Tienes <b>{outlook.events!.length} reuniones</b> subidas, justo el máximo que deja pasar tu flujo de Power Automate
+              ({OUTLOOK_CAP}). Las últimas semanas pueden no salir en Marea.
+            </p>
+            <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 font-medium text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+              Habla con un administrador para cambiar tu flujo a 1000 reuniones.
+            </p>
+            <p className="text-xs text-zinc-500">
+              El cambio está en el paso «Obtener vista de calendario de eventos (V3)» → Parámetros avanzados → «Recuento superior» («Recompte superior» en catalán): 1000.
+            </p>
+            <div className="flex justify-end">
+              <button type="button" onClick={() => setCapNotice(false)} autoFocus
+                className="rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-500">Entendido</button>
+            </div>
+          </div>
+        </CapNotice>
+      )}
       {sidebar && (
         <aside className="hidden w-60 shrink-0 flex-col gap-5 overflow-y-auto border-r border-zinc-200 bg-zinc-50/70 p-3 lg:flex dark:border-zinc-800 dark:bg-zinc-900/40">
           <h1 className="px-1 text-lg font-semibold">Calendario</h1>
@@ -349,6 +374,25 @@ function DayCell({ day, inMonth, tasks, releases, meetings }: {
           </li>
         )}
       </ul>
+    </div>
+  );
+}
+
+/** Ventana centrada en el propio calendario (no en toda la pantalla), con fondo oscurecido solo sobre él. Esc o clic fuera la cierran. */
+function CapNotice({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  return (
+    <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/30 p-4 dark:bg-black/50"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div role="dialog" aria-modal="true" aria-labelledby="cap-notice-title"
+        className="w-full max-w-lg rounded-xl border border-zinc-200 bg-white p-5 shadow-2xl dark:border-zinc-700 dark:bg-zinc-900">
+        <h2 id="cap-notice-title" className="mb-3 font-semibold">Faltan reuniones en tu calendario</h2>
+        {children}
+      </div>
     </div>
   );
 }
