@@ -100,6 +100,8 @@ function friendly(message: string): string {
     return 'Falta preparar «Mis solicitudes» en Supabase: un administrador tiene que ejecutar supabase/migrations/016_mis_solicitudes.sql.';
   if (/could not find the function public\.sp_(pending|take|answer|request)\b/i.test(message))
     return 'Falta preparar SharePoint para Claude en Supabase: un administrador tiene que ejecutar supabase/migrations/018_sharepoint_claude.sql.';
+  if (/could not find the function public\.edit_my_feedback\b/i.test(message))
+    return 'Falta preparar la edición de solicitudes en Supabase: un administrador tiene que ejecutar supabase/migrations/019_editar_mis_solicitudes.sql.';
   if (/feedback_status_check/i.test(message))
     return 'Falta el estado «Bloqueado» del feedback en Supabase: un administrador tiene que ejecutar supabase/migrations/008_feedback_bloqueado.sql.';
   return message;
@@ -303,6 +305,9 @@ export class SyncClient {
   adminFeedback = () => this.rpc<Feedback[]>('admin_feedback');
   /** Lo que ha enviado la persona y su estado (migración 016). */
   myFeedback = () => this.rpc<Feedback[]>('my_feedback');
+  /** Editar una solicitud propia mientras está en Nuevo (migración 019). */
+  editMyFeedback = (id: string, f: { kind: FeedbackKind; area: string; title: string; body: string; impact: FeedbackImpact | null }) =>
+    this.rpc<Feedback>('edit_my_feedback', { p_id: id, p_kind: f.kind, p_area: f.area, p_title: f.title, p_body: f.body, p_impact: f.impact ?? '' });
   /** Orden de prioridad (migración 017): cada id pasa a la posición que tiene en la lista. */
   orderFeedback = (ids: string[]) => this.rpc<void>('admin_order_feedback', { p_ids: ids });
   replyFeedback = (id: string, reply: string) => this.rpc<Feedback>('admin_reply_feedback', { p_id: id, p_reply: reply });

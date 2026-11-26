@@ -6,7 +6,7 @@ import { useApp } from '../../app/AppContext';
 import { useToast } from '../../components/Toast';
 import { sync, useSync } from '../../data/sync';
 import { HIDDEN_FOR_ALL } from '../../domain/screens';
-import { areaForHash, feedbackAreas, FEEDBACK_IMPACTS, FEEDBACK_KINDS, type FeedbackImpact, type FeedbackKind } from '../../domain/feedback';
+import { areaForHash, areaLabel, feedbackAreas, type Feedback, FEEDBACK_IMPACTS, FEEDBACK_KINDS, type FeedbackImpact, type FeedbackKind } from '../../domain/feedback';
 
 /**
  * Botón flotante (abajo a la derecha, en todas las pantallas) para contar que algo no funciona, proponer mejoras o
@@ -33,16 +33,26 @@ const label = 'mb-1.5 block text-[11px] font-semibold tracking-wide text-zinc-50
 const field = 'w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-zinc-600 dark:bg-zinc-900';
 const Req = () => <span className="text-red-500"> *</span>;
 
-function FeedbackDialog({ taskOpen, onClose, onSent }: { taskOpen: boolean; onClose: () => void; onSent: () => void }) {
+/**
+ * El formulario de feedback. Con `editing`, edita una solicitud propia que sigue en Nuevo (desde «Mis solicitudes»,
+ * migración 019): viene relleno y al guardar devuelve la solicitud cambiada.
+ */
+export function FeedbackDialog({ taskOpen, onClose, onSent, editing, onSaved }: {
+  taskOpen: boolean; onClose: () => void; onSent?: () => void; editing?: Feedback; onSaved?: (f: Feedback) => void;
+}) {
   const toast = useToast();
-  const [kind, setKind] = useState<Exclude<FeedbackKind, 'other'>>('bug');
+  const [kind, setKind] = useState<Exclude<FeedbackKind, 'other'>>(editing && editing.kind !== 'other' ? editing.kind : 'bug');
   const { hiddenScreens, isAdmin } = useSync();
   const hidden = useMemo(() => [...hiddenScreens, ...HIDDEN_FOR_ALL], [hiddenScreens]);
-  const areas = useMemo(() => feedbackAreas(hidden, isAdmin), [hidden, isAdmin]);
-  const [area, setArea] = useState(() => areaForHash(window.location.hash, taskOpen, hidden, isAdmin));
-  const [title, setTitle] = useState('');
-  const [body, setBody] = useState('');
-  const [impact, setImpact] = useState<FeedbackImpact | null>(null);
+  const areas = useMemo(() => {
+    const list = feedbackAreas(hidden, isAdmin);
+    // Al editar, la parte de la web que ya tenía se puede mantener aunque ahora no se ofrezca.
+    return editing?.area && !list.some((a) => a.id === editing.area) ? [...list, { id: editing.area, label: areaLabel(editing.area) }] : list;
+  }, [hidden, isAdmin, editing]);
+  const [area, setArea] = useState(() => editing?.area || areaForHash(window.location.hash, taskOpen, hidden, isAdmin));
+  const [title, setTitle] = useState(editing?.title ?? '');
+  const [body, setBody] = useState(editing?.body ?? '');
+  const [impact, setImpact] = useState<FeedbackImpact | null>(editing?.impact ?? null);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const k = FEEDBACK_KINDS.find((x) => x.id === kind)!;
@@ -60,9 +70,16 @@ function FeedbackDialog({ taskOpen, onClose, onSent }: { taskOpen: boolean; onCl
     setSending(true);
     setError('');
     try {
-      await sync().sendFeedback({ kind, area, title: title.trim(), body: body.trim(), impact: kind === 'bug' ? impact : null, page });
-      toast('¡Gracias! Puedes seguirlo en Más → Mis solicitudes');
-      onSent();
+      const fields = { kind, area, title: title.trim(), body: body.trim(), impact: kind === 'bug' ? impact : null };
+      if (editing) {
+        const saved = await sync().editMyFeedback(editing.id, fields);
+        toast('Solicitud actualizada');
+        onSaved?.(saved);
+      } else {
+        await sync().sendFeedback({ ...fields, page });
+        toast('¡Gracias! Puedes seguirlo en Más → Mis solicitudes');
+        onSent?.();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setSending(false);
@@ -72,11 +89,11 @@ function FeedbackDialog({ taskOpen, onClose, onSent }: { taskOpen: boolean; onCl
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/30 px-4 py-[8vh] dark:bg-black/50"
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <form role="dialog" aria-modal="true" aria-label="Enviar feedback" onSubmit={submit}
+      <form role="dialog" aria-modal="true" aria-label={editing ? 'Editar solicitud' : 'Enviar feedback'} onSubmit={submit}
         onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void submit(); }}
         className="w-full max-w-lg overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900">
         <header className="flex items-center justify-between border-b border-zinc-200 px-5 py-3.5 dark:border-zinc-800">
-          <h2 className="text-base font-semibold">Enviar feedback</h2>
+          <h2 className="text-base font-semibold">{editing ? 'Editar solicitud' : 'Enviar feedback'}</h2>
           <button type="button" onClick={onClose} aria-label="Cerrar" className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800"><X className="size-4" /></button>
         </header>
 
@@ -118,10 +135,12 @@ function FeedbackDialog({ taskOpen, onClose, onSent }: { taskOpen: boolean; onCl
             </fieldset>
           )}
 
-          <p className="text-xs text-zinc-500">
+          {editing ? (
+            <p className="text-xs text-zinc-500">Puedes cambiarla mientras esté en «Nuevo». Cuando un administrador la mire, ya no se podrá editar.</p>
+          ) : <p className="text-xs text-zinc-500">
             Se guarda también desde dónde lo envías ({page}), el navegador y el tamaño de pantalla. Lo ven los administradores; tú puedes
             seguir su estado en <a href="#/feedback" onClick={onClose} className="font-medium text-indigo-600 hover:underline dark:text-indigo-400">Más → Mis solicitudes</a>.
-          </p>
+          </p>}
           {error && <p className="text-sm text-red-600">{error}</p>}
         </div>
 
@@ -129,7 +148,7 @@ function FeedbackDialog({ taskOpen, onClose, onSent }: { taskOpen: boolean; onCl
           <button type="button" onClick={onClose} className="rounded-lg border border-zinc-300 bg-white px-3.5 py-1.5 text-sm hover:bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-900 dark:hover:bg-zinc-800">Cancelar</button>
           <button type="submit" disabled={!title.trim() || sending}
             className="rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50">
-            {sending ? 'Enviando…' : 'Enviar'}
+            {sending ? (editing ? 'Guardando…' : 'Enviando…') : editing ? 'Guardar cambios' : 'Enviar'}
           </button>
         </footer>
       </form>

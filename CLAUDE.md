@@ -867,6 +867,11 @@ En Vercel no hay servidor que lea la carpeta de OneDrive del Mac, así que el Ma
   solicitudes» (`MyFeedback`: Todas/Abiertas, estado, respuesta y último cambio) y sale en Más con ese nombre; el
   formulario del botón enlaza allí.
 
+- **Editar lo propio mientras está en Nuevo** (migración `019_editar_mis_solicitudes.sql`, después de 001 a 018; feedback, nov
+  2026): en «Mis solicitudes», clic en una solicitud en Nuevo (o «Editar») abre el mismo formulario (`FeedbackDialog` con
+  `editing`) relleno: tipo, parte de la web, frase, detalle e impacto. `edit_my_feedback` solo deja a su autor y solo con estado
+  `new` (lo comprueba Postgres); en cuanto un administrador la mueve, ya no se edita. Cambia `updated_at`.
+
 - **Orden de prioridad** (migración `017_feedback_orden.sql`, después de 016): columna `rank` (1 = lo primero; null = sin
   ordenar) y `admin_order_feedback(ids)`, que pone a cada id su posición y no cambia `updated_at`. En Lista y Tablero el
   feedback sale en ese orden (`sortFeedback`: lo sin ordenar arriba, el más nuevo primero; después por `rank`). En la Lista

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { ArrowDown, ArrowUp, BarChart3, Bug, ChevronsLeftRight, GripVertical, ExternalLink, HelpCircle, KanbanSquare, Lightbulb, List, MessageCircle, RefreshCw, Sparkles } from 'lucide-react';
+import { ArrowDown, ArrowUp, BarChart3, Bug, ChevronsLeftRight, GripVertical, ExternalLink, HelpCircle, KanbanSquare, Lightbulb, List, MessageCircle, Pencil, RefreshCw, Sparkles } from 'lucide-react';
+import { FeedbackDialog } from './FeedbackButton';
+import { track } from '../usage/track';
 import { useApp } from '../../app/AppContext';
 import { StatePill } from '../../components/ui/Badges';
 import { useToast } from '../../components/Toast';
@@ -459,6 +461,8 @@ export function MyFeedback() {
   const [items, setItems] = useState<Feedback[] | null>(null);
   const [error, setError] = useState('');
   const [show, setShow] = useState<'open' | 'all'>('all');
+  /** Solicitud que se está editando (solo las que siguen en Nuevo, migración 019). */
+  const [editing, setEditing] = useState<Feedback | null>(null);
   const load = useCallback(async () => {
     setError('');
     try { setItems(await sync().myFeedback()); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
@@ -491,14 +495,22 @@ export function MyFeedback() {
         {list.map((f) => {
           const Icon = KIND_ICON[f.kind];
           const status = FEEDBACK_STATUSES.find((x) => x.id === f.status)?.label ?? f.status;
+          const editable = f.status === 'new';
           return (
-            <li key={f.id} className={`rounded-lg border border-zinc-200 p-3 dark:border-zinc-800 ${f.status === 'dismissed' ? 'opacity-70' : ''}`}>
+            <li key={f.id} onClick={(e) => { if (editable && !(e.target as HTMLElement).closest('a, button')) setEditing(f); }}
+              title={editable ? 'Haz clic para editarla (se puede mientras esté en «Nuevo»)' : undefined}
+              className={`rounded-lg border border-zinc-200 p-3 dark:border-zinc-800 ${f.status === 'dismissed' ? 'opacity-70' : ''} ${editable ? 'cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/40 dark:hover:border-indigo-800 dark:hover:bg-indigo-950/20' : ''}`}>
               <div className="mb-1.5 flex flex-wrap items-center gap-2 text-xs">
                 <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium ${KIND_COLOR[f.kind]}`}><Icon className="size-3" />{kindLabel(f.kind)}</span>
                 {f.area && <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">{areaLabel(f.area)}</span>}
                 {f.impact && <span className={`font-medium ${IMPACT_COLOR[f.impact]}`}>{impactLabel(f.impact)}</span>}
                 <span className="text-zinc-400">Enviada el {when(f.createdAt)}</span>
                 <span className="flex-1" />
+                {editable && (
+                  <button type="button" onClick={() => setEditing(f)} className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-indigo-700 hover:bg-indigo-100 dark:text-indigo-300 dark:hover:bg-indigo-950">
+                    <Pencil className="size-3" />Editar
+                  </button>
+                )}
                 <span className={`rounded-md border px-1.5 py-0.5 font-medium ${STATUS_COLOR[f.status]}`}>{status}</span>
               </div>
               {f.title && <p className="text-sm font-semibold">{f.title}</p>}
@@ -514,6 +526,10 @@ export function MyFeedback() {
           );
         })}
       </ul>
+      {editing && (
+        <FeedbackDialog taskOpen={false} editing={editing} onClose={() => setEditing(null)}
+          onSaved={(saved) => { setItems((list) => (list ?? []).map((x) => (x.id === saved.id ? { ...x, ...saved } : x))); setEditing(null); track('feedback-edit'); }} />
+      )}
     </>
   );
 }

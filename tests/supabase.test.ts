@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
  * Prueba la base de datos de Supabase (supabase/migrations) en un Postgres de verdad (PGlite), imitando
  * lo mínimo de Supabase: roles anon/authenticated y auth.uid()/auth.email() de la sesión.
  */
-const MIGRATION = ['001_equipo.sql', '002_baja_y_contrasenas.sql', '003_alta_sin_invitacion.sql', '004_claves_conectores.sql', '005_calendario_subido.sql', '006_feedback.sql', '007_feedback_formulario.sql', '008_feedback_bloqueado.sql', '009_analitica.sql', '010_analitica_kpis.sql', '011_rally_herramienta.sql', '012_calendario_ics.sql', '013_pantallas.sql', '015_respuestas_claude.sql', '016_mis_solicitudes.sql', '017_feedback_orden.sql', '018_sharepoint_claude.sql'].map((f) => readFileSync(`supabase/migrations/${f}`, 'utf8')).join('\n');
+const MIGRATION = ['001_equipo.sql', '002_baja_y_contrasenas.sql', '003_alta_sin_invitacion.sql', '004_claves_conectores.sql', '005_calendario_subido.sql', '006_feedback.sql', '007_feedback_formulario.sql', '008_feedback_bloqueado.sql', '009_analitica.sql', '010_analitica_kpis.sql', '011_rally_herramienta.sql', '012_calendario_ics.sql', '013_pantallas.sql', '015_respuestas_claude.sql', '016_mis_solicitudes.sql', '017_feedback_orden.sql', '018_sharepoint_claude.sql', '019_editar_mis_solicitudes.sql'].map((f) => readFileSync(`supabase/migrations/${f}`, 'utf8')).join('\n');
 let db: PGlite;
 
 const SUPABASE_STUB = `
@@ -372,6 +372,29 @@ describe('base de datos del equipo en Supabase', () => {
     expect(Object.fromEntries(after2.map((f) => [f.title, f.rank]))).toEqual({ 'Filtrar por persona': 1, 'Otra cosa': 2 });
     expect(after2.map((f) => f.updatedAt).sort()).toEqual(before.map((f) => f.updatedAt).sort());
     expect((await rpc(ana, 'my_feedback') as Record<string, unknown>[])[0]).not.toHaveProperty('rank');
+  });
+
+  it('mis solicitudes (019): se editan las propias solo mientras están en Nuevo', async () => {
+    const marta = await newUser('marta@vml.com');
+    await rpc(marta, 'register_profile', { p_name: 'Marta García', p_code: '' });
+    const ana = await newUser('ana@vml.com');
+    await rpc(ana, 'register_profile', { p_name: 'Ana', p_code: '' });
+    const luis = await newUser('luis@vml.com');
+    await rpc(luis, 'register_profile', { p_name: 'Luis', p_code: '' });
+    await rpc(ana, 'send_feedback_form', {
+      p_kind: 'improvement', p_area: 'board', p_title: 'Filtrar', p_body: '', p_impact: '', p_page: '#/board', p_screen: '1440×900', p_user_agent: 'Chrome',
+    });
+    const [mine] = await rpc(ana, 'my_feedback') as { id: string }[];
+    const edit = (who: typeof ana, extra: Record<string, unknown> = {}) => rpc(who, 'edit_my_feedback', {
+      p_id: mine.id, p_kind: 'bug', p_area: 'rally', p_title: '  No carga Rally  ', p_body: 'Sale en blanco', p_impact: 'blocking', ...extra,
+    });
+    expect(await edit(ana)).toMatchObject({ kind: 'bug', area: 'rally', title: 'No carga Rally', body: 'Sale en blanco', impact: 'blocking', status: 'new' });
+    expect(await edit(ana, { p_kind: 'idea' })).toMatchObject({ kind: 'idea', impact: null }); // el impacto solo en «Algo no funciona»
+    await expect(edit(luis)).rejects.toThrow(/Nuevo/); // no es suya
+    await expect(edit(ana, { p_title: ' ' })).rejects.toThrow(/frase/);
+    await expect(edit(ana, { p_kind: 'other' })).rejects.toThrow(/Tipo/);
+    await rpc(marta, 'admin_update_feedback', { p_id: mine.id, p_status: 'doing', p_task_id: null });
+    await expect(edit(ana)).rejects.toThrow(/Nuevo/); // ya lo ha mirado un administrador
   });
 
   it('analítica: cada uno apunta lo suyo, solo los administradores lo leen y sin textos en la pantalla', async () => {
