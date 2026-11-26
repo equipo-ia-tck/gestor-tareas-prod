@@ -54,8 +54,10 @@ function Fields({ fields }: { fields: RallyDetail['fields'] }) {
  * elementos relacionados, discusión y adjuntos. Los campos se editan como en «Nuevo elemento» (`RallyEditForm`); los
  * relacionados se abren en el mismo panel.
  */
-export function RallyDetailPanel({ item, task, color, onSelect, onAdd, onOpenTask, onClose, onChanged }: {
+export function RallyDetailPanel({ item, task, color, onSelect, onAdd, onOpenTask, onClose, onChanged, floating }: {
   item: RallyItem;
+  /** Abierta por encima de otra pantalla (p. ej. la analítica): siempre a la derecha y a toda la altura, también en pantallas anchas. */
+  floating?: boolean;
   /** El elemento ha cambiado en Rally (guardado o movido desde la ficha): para poner al día la lista. */
   onChanged?: (item: RallyItem) => void;
   task: Task | undefined;
@@ -113,7 +115,9 @@ export function RallyDetailPanel({ item, task, color, onSelect, onAdd, onOpenTas
 
   return (
     // En pantallas anchas es una columna junto a la lista (fija al hacer scroll); en las estrechas se superpone por la derecha.
-    <aside ref={ref} className="fixed inset-y-0 right-0 z-30 flex w-[460px] max-w-full flex-col border-l border-zinc-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900 xl:sticky xl:top-0 xl:z-auto xl:max-h-[calc(100dvh-3rem)] xl:w-auto xl:rounded-lg xl:border xl:shadow-sm">
+    <aside ref={ref} className={floating
+      ? 'fixed inset-y-0 right-0 z-40 flex w-[460px] max-w-full flex-col border-l border-zinc-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900'
+      : 'fixed inset-y-0 right-0 z-30 flex w-[460px] max-w-full flex-col border-l border-zinc-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900 xl:sticky xl:top-0 xl:z-auto xl:max-h-[calc(100dvh-3rem)] xl:w-auto xl:rounded-lg xl:border xl:shadow-sm'}>
       <header className="flex items-center gap-2 px-4 pt-3">
         <span className="rounded px-1 text-[10px] font-bold text-white" style={{ background: color }}>{current.kind}</span>
         <a href={current.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-mono text-sm text-indigo-600 hover:underline">

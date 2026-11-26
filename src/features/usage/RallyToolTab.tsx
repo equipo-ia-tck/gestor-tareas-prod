@@ -410,8 +410,8 @@ function ItemPanel({ artifact, onClose, onSelect }: { artifact: string; onClose:
   }
   const task = linkedTask(item, byId);
   return (
-    <div className="fixed inset-y-0 right-0 z-40 w-[460px] max-w-full">
-      <RallyDetailPanel
+    <RallyDetailPanel
+        floating
         item={item}
         task={task}
         color={color(item.kind)}
@@ -421,7 +421,6 @@ function ItemPanel({ artifact, onClose, onSelect }: { artifact: string; onClose:
         onClose={onClose}
         onChanged={setItem}
       />
-    </div>
   );
 }
 
