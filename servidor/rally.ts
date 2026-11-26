@@ -114,6 +114,18 @@ const refId = (v: unknown) => (v && typeof v === 'object' ? String((v as RallyOb
 const ENTITIES: Record<string, string> = { nbsp: ' ', amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
 
 /** Texto legible a partir del HTML de Rally (párrafos, saltos y listas), sin etiquetas. */
+/**
+ * Enlaces de un comentario como texto que no pierde la dirección: `<a href="X">X</a>` → X y `<a href="X">aquí</a>` →
+ * «aquí (X)». Así se pueden pulsar en Marea (y los de SharePoint, abrirse en la pantalla SharePoint).
+ */
+export function keepLinks(html: string): string {
+  return html.replace(/<a\b[^>]*\bhref\s*=\s*(["'])(https?:\/\/[^"']+)\1[^>]*>([\s\S]*?)<\/a>/gi, (_, _q: string, href: string, inner: string) => {
+    const url = href.replace(/&amp;/g, '&');
+    const label = htmlToText(inner).trim();
+    return !label || label === url || url.includes(label) || label.includes(url) ? ` ${url} ` : `${label} (${url})`;
+  });
+}
+
 export function htmlToText(html: string): string {
   return html
     .replace(/<(script|style)[\s\S]*?<\/\1>/gi, '')
@@ -1243,7 +1255,7 @@ export class Rally {
     return {
       author: refName(p.User),
       date: String(p.CreationDate ?? new Date().toISOString()),
-      text: htmlToText(String(p.Text ?? '')),
+      text: htmlToText(keepLinks(String(p.Text ?? ''))).replace(/ {2,}/g, ' '),
       ...(id ? { objectId: id } : {}),
       ...(mine ? { mine: true } : {}),
     };

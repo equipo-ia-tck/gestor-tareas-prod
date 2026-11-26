@@ -168,3 +168,44 @@ export function directorySites(folders: { url: string }[]): string[] {
   }
   return [...byOrigin.values()].slice(0, 2);
 }
+
+/** Trozos de un texto: texto normal y enlaces http(s) (sin el punto o el paréntesis final que no son parte del enlace). */
+export function linkParts(text: string): { text: string; url?: string }[] {
+  const out: { text: string; url?: string }[] = [];
+  const re = /https?:\/\/[^\s<>"]+/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    let url = m[0];
+    // Lo que suele ir pegado detrás de un enlace sin ser parte de él.
+    while (/[.,;:!?)\]»]$/.test(url) && !(url.endsWith(')') && url.includes('('))) url = url.slice(0, -1);
+    if (m.index > last) out.push({ text: text.slice(last, m.index) });
+    out.push({ text: url, url });
+    last = m.index + url.length;
+    re.lastIndex = last;
+  }
+  if (last < text.length) out.push({ text: text.slice(last) });
+  return out;
+}
+
+/**
+ * Qué es un enlace de SharePoint para abrirlo en Marea: una carpeta (se abre en la pantalla SharePoint) o un archivo (se
+ * abre su carpeta con el archivo marcado). Null si no se puede saber (p. ej. un enlace de «compartir» de un archivo o un
+ * documento de Office por su id): entonces se abre en SharePoint.
+ */
+export function sharePointTarget(raw: string): { kind: 'folder'; url: string } | { kind: 'file'; folderUrl: string; path: string; name: string } | null {
+  if (!isSharePointUrl(raw)) return null;
+  const u = new URL(raw.trim());
+  // Enlace de «compartir» de una carpeta (/:f:/s/…): la extensión sabe resolverlo.
+  if (/^\/:f:\//i.test(u.pathname)) return { kind: 'folder', url: raw.trim() };
+  if (/^\/:[a-z]:\/s\//i.test(u.pathname) || /\/_layouts\//i.test(u.pathname)) return null;
+  const where = folderLocation(raw);
+  if (!where) return null;
+  const name = where.path.split('/').pop() ?? '';
+  if (/\.[a-z0-9]{2,5}$/i.test(name) && !u.searchParams.get('id')?.endsWith('/')) {
+    const parent = where.path.slice(0, -name.length - 1);
+    if (!/^\/(sites|teams)\/[^/]+\/.+/i.test(parent)) return null;
+    return { kind: 'file', folderUrl: where.origin + parent.split('/').map(encodeURIComponent).join('/'), path: where.path, name };
+  }
+  return { kind: 'folder', url: raw.trim() };
+}

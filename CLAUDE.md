@@ -559,6 +559,11 @@ Petición de la usuaria (oct 2026): traer Rally al gestor sin tocar el resto (en
   cambie de bloque, `rallyCategory` solo tiene en cuenta Blocked cuando el elemento no tiene FlowState (tareas de Rally).
 - **Mensaje al marcar Ready** (`RallyMessage`, `POST /api/rally/message`, `messageHtml`): las plantillas de «Preparar mensaje»
   con las personas buscadas en Rally; cada «@Nombre» elegido se publica como mención de Rally (avisa). «Etiquetar a» añade más (opcional). Todos los huecos `{?…}` de la plantilla son obligatorios para «Publicar en Rally» (marcados con *; tampoco deja publicar si quedan «<…>» en el texto); «Copiar» no lo exige. Ready se marca en Rally al publicar (justo antes del mensaje) o con «Sin mensaje»; cerrar con la cruz, Esc o clic fuera no lo marca. **Al quitar Ready** (en una US, Ready solo se quita si se envía el comentario: la ventana va antes, cerrarla deja Ready marcado y, si el comentario falla, Ready se vuelve a marcar) se abre la misma ventana que al mover (`askAnalyst`: lápiz, mención del PO cambiable y analista) con «Tengo la lista validada por si la quieres revisar antes de la reunión con PO y PO IT» y se publica con `move-comment`; cerrar no publica (Ready ya está quitado).
+- **Enlaces en la discusión** (feedback, nov 2026): `toPost` pasa el HTML por `keepLinks`, así un `<a>` con otro texto queda
+  «aquí (URL)» y no se pierde la dirección; la ficha los pinta pulsables (`LinkedText`, `linkParts`). Los de SharePoint
+  tienen además «Ver en Marea» (con la extensión y la pantalla SharePoint activada): `openSharePointLink` + `sharePointTarget`
+  abren la carpeta en la pantalla SharePoint o, si es un archivo, su carpeta con él marcado (`focus`) y la vista previa si es
+  PDF o imagen. Los que no se saben leer (compartir un archivo, `Doc.aspx`) se abren en SharePoint.
 - **Enlaces**: `commentHtml` convierte http(s):// y www. en `<a>` (Rally no enlaza el texto plano). Vale para comentarios,
   mensajes, descripción y notas al crear.
 - **Tablero «Como en Rally»** (`RallyBoard`, por defecto en el Tablero mixto; «Por grupo» vuelve a las categorías,

@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import { BRIDGE_VERSION } from './bookmarklet';
 import { extDocs, extensionVersion, isOutdated } from '../mslist/extension';
-import { folderLocation, isSharePointOrigin, parseSnapshot, type SharePointFolder, type SharePointSnapshot } from '../../domain/sharepoint';
+import { folderLocation, isSharePointOrigin, parseSnapshot, sharePointTarget, type SharePointFolder, type SharePointSnapshot } from '../../domain/sharepoint';
 
 /**
  * Lo que manda el marcador, **solo en memoria** de esta pestaña (a propósito: son datos de CaixaBank). No se guarda en
@@ -17,8 +17,10 @@ interface State {
   waitingFor: (SharePointFolder & { origin: string; path: string }) | null;
   /** De dónde sale la carpeta que se ve: la extensión de Chrome (sin pestaña de SharePoint) o el marcador. */
   via: 'extension' | 'bridge' | null;
+  /** Archivo que hay que marcar (y ver, si se puede) al abrir su carpeta desde un enlace (p. ej. de la discusión de Rally). */
+  focus: string | null;
 }
-let state: State = { snapshot: null, error: null, loading: false, connected: false, waitingFor: null, via: null };
+let state: State = { snapshot: null, error: null, loading: false, connected: false, waitingFor: null, via: null, focus: null };
 /** Sitio (dirección completa) de la carpeta abierta con la extensión. */
 let extSite: string | null = null;
 const listeners = new Set<() => void>();
@@ -55,7 +57,7 @@ function ask<T>(message: Record<string, unknown>, timeoutMs = 30000): Promise<T>
 
 /** Abre otra carpeta del mismo sitio sin salir de Marea. */
 export async function openFolder(path: string) {
-  set({ loading: true, error: null });
+  set({ loading: true, error: null, focus: null });
   try {
     if (state.via === 'extension' && extSite) { await extensionFolder(extSite, path); return; }
     const snap = await ask<SharePointSnapshot>({ type: 'marea-sp:list', path });
@@ -116,6 +118,21 @@ export async function openWithExtension(url: string) {
   } catch (e) {
     set({ error: (e as Error).message, loading: false });
   }
+}
+
+/**
+ * Abre en la pantalla SharePoint un enlace (de la discusión de Rally, por ejemplo) con la extensión: una carpeta se ve tal
+ * cual y un archivo abre su carpeta con él marcado. Devuelve false si no se puede (sin extensión, enlace que no se sabe
+ * leer o error de SharePoint): entonces hay que abrirlo en SharePoint.
+ */
+export async function openSharePointLink(url: string): Promise<boolean> {
+  const target = sharePointTarget(url);
+  if (!target || !extensionReady()) return false;
+  set({ focus: null });
+  await openWithExtension(target.kind === 'folder' ? target.url : target.folderUrl);
+  if (state.error || !state.snapshot) return false;
+  if (target.kind === 'file') set({ focus: target.path });
+  return true;
 }
 
 /** Tope por archivo al subir (como en el Asistente: va en base64 por la extensión). */

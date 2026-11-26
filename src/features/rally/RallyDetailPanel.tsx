@@ -1,8 +1,11 @@
 import { track } from '../usage/track';
 import { SharePointCopy } from '../sharepoint/SharePointCopy';
-import { extensionReady } from '../sharepoint/sharepointStore';
+import { extensionReady, openSharePointLink } from '../sharepoint/sharepointStore';
+import { linkParts, sharePointTarget } from '../../domain/sharepoint';
+import { navigate } from '../../app/router';
+import { useSync } from '../../data/sync';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { ExternalLink, Paperclip, Pencil, Trash2, Plus, Send, Upload, X } from 'lucide-react';
+import { ExternalLink, FolderOpen, Paperclip, Pencil, Trash2, Plus, Send, Upload, X } from 'lucide-react';
 import { unlinkedMentions, uploadedAt, type RallyDetail, type RallyItem, type RallyRef } from '../../domain/rally';
 import type { Task } from '../../domain/types';
 import { MAX_UPLOAD, rallyApi, toBase64, tooBigMessage } from './rallyApi';
@@ -295,6 +298,40 @@ function NewRallyTask({ parent, onSelect }: { parent: RallyItem; onSelect: (item
 }
 
 /** Discusión de Rally con una casilla para publicar (Cmd/Ctrl+Enter). Lo publicado se añade al final sin recargar la ficha. */
+/**
+ * Texto de un comentario con los enlaces que se pueden pulsar. Los de SharePoint, además, «Ver en Marea»: se abren en la
+ * pantalla SharePoint con la extensión (la carpeta, o la carpeta del archivo con él marcado); si no se puede, en SharePoint.
+ */
+function LinkedText({ text }: { text: string }) {
+  const { hiddenScreens } = useSync();
+  const inMarea = extensionReady() && !hiddenScreens.includes('sharepoint');
+  return (
+    <>
+      {linkParts(text).map((part, i) => {
+        if (!part.url) return <span key={i}>{part.text}</span>;
+        const sp = inMarea && !!sharePointTarget(part.url);
+        return (
+          <span key={i}>
+            <a href={part.url} target="_blank" rel="noreferrer" className="text-indigo-700 underline decoration-indigo-300 hover:decoration-indigo-600 dark:text-indigo-300">{part.text}</a>
+            {sp && (
+              <button type="button" title="Abrir en la pantalla SharePoint de Marea"
+                onClick={() => {
+                  const url = part.url!;
+                  track('rally', 'sharepoint-link');
+                  navigate({ view: 'sharepoint' });
+                  void openSharePointLink(url).then((ok) => { if (!ok) window.open(url, '_blank', 'noreferrer'); });
+                }}
+                className="ml-1 inline-flex items-center gap-0.5 rounded border border-indigo-200 px-1 align-baseline text-[11px] font-medium text-indigo-700 hover:bg-indigo-50 dark:border-indigo-800 dark:text-indigo-300 dark:hover:bg-indigo-950">
+                <FolderOpen className="size-3" />Ver en Marea
+              </button>
+            )}
+          </span>
+        );
+      })}
+    </>
+  );
+}
+
 function Discussion({ item, posts }: { item: RallyItem; posts: RallyDetail['discussion'] }) {
   const [added, setAdded] = useState<RallyDetail['discussion']>([]);
   const [text, setText] = useState('');
@@ -389,7 +426,7 @@ function Discussion({ item, posts }: { item: RallyItem; posts: RallyDetail['disc
                   </div>
                 </div>
               ) : (
-                <p className="mt-0.5 break-words whitespace-pre-wrap">{p.text}</p>
+                <p className="mt-0.5 break-words whitespace-pre-wrap"><LinkedText text={p.text} /></p>
               )}
             </li>
           ))}

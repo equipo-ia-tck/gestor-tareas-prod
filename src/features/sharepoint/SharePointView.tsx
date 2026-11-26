@@ -193,12 +193,19 @@ export function FolderRow({ folder, projectId }: { folder: SharePointFolder; pro
 // ───────────────────────────── Contenido (marcador) ─────────────────────────────
 
 function FolderContents() {
-  const { snapshot, error, loading, connected, waitingFor, via } = useSharePointSnapshot();
+  const { snapshot, error, loading, connected, waitingFor, via, focus } = useSharePointSnapshot();
   const { projects, settings, today } = useApp();
   const [q, setQ] = useState('');
   const [saved, setSaved] = useState(false);
   const [preview, setPreview] = useState<SharePointEntry | null>(null);
   useEffect(() => { setSaved(false); setQ(''); }, [snapshot]);
+  // Abierto desde un enlace a un archivo: se marca y, si es PDF o imagen, se ve.
+  const focused = focus && snapshot ? snapshot.entries.find((e) => e.path.toLowerCase() === focus.toLowerCase()) ?? null : null;
+  useEffect(() => {
+    if (!focused) return;
+    document.querySelector(`[data-sp-path="${CSS.escape(focused.path)}"]`)?.scrollIntoView({ block: 'center' });
+    if (previewType(focused.name) && (focused.size ?? 0) <= (via === 'extension' ? EXT_PREVIEW_BYTES : MAX_PREVIEW_BYTES)) setPreview(focused);
+  }, [focused, via]);
   const shown = useMemo(() => (snapshot?.entries ?? []).filter((e) => !q.trim() || fold(e.name).includes(fold(q.trim()))), [snapshot, q]);
   const crumbs = snapshot ? breadcrumbs(snapshot.path, snapshot.site) : [];
   const folderName = crumbs[crumbs.length - 1]?.name ?? snapshot?.path.split('/').filter(Boolean).pop() ?? 'Carpeta';
@@ -323,7 +330,7 @@ function FolderContents() {
                   </>
                 );
                 return (
-                  <li key={e.path} className="group flex items-center">
+                  <li key={e.path} data-sp-path={e.path} className={`group flex items-center ${focused?.path === e.path ? 'bg-amber-50 ring-1 ring-amber-300 ring-inset dark:bg-amber-950/30' : ''}`}>
                     {inside || canPreview
                       ? <button type="button" disabled={loading} className={rowClass} title={inside ? 'Entrar en la carpeta' : 'Ver aquí'}
                           onClick={() => (inside ? go(e.path) : (track('sharepoint', 'preview'), setPreview(e)))}>{body}</button>
