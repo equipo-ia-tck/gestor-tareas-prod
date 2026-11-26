@@ -133,3 +133,64 @@ export function matchesText(item: MsListItem, query: string): boolean {
   const text = fold(`${item.id} ${item.title} ${Object.values(item.fields).join(' ')}`);
   return words.every((w) => text.includes(w));
 }
+
+/**
+ * Vista guardada de la pantalla Lista (de cada persona, en sus ajustes): la vista de SharePoint de debajo, los filtros, la
+ * agrupación, el orden, «ocultar terminados» y la búsqueda, con un nombre («Vista Matías»).
+ */
+export interface ListaSavedView {
+  id: string;
+  name: string;
+  /** Vista de SharePoint ('' = todos los elementos). */
+  viewId: string;
+  filters: ListFilters;
+  /** null = lo que diga la vista de SharePoint; '' = sin agrupar. */
+  groupBy: string | null;
+  sort: { column: string; dir: SortDir } | null;
+  hideDone: boolean;
+  q: string;
+}
+export type ListaViewState = Omit<ListaSavedView, 'id' | 'name'>;
+
+/** Filtros sin columnas vacías y en orden, para comparar. */
+function cleanFilters(f: ListFilters): ListFilters {
+  const out: ListFilters = {};
+  for (const k of Object.keys(f).sort()) {
+    const c = f[k];
+    const values = c.values?.length ? [...c.values].sort() : undefined;
+    if (!values && !c.from && !c.to) continue;
+    out[k] = { ...(values ? { values } : {}), ...(c.from ? { from: c.from } : {}), ...(c.to ? { to: c.to } : {}) };
+  }
+  return out;
+}
+
+/** ¿Lo que se ve ahora es exactamente esa vista guardada? */
+export function isSameListaView(a: ListaViewState, b: ListaViewState): boolean {
+  return a.viewId === b.viewId && a.groupBy === b.groupBy && a.hideDone === b.hideDone && a.q.trim() === b.q.trim()
+    && JSON.stringify(a.sort) === JSON.stringify(b.sort)
+    && JSON.stringify(cleanFilters(a.filters)) === JSON.stringify(cleanFilters(b.filters));
+}
+
+/** Guarda lo que se ve con ese nombre: si ya hay una vista con el mismo nombre (sin mayúsculas ni tildes), la sustituye. */
+export function saveListaView(list: ListaSavedView[], name: string, state: ListaViewState, id: string): ListaSavedView[] {
+  const clean = name.trim();
+  const view: ListaSavedView = { ...state, filters: cleanFilters(state.filters), q: state.q.trim(), id, name: clean };
+  const same = list.findIndex((v) => fold(v.name) === fold(clean));
+  return same >= 0 ? list.map((v, i) => (i === same ? { ...view, id: v.id } : v)) : [...list, view];
+}
+
+/** Resumen de una vista guardada para el título del botón («Líder técnico: Matías · agrupado por Estado»). */
+export function describeListaView(v: ListaViewState, sharePointViews: { id: string; title: string }[]): string {
+  const parts: string[] = [];
+  const sp = sharePointViews.find((x) => x.id === v.viewId);
+  if (sp) parts.push(`vista «${sp.title}»`);
+  for (const [col, f] of Object.entries(cleanFilters(v.filters))) {
+    if (f.values) parts.push(`${col}: ${f.values.map((x) => x || '(Vacío)').join(', ')}`);
+    if (f.from || f.to) parts.push(`${col}: ${f.from ?? '…'} a ${f.to ?? '…'}`);
+  }
+  if (v.q.trim()) parts.push(`«${v.q.trim()}»`);
+  if (v.groupBy) parts.push(`agrupado por ${v.groupBy}`);
+  if (v.sort) parts.push(`orden ${v.sort.column} ${v.sort.dir === 'asc' ? '↑' : '↓'}`);
+  if (!v.hideDone) parts.push('con terminados');
+  return parts.join(' · ') || 'Sin filtros';
+}

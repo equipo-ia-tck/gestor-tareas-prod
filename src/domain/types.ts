@@ -1,4 +1,5 @@
 import type { SharePointFolder } from './sharepoint';
+import type { ListaSavedView } from './msListView';
 /** Fecha local sin hora, formato YYYY-MM-DD. Evita errores de zona horaria. */
 export type ISODate = string;
 /** Marca de tiempo ISO 8601 completa. */
@@ -211,6 +212,8 @@ export interface Settings {
   brand_colors_done: boolean;
   /** Accesos a carpetas de SharePoint que no son de ningún proyecto (personales). */
   sharepoint_folders: SharePointFolder[];
+  /** Vistas guardadas de la pantalla Lista (filtros, agrupar y ordenar con un nombre). */
+  lista_views: ListaSavedView[];
 }
 
 /** Plantilla de «Crear con petición»: un nombre y la frase. */
@@ -257,6 +260,7 @@ export const DEFAULT_SETTINGS: Settings = {
   analytics_rally_people: null,
   brand_colors_done: false,
   sharepoint_folders: [],
+  lista_views: [],
 };
 
 export type NewTask = Partial<Omit<Task, 'id' | 'created_at' | 'updated_at' | 'last_touched_at'>> & {

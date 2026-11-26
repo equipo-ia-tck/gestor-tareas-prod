@@ -91,6 +91,16 @@ export const settingsSchema = z.object({
   analytics_rally_people: z.array(z.string()).nullable().default(null),
   brand_colors_done: z.boolean().default(false),
   sharepoint_folders: z.array(z.object({ id: z.string().min(1), name: z.string(), url: z.string() })).default([]),
+  lista_views: z.array(z.object({
+    id: z.string().min(1),
+    name: z.string(),
+    viewId: z.string().default(''),
+    filters: z.record(z.string(), z.object({ values: z.array(z.string()).optional(), from: z.string().optional(), to: z.string().optional() })).default({}),
+    groupBy: z.string().nullable().default(null),
+    sort: z.object({ column: z.string(), dir: z.enum(['asc', 'desc']) }).nullable().default(null),
+    hideDone: z.boolean().default(true),
+    q: z.string().default(''),
+  })).default([]),
 });
 
 const stateSchema = z.object({

@@ -1067,6 +1067,12 @@ API de SharePoint no admite CORS, así que lo hace un **marcador del navegador**
   columna = o, distintas = y); **Agrupar** (plegable, en el orden de las opciones; por defecto, el de la vista) y
   **Ordenar** (por defecto, el de la vista o por ID; vacíos al final). Búsqueda por todas las palabras sin tildes. Se
   recuerdan en `lista-view`, `lista-filters`, `lista-group` y `lista-sort`. Las listas leídas antes no traen vistas.
+- **Mis vistas** (feedback, nov 2026; `SavedViews` en `ListaView.tsx`, `ListaSavedView` en `domain/msListView.ts`): lo que se
+  ve (vista de SharePoint, filtros, agrupar, ordenar, «ocultar terminados» y búsqueda) se guarda con un nombre («Vista
+  Matías» con el filtro Líder técnico) en `settings.lista_views` (de cada persona, sin migración: zod pone `[]`; se
+  sincroniza y entra en las copias). Un clic la aplica (la activa, en azul, se reconoce con `isSameListaView`); si se cambia
+  algo, «Guardar cambios en «X»»; guardar con el mismo nombre la sustituye (`saveListaView`); la × la borra. El título del
+  botón resume la vista (`describeListaView`).
 - **Crear elementos** («Nuevo elemento» y «Crear con petición» en la cabecera de la Lista; `NewListItem.tsx`): formulario
   con el título y las columnas que se pueden rellenar (obligatorias con *, `required` y `defaultValue` de SharePoint en
   `MsListField`), «Crear también la tarea en Marea» con proyecto, y pie Descartar · Crear y otro · Crear. Las altas van a

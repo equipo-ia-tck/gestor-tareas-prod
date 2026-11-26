@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowDownUp, Bookmark, ChevronDown, ChevronRight, Copy, ExternalLink, Filter, ListChecks, Pencil, Plug, Plus, Puzzle, Rows3, Search, Settings2, Trash2, X,
+  ArrowDownUp, Bookmark, ChevronDown, ChevronRight, Copy, ExternalLink, Filter, ListChecks, Pencil, Plug, Plus, Puzzle, Rows3, Save, Search, Settings2, Trash2, X,
 } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
 import { useWideLayout } from '../../app/Layout';
@@ -16,7 +16,7 @@ import {
 import { changeKey, itemValue, normalizeListUrl, TITLE_FIELD, type MsListField, type MsListItem } from '../../domain/msListParse';
 import {
   activeFilters, facetValues, filterableColumns, groupItems, isDateField, itemsInView, matchesFilters, matchesText, sortItems,
-  type ColumnFilter, type ListFilters, type SortDir,
+  type ColumnFilter, type ListFilters, type SortDir, describeListaView, isSameListaView, saveListaView, type ListaSavedView, type ListaViewState,
 } from '../../domain/msListView';
 import { DEFAULT_TYPE_ID, type StateCategory } from '../../domain/types';
 import { usePersistentState } from '../../hooks/usePersistentState';
@@ -227,7 +227,7 @@ function BookmarkletSetup() {
 }
 
 function ListaItems() {
-  const { tasks, editTask, projects, itemTypes } = useApp();
+  const { tasks, editTask, projects, itemTypes, settings } = useApp();
   const lista = useLista();
   const snapshot = lista.snapshot!;
   const views = snapshot.views ?? [];
@@ -364,6 +364,9 @@ function ListaItems() {
           ))}
         </div>
       )}
+
+      <SavedViews saved={settings.lista_views} sharePointViews={views} state={{ viewId, filters, groupBy, sort, hideDone, q }}
+        apply={(v) => { setViewId(v.viewId); setFilters(v.filters); setGroupBy(v.groupBy); setSort(v.sort); setHideDone(v.hideDone); setQ(v.q); setCollapsed(new Set()); }} />
 
       <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
         <div className="flex items-center gap-1 rounded-md border border-zinc-300 bg-white px-2 dark:border-zinc-600 dark:bg-zinc-900">
@@ -540,6 +543,80 @@ function ListaItems() {
 }
 
 /** Panel de filtros como el de SharePoint: casillas con cuántos hay de cada valor y, en las fechas, desde/hasta. */
+/**
+ * «Mis vistas»: lo que se ve en la Lista (vista de SharePoint, filtros, agrupar, ordenar, terminados y búsqueda) guardado
+ * con un nombre en los ajustes de la persona («Vista Matías» con el filtro Líder técnico). Un clic la aplica; si se cambia
+ * algo, «Guardar cambios» la actualiza.
+ */
+function SavedViews({ saved, sharePointViews, state, apply }: {
+  saved: ListaSavedView[]; sharePointViews: { id: string; title: string }[]; state: ListaViewState; apply: (v: ListaViewState) => void;
+}) {
+  const [naming, setNaming] = useState(false);
+  const [name, setName] = useState('');
+  const [applied, setApplied] = useState<string | null>(null);
+  const active = saved.find((v) => isSameListaView(v, state)) ?? null;
+  const changed = !active && applied ? saved.find((v) => v.id === applied) ?? null : null;
+  const store = (list: ListaSavedView[]) => repo.updateSettings({ lista_views: list });
+
+  const save = async (n: string) => {
+    const clean = n.trim();
+    if (!clean) return;
+    const id = crypto.randomUUID();
+    const list = saveListaView(saved, clean, state, id);
+    await store(list);
+    setApplied(list.find((v) => v.name === clean)?.id ?? id);
+    setNaming(false);
+    setName('');
+    track('lista-view', 'save');
+  };
+  const remove = async (v: ListaSavedView) => {
+    if (!window.confirm(`¿Borrar la vista «${v.name}»? Los elementos de la lista no cambian.`)) return;
+    await store(saved.filter((x) => x.id !== v.id));
+    if (applied === v.id) setApplied(null);
+  };
+
+  return (
+    <div className="mb-3 flex flex-wrap items-center gap-1.5 text-sm">
+      <span className="inline-flex items-center gap-1 text-xs font-semibold tracking-wide text-zinc-500 uppercase"><Bookmark className="size-3.5" />Mis vistas</span>
+      {saved.map((v) => {
+        const on = active?.id === v.id;
+        return (
+          <span key={v.id} className={`group inline-flex items-center rounded-full border text-xs ${on ? 'border-indigo-500 bg-indigo-600 text-white' : changed?.id === v.id ? 'border-amber-400 bg-amber-50 dark:bg-amber-950/40' : 'border-zinc-300 bg-white hover:bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-900 dark:hover:bg-zinc-800'}`}>
+            <button type="button" onClick={() => { apply(v); setApplied(v.id); track('lista-view', 'apply'); }} title={describeListaView(v, sharePointViews)} className="py-0.5 pr-1 pl-2.5">
+              {v.name}
+            </button>
+            <button type="button" onClick={() => void remove(v)} aria-label={`Borrar la vista ${v.name}`} title="Borrar la vista"
+              className={`mr-1 rounded-full p-0.5 opacity-0 group-hover:opacity-100 focus:opacity-100 ${on ? 'hover:bg-indigo-500' : 'hover:bg-zinc-200 dark:hover:bg-zinc-700'}`}>
+              <X className="size-3" />
+            </button>
+          </span>
+        );
+      })}
+      {changed && (
+        <button type="button" onClick={() => void save(changed.name)} title={`Guardar lo que ves ahora en «${changed.name}»`}
+          className="inline-flex items-center gap-1 rounded-full border border-amber-400 px-2.5 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-950/40">
+          <Save className="size-3" />Guardar cambios en «{changed.name}»
+        </button>
+      )}
+      {naming ? (
+        <form onSubmit={(e) => { e.preventDefault(); void save(name); }} className="inline-flex items-center gap-1">
+          <input autoFocus value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape') { setNaming(false); setName(''); } }}
+            placeholder="Nombre, p. ej. Vista Matías" aria-label="Nombre de la vista"
+            className="w-48 rounded-md border border-indigo-400 bg-white px-2 py-0.5 text-xs outline-none dark:bg-zinc-900" />
+          <button type="submit" disabled={!name.trim()} className="rounded-md bg-indigo-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-40">Guardar</button>
+          <button type="button" onClick={() => { setNaming(false); setName(''); }} className="rounded-md px-1.5 py-0.5 text-xs text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800">Cancelar</button>
+        </form>
+      ) : !active && (
+        <button type="button" onClick={() => setNaming(true)} title={`Guardar lo que ves: ${describeListaView(state, sharePointViews)}`}
+          className="inline-flex items-center gap-1 rounded-full border border-dashed border-zinc-400 px-2.5 py-0.5 text-xs text-zinc-600 hover:border-indigo-400 hover:text-indigo-700 dark:text-zinc-300">
+          <Plus className="size-3" />Guardar vista
+        </button>
+      )}
+      {!saved.length && !naming && <span className="text-xs text-zinc-400">Pon los filtros que quieras y guárdalos con un nombre.</span>}
+    </div>
+  );
+}
+
 function FiltersPanel({ fields, items, filters, onChange }: {
   fields: MsListField[]; items: MsListItem[]; filters: ListFilters; onChange: (f: ListFilters) => void;
 }) {
