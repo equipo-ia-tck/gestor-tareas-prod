@@ -987,6 +987,9 @@ Marca en `~/Downloads/marea-brand` (manual, `marea.css`, `tokens.json`, logos). 
   **Detalle de una persona** (feedback, nov 2026): en «Por persona», clic en la fila despliega `PersonDetail`
   (`personActivity`): qué ha hecho por tipo (herramienta / Rally), a qué columnas ha movido elementos, los elementos que más
   ha tocado y la lista de sus cambios (lo de antes de medir, atenuado). «Cambios» enseña el total (el reparto, en el título).
+  Pulsar un ID (en la lista o en «Elementos que más ha tocado») abre a la derecha la ficha de Rally de ese elemento
+  (`ItemPanel`: `lookup` + `RallyDetailPanel`, la de la pantalla Rally) y deja en la lista solo sus cambios («Solo US…»);
+  cerrar la ficha no quita el filtro (eso lo hace «Ver todos»).
 
 ## Fase 33: otro calendario por enlace ICS (rama `dev`, nov 2026)
 

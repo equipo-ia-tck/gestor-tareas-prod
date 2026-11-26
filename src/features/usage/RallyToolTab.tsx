@@ -1,15 +1,17 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, ChevronDown, ChevronRight, Info, RefreshCw, Users, Wrench } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronRight, Info, RefreshCw, Users, Wrench, X } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
 import { repo } from '../../data/services';
 import { Popover } from '../../components/ui/Popover';
 import { sync } from '../../data/sync';
 import { addDays } from '../../domain/dates';
-import type { RallyProject } from '../../domain/rally';
+import { linkedTask, taskFromRally, tasksByRallyId, type RallyItem, type RallyProject } from '../../domain/rally';
 import { artifactHash, beforeTracking, CHANGE_KINDS, changesBy, matchTool, personActivity, personKey, rallyPeople, summarizeActivity, type ActivitySummary, type RallyActivity, type Split } from '../../domain/rallyActivity';
 import type { UsageUser } from '../../domain/usage';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { rallyApi } from '../rally/rallyApi';
+import { RallyDetailPanel } from '../rally/RallyDetailPanel';
+import { track } from '../usage/track';
 import { DEFAULT_PROJECT, ProjectPicker } from '../rally/RallyView';
 
 /** Herramienta (azul) y directamente en Rally (naranja): los dos primeros colores de la paleta categórica. */
@@ -278,6 +280,12 @@ function PersonDetail({ result, user, onlySince }: { result: Loaded; user: strin
   const [limit, setLimit] = useState(30);
   const d = useMemo(() => personActivity(result.activity.changes, result.fromTool, user, result.since, onlySince), [result, user, onlySince]);
   const n = d.total.tool + d.total.rally;
+  // Elemento elegido: su ficha de Rally al lado y, en la lista, solo sus cambios.
+  const [focus, setFocus] = useState<string | null>(null);
+  /** Ficha abierta (se cierra aparte: cerrarla no quita el filtro de la lista). */
+  const [panelFor, setPanelFor] = useState<string | null>(null);
+  const rows = focus ? d.rows.filter((r) => r.change.artifact === focus) : d.rows;
+  const pick = (artifact: string) => { setFocus(artifact); setPanelFor(artifact); setLimit(30); track('analytics', 'rally-item'); };
   if (!n) return <p className="text-sm text-zinc-400">Sin cambios en el periodo.</p>;
   const box = 'rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-900';
   const sub = 'mb-2 text-[11px] font-semibold tracking-wide text-zinc-500 uppercase';
@@ -310,24 +318,32 @@ function PersonDetail({ result, user, onlySince }: { result: Loaded; user: strin
           <ul className="max-h-40 space-y-1 overflow-y-auto text-sm">
             {d.items.slice(0, 20).map((it) => (
               <li key={it.artifact} className="flex justify-between gap-2">
-                <span className="font-mono text-xs">{it.artifact}</span>
+                <ItemLink artifact={it.artifact} active={focus === it.artifact} onPick={pick} />
                 <span className="text-xs text-zinc-500 tabular-nums">{it.n} {it.n === 1 ? 'cambio' : 'cambios'}{it.tool ? ` · ${it.tool} herramienta` : ''} · {when(it.last)}</span>
               </li>
             ))}
           </ul>
         </div>
       </div>
+      {focus && (
+        <p className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="rounded-full bg-indigo-100 px-2 py-0.5 font-mono text-xs text-indigo-800 dark:bg-indigo-950 dark:text-indigo-200">Solo {focus}</span>
+          <span className="text-xs text-zinc-500">{rows.length} {rows.length === 1 ? 'cambio' : 'cambios'} de {user} en este elemento</span>
+          {!panelFor && <button type="button" onClick={() => setPanelFor(focus)} className="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">Ver la ficha</button>}
+          <button type="button" onClick={() => { setFocus(null); setPanelFor(null); }} className="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">Ver todos</button>
+        </p>
+      )}
       <div className={`${box} overflow-x-auto p-0`}>
         <table className="w-full text-sm">
           <thead className="bg-zinc-50 dark:bg-zinc-800/60"><tr>
             {['Cuándo', 'Qué', 'Elemento', 'Origen'].map((h) => <th key={h} className="px-3 py-1.5 text-left text-xs font-medium text-zinc-500">{h}</th>)}
           </tr></thead>
           <tbody>
-            {d.rows.slice(0, limit).map(({ change: c, tool, before }, i) => (
+            {rows.slice(0, limit).map(({ change: c, tool, before }, i) => (
               <tr key={i} className={`border-t border-zinc-100 dark:border-zinc-800 ${before ? 'opacity-50' : ''}`}>
                 <td className="px-3 py-1 whitespace-nowrap text-zinc-500">{when(c.at)}</td>
                 <td className="px-3 py-1 whitespace-nowrap">{KIND_LABEL[c.kind]}{c.kind === 'flow' && c.to ? <span className="text-zinc-400"> → {c.to}</span> : null}</td>
-                <td className="px-3 py-1 font-mono text-xs whitespace-nowrap">{c.artifact}</td>
+                <td className="px-3 py-1 whitespace-nowrap"><ItemLink artifact={c.artifact} active={focus === c.artifact} onPick={pick} /></td>
                 <td className="px-3 py-1 whitespace-nowrap">
                   <span className="inline-flex items-center gap-1.5"><span className={`size-2.5 rounded-sm ${tool ? TOOL : RALLY}`} />{tool ? 'Herramienta' : 'Rally'}</span>
                   {before && <span className="ml-1.5 text-xs text-zinc-400">(antes de medir)</span>}
@@ -336,15 +352,71 @@ function PersonDetail({ result, user, onlySince }: { result: Loaded; user: strin
             ))}
           </tbody>
         </table>
-        {d.rows.length > limit && (
+        {rows.length > limit && (
           <button type="button" onClick={() => setLimit(limit + 100)} className="w-full border-t border-zinc-100 px-3 py-1.5 text-sm text-indigo-600 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800">
-            Ver más ({d.rows.length - limit})
+            Ver más ({rows.length - limit})
           </button>
         )}
       </div>
+      {panelFor && <ItemPanel key={panelFor} artifact={panelFor} onClose={() => setPanelFor(null)} onSelect={(it) => pick(it.id)} />}
     </div>
   );
 }
+
+/** El ID de un elemento de Rally que se puede pulsar: abre su ficha al lado y filtra la lista. */
+function ItemLink({ artifact, active, onPick }: { artifact: string; active: boolean; onPick: (artifact: string) => void }) {
+  return (
+    <button type="button" data-rally-row onClick={() => onPick(artifact)} title="Ver la ficha y solo sus cambios"
+      className={`rounded px-1 font-mono text-xs ${active ? 'bg-indigo-600 text-white' : 'text-indigo-700 hover:bg-indigo-50 hover:underline dark:text-indigo-300 dark:hover:bg-indigo-950'}`}>
+      {artifact}
+    </button>
+  );
+}
+
+/**
+ * Ficha de Rally de un elemento (la misma de la pantalla Rally) a la derecha, por encima de la analítica. Se busca por su
+ * ID con `lookup`; se cierra con la cruz, Esc o un clic fuera (pulsar otro ID cambia de ficha).
+ */
+function ItemPanel({ artifact, onClose, onSelect }: { artifact: string; onClose: () => void; onSelect: (item: RallyItem) => void }) {
+  const { tasks, itemTypes, editTask } = useApp();
+  const [item, setItem] = useState<RallyItem | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    rallyApi.lookup([artifact]).then(
+      ([found]) => { if (!alive) return; if (found) setItem(found); else setError(`${artifact} no se encuentra en Rally (puede que se haya borrado).`); },
+      (e: Error) => { if (alive) setError(e.message); },
+    );
+    return () => { alive = false; };
+  }, [artifact]);
+  const byId = useMemo(() => tasksByRallyId(tasks.filter((t) => !t.deleted_at)), [tasks]);
+  const color = (kind: string) => itemTypes.find((t) => t.short && t.short.toUpperCase() === kind)?.color ?? '#71717a';
+  if (!item) {
+    return (
+      <div data-popover className="fixed top-4 right-4 z-40 flex max-w-sm items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+        {error ? <span className="text-red-600">{error}</span> : <><RefreshCw className="size-3.5 animate-spin text-zinc-400" />Abriendo {artifact}…</>}
+        <button type="button" onClick={onClose} aria-label="Cerrar" className="ml-auto rounded p-0.5 text-zinc-400 hover:text-zinc-700"><X className="size-3.5" /></button>
+      </div>
+    );
+  }
+  const task = linkedTask(item, byId);
+  return (
+    <div className="fixed inset-y-0 right-0 z-40 w-[460px] max-w-full">
+      <RallyDetailPanel
+        item={item}
+        task={task}
+        color={color(item.kind)}
+        onSelect={onSelect}
+        onAdd={() => void repo.batch(`${item.id} añadida desde Rally`, async () => { await repo.createTask(taskFromRally(item, itemTypes, null)); })}
+        onOpenTask={() => { if (task) editTask(task); }}
+        onClose={onClose}
+        onChanged={setItem}
+      />
+    </div>
+  );
+}
+
+
 
 function ChangeList({ result, onlySince }: { result: Loaded; onlySince: boolean }) {
   const [open, setOpen] = useState(false);
