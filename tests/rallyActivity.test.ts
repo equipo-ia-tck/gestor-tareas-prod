@@ -67,3 +67,32 @@ describe('personas de Rally en la analítica', async () => {
     expect(rallyPeople(changes)).toEqual([{ name: 'Raúl Blanco', count: 2 }, { name: 'Lucas Solari', count: 1 }]);
   });
 });
+
+describe('Analítica de Rally: detalle de una persona', async () => {
+  const { personActivity } = await import('../src/domain/rallyActivity');
+  const c = (kind: 'comment' | 'flow' | 'attachment', artifact: string, user: string, at: string, to?: string) => ({ kind, artifact, user, at, to: to ?? null });
+  const changes = [
+    c('flow', 'US1', 'Marta García', '2026-11-20T10:00:00Z', 'In-Progress'),
+    c('comment', 'US1', 'Marta Garcia', '2026-11-21T10:00:00Z'),
+    c('flow', 'TS2', 'Marta García', '2026-11-22T10:00:00Z', 'Need Review'),
+    c('flow', 'US3', 'Marta García', '2026-11-23T10:00:00Z', 'In-Progress'),
+    c('attachment', 'US1', 'Ana Ruiz', '2026-11-23T11:00:00Z'),
+    c('comment', 'US1', 'Marta García', '2026-10-01T10:00:00Z'),
+  ];
+  const fromTool = [true, false, true, false, true, false];
+
+  it('reúne lo suyo (aunque el nombre venga sin tilde): tipos, columnas, elementos y la lista, lo más nuevo primero', () => {
+    const p = personActivity(changes, fromTool, 'Marta García', '2026-11-01T00:00:00Z');
+    expect(p.total).toEqual({ tool: 2, rally: 3 });
+    expect(p.byKind).toEqual([
+      { kind: 'flow', label: 'Cambios de Flow State', tool: 2, rally: 1 },
+      { kind: 'comment', label: 'Discusiones', tool: 0, rally: 2 },
+    ]);
+    expect(p.flowTo).toEqual([{ state: 'In-Progress', n: 2 }, { state: 'Need Review', n: 1 }]);
+    expect(p.items[0]).toEqual({ artifact: 'US1', n: 3, tool: 1, last: '2026-11-21T10:00:00Z' });
+    expect(p.rows.map((r) => r.change.at.slice(5, 10))).toEqual(['11-23', '11-22', '11-21', '11-20', '10-01']);
+    expect(p.rows.at(-1)!.before).toBe(true);
+    // «Contar solo desde que se mide» deja fuera lo de antes.
+    expect(personActivity(changes, fromTool, 'Marta García', '2026-11-01T00:00:00Z', true).rows).toHaveLength(4);
+  });
+});

@@ -153,3 +153,44 @@ export function rallyPeople(changes: RallyChange[]): { name: string; count: numb
   }
   return [...by.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'es'));
 }
+
+/** Detalle de una persona de Rally (al pulsarla en Analítica): qué ha hecho, a qué columnas ha movido, qué elementos y cuándo. */
+export interface PersonActivity {
+  total: Split;
+  byKind: { kind: RallyChangeKind; label: string; tool: number; rally: number }[];
+  /** Columnas (Flow State) a las que ha movido elementos, de más a menos. */
+  flowTo: { state: string; n: number }[];
+  /** Elementos que ha tocado, los que más primero (y después el más reciente). */
+  items: { artifact: string; n: number; tool: number; last: string }[];
+  /** Sus cambios, el más nuevo primero. */
+  rows: { change: RallyChange; tool: boolean; before: boolean }[];
+}
+
+export function personActivity(changes: RallyChange[], fromTool: boolean[], user: string, since: string | null, onlySince = false): PersonActivity {
+  const key = personKey(user);
+  const rows = changes.map((change, i) => ({ change, tool: fromTool[i], before: beforeTracking(change.at, since) }))
+    .filter((r) => personKey(r.change.user) === key && !(onlySince && r.before))
+    .sort((a, b) => b.change.at.localeCompare(a.change.at));
+  const total: Split = { tool: 0, rally: 0 };
+  const kinds = new Map<RallyChangeKind, Split>(CHANGE_KINDS.map((k) => [k.id, { tool: 0, rally: 0 }]));
+  const flow = new Map<string, number>();
+  const items = new Map<string, { artifact: string; n: number; tool: number; last: string }>();
+  for (const r of rows) {
+    const side = r.tool ? 'tool' : 'rally';
+    total[side] += 1;
+    kinds.get(r.change.kind)![side] += 1;
+    if (r.change.kind === 'flow' && r.change.to) flow.set(r.change.to, (flow.get(r.change.to) ?? 0) + 1);
+    const it = items.get(r.change.artifact) ?? { artifact: r.change.artifact, n: 0, tool: 0, last: r.change.at };
+    it.n += 1;
+    if (r.tool) it.tool += 1;
+    if (r.change.at > it.last) it.last = r.change.at;
+    items.set(r.change.artifact, it);
+  }
+  return {
+    total,
+    byKind: CHANGE_KINDS.map((k) => ({ kind: k.id, label: k.label, ...kinds.get(k.id)! })).filter((k) => k.tool + k.rally > 0),
+    flowTo: [...flow].map(([state, n]) => ({ state, n })).sort((a, b) => b.n - a.n || a.state.localeCompare(b.state, 'es')),
+    items: [...items.values()].sort((a, b) => b.n - a.n || b.last.localeCompare(a.last)),
+    rows,
+  };
+}

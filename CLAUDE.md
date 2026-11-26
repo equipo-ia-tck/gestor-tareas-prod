@@ -984,6 +984,9 @@ Marca en `~/Downloads/marea-brand` (manual, `marea.css`, `tokens.json`, logos). 
   con la clave de quien mira. `matchTool` (`domain/rallyActivity.ts`) cruza mismo tipo, misma huella y menos de 5 minutos;
   lo anterior al primer apunte (con 5 min de margen) cuenta, salvo con «Contar solo desde que se mide»; lista de cambios leídos para comprobar. Por tipo, por semana y por persona de Rally («Tiene cuenta»
   compara el nombre con las cuentas).
+  **Detalle de una persona** (feedback, nov 2026): en «Por persona», clic en la fila despliega `PersonDetail`
+  (`personActivity`): qué ha hecho por tipo (herramienta / Rally), a qué columnas ha movido elementos, los elementos que más
+  ha tocado y la lista de sus cambios (lo de antes de medir, atenuado). «Cambios» enseña el total (el reparto, en el título).
 
 ## Fase 33: otro calendario por enlace ICS (rama `dev`, nov 2026)
 

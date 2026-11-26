@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, ChevronDown, Info, RefreshCw, Users, Wrench } from 'lucide-react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
+import { AlertTriangle, ChevronDown, ChevronRight, Info, RefreshCw, Users, Wrench } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
 import { repo } from '../../data/services';
 import { Popover } from '../../components/ui/Popover';
 import { sync } from '../../data/sync';
 import { addDays } from '../../domain/dates';
 import type { RallyProject } from '../../domain/rally';
-import { artifactHash, beforeTracking, CHANGE_KINDS, changesBy, matchTool, personKey, rallyPeople, summarizeActivity, type ActivitySummary, type RallyActivity, type Split } from '../../domain/rallyActivity';
+import { artifactHash, beforeTracking, CHANGE_KINDS, changesBy, matchTool, personActivity, personKey, rallyPeople, summarizeActivity, type ActivitySummary, type RallyActivity, type Split } from '../../domain/rallyActivity';
 import type { UsageUser } from '../../domain/usage';
 import { usePersistentState } from '../../hooks/usePersistentState';
 import { rallyApi } from '../rally/rallyApi';
@@ -94,6 +94,8 @@ export function RallyToolTab({ from, to, users }: { from: string; to: string; us
   const summary = useMemo(() => (shown ? summarizeActivity(shown.activity.changes, shown.fromTool, shown.since, onlySince) : null), [shown, onlySince]);
   const s = summary;
   const total = s ? s.total.tool + s.total.rally : 0;
+  /** Persona desplegada en «Por persona» (su detalle). */
+  const [openUser, setOpenUser] = useState<string | null>(null);
 
   return (
     <div className="space-y-4">
@@ -187,9 +189,14 @@ export function RallyToolTab({ from, to, users }: { from: string; to: string; us
                     {s.byPerson.map((p) => {
                       const n = p.tool + p.rally;
                       const hasAccount = accounts.has(personKey(p.user));
+                      const isOpen = openUser === p.user;
                       return (
-                        <tr key={p.user} className="border-t border-zinc-100 dark:border-zinc-800">
-                          <td className="px-4 py-2 font-medium whitespace-nowrap">{p.user}</td>
+                        <Fragment key={p.user}>
+                        <tr onClick={() => setOpenUser(isOpen ? null : p.user)} aria-expanded={isOpen} title="Ver qué ha hecho"
+                          className={`cursor-pointer border-t border-zinc-100 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800/50 ${isOpen ? 'bg-indigo-50/60 dark:bg-indigo-950/30' : ''}`}>
+                          <td className="px-4 py-2 font-medium whitespace-nowrap">
+                            <ChevronRight className={`mr-1 inline size-3.5 text-zinc-400 transition-transform ${isOpen ? 'rotate-90' : ''}`} />{p.user}
+                          </td>
                           <td className="px-4 py-2 whitespace-nowrap">
                             {hasAccount
                               ? <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">Tiene cuenta</span>
@@ -197,8 +204,14 @@ export function RallyToolTab({ from, to, users }: { from: string; to: string; us
                           </td>
                           <td className="px-4 py-2"><SplitBar split={p} /></td>
                           <td className="px-4 py-2 text-right font-semibold tabular-nums">{pct(p.tool, n)} %</td>
-                          <td className="px-4 py-2 text-right text-zinc-500 tabular-nums">{p.tool} / {p.rally}</td>
+                          <td className="px-4 py-2 text-right text-zinc-500 tabular-nums" title={`${p.tool} desde la herramienta y ${p.rally} directamente en Rally`}>{n}</td>
                         </tr>
+                        {isOpen && (
+                          <tr className="bg-zinc-50/60 dark:bg-zinc-900/60">
+                            <td colSpan={5} className="px-4 py-3"><PersonDetail result={shown!} user={p.user} onlySince={onlySince} /></td>
+                          </tr>
+                        )}
+                        </Fragment>
                       );
                     })}
                   </tbody>
@@ -260,6 +273,79 @@ function Notices({ result, summary, onlySince, onOnlySince }: { result: Loaded; 
 const KIND_LABEL = Object.fromEntries(CHANGE_KINDS.map((k) => [k.id, k.label]));
 
 /** Cada cambio leído de Rally, del más reciente al más antiguo, con su origen: para comprobar las cifras. */
+/** Lo que ha hecho una persona en Rally en el periodo: por tipo, a qué columnas ha movido, qué elementos y la lista. */
+function PersonDetail({ result, user, onlySince }: { result: Loaded; user: string; onlySince: boolean }) {
+  const [limit, setLimit] = useState(30);
+  const d = useMemo(() => personActivity(result.activity.changes, result.fromTool, user, result.since, onlySince), [result, user, onlySince]);
+  const n = d.total.tool + d.total.rally;
+  if (!n) return <p className="text-sm text-zinc-400">Sin cambios en el periodo.</p>;
+  const box = 'rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-900';
+  const sub = 'mb-2 text-[11px] font-semibold tracking-wide text-zinc-500 uppercase';
+  return (
+    <div className="space-y-3">
+      <div className="grid gap-3 lg:grid-cols-3">
+        <div className={box}>
+          <p className={sub}>Qué ha hecho · {n}</p>
+          <ul className="space-y-2">
+            {d.byKind.map((k) => (
+              <li key={k.kind}>
+                <div className="mb-0.5 flex justify-between gap-2 text-xs"><span>{k.label}</span><span className="text-zinc-500 tabular-nums">{k.tool} herramienta · {k.rally} Rally</span></div>
+                <SplitBar split={k} />
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className={box}>
+          <p className={sub}>A qué columnas ha movido</p>
+          {d.flowTo.length ? (
+            <ul className="space-y-1 text-sm">
+              {d.flowTo.map((f) => (
+                <li key={f.state} className="flex justify-between gap-2"><span>→ {f.state}</span><span className="text-zinc-500 tabular-nums">{f.n}</span></li>
+              ))}
+            </ul>
+          ) : <p className="text-xs text-zinc-400">No ha cambiado el Flow State de nada.</p>}
+        </div>
+        <div className={box}>
+          <p className={sub}>Elementos que más ha tocado · {d.items.length}</p>
+          <ul className="max-h-40 space-y-1 overflow-y-auto text-sm">
+            {d.items.slice(0, 20).map((it) => (
+              <li key={it.artifact} className="flex justify-between gap-2">
+                <span className="font-mono text-xs">{it.artifact}</span>
+                <span className="text-xs text-zinc-500 tabular-nums">{it.n} {it.n === 1 ? 'cambio' : 'cambios'}{it.tool ? ` · ${it.tool} herramienta` : ''} · {when(it.last)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+      <div className={`${box} overflow-x-auto p-0`}>
+        <table className="w-full text-sm">
+          <thead className="bg-zinc-50 dark:bg-zinc-800/60"><tr>
+            {['Cuándo', 'Qué', 'Elemento', 'Origen'].map((h) => <th key={h} className="px-3 py-1.5 text-left text-xs font-medium text-zinc-500">{h}</th>)}
+          </tr></thead>
+          <tbody>
+            {d.rows.slice(0, limit).map(({ change: c, tool, before }, i) => (
+              <tr key={i} className={`border-t border-zinc-100 dark:border-zinc-800 ${before ? 'opacity-50' : ''}`}>
+                <td className="px-3 py-1 whitespace-nowrap text-zinc-500">{when(c.at)}</td>
+                <td className="px-3 py-1 whitespace-nowrap">{KIND_LABEL[c.kind]}{c.kind === 'flow' && c.to ? <span className="text-zinc-400"> → {c.to}</span> : null}</td>
+                <td className="px-3 py-1 font-mono text-xs whitespace-nowrap">{c.artifact}</td>
+                <td className="px-3 py-1 whitespace-nowrap">
+                  <span className="inline-flex items-center gap-1.5"><span className={`size-2.5 rounded-sm ${tool ? TOOL : RALLY}`} />{tool ? 'Herramienta' : 'Rally'}</span>
+                  {before && <span className="ml-1.5 text-xs text-zinc-400">(antes de medir)</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {d.rows.length > limit && (
+          <button type="button" onClick={() => setLimit(limit + 100)} className="w-full border-t border-zinc-100 px-3 py-1.5 text-sm text-indigo-600 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800">
+            Ver más ({d.rows.length - limit})
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ChangeList({ result, onlySince }: { result: Loaded; onlySince: boolean }) {
   const [open, setOpen] = useState(false);
   const [limit, setLimit] = useState(100);
