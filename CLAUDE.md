@@ -808,6 +808,8 @@ En Vercel no hay servidor que lea la carpeta de OneDrive del Mac, así que el Ma
 - **Botón flotante** «Feedback» abajo a la derecha en todas las pantallas (`features/feedback/FeedbackButton.tsx`; se aparta
   cuando el panel de detalle es columna): tipo (Mejora · Algo roto · Otro) y texto; la pantalla (`location.hash`) y el
   navegador van solos. Lo enviado se sigue en «Mis solicitudes» (ver migración 016, más abajo).
+  Con una ficha de Rally abierta (`RallyDetailPanel` pone `data-side-panel` en el body) el botón se aparta a la izquierda de la
+  ficha (y en pantallas estrechas, donde la ficha ocupa todo, se esconde), para no tapar «Guardar cambios».
 - **Más → Feedback** (`#/feedback`, solo administradores en la barra lateral y en la pantalla): filtros por estado (Abiertos =
   Nuevo + En curso) y tipo, cambiar el estado y «→ Tarea» (tarea con etiqueta `feedback`, el texto y los datos en la
   descripción; el feedback guarda `task_id` y pasa a En curso si era Nuevo). Si falta la migración, el error lo dice.

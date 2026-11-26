@@ -76,6 +76,18 @@ export function RallyDetailPanel({ item, task, color, onSelect, onAdd, onOpenTas
     return () => { alive = false; };
   }, [item]);
 
+  // Mientras está abierta, el botón flotante de Feedback se aparta (si no, tapa «Guardar cambios»): `data-side-panel` en el
+  // body, con un contador por si hay más de una.
+  useEffect(() => {
+    const body = document.body;
+    body.dataset.sidePanel = String(Number(body.dataset.sidePanel ?? 0) + 1);
+    return () => {
+      const n = Number(body.dataset.sidePanel ?? 1) - 1;
+      if (n > 0) body.dataset.sidePanel = String(n);
+      else delete body.dataset.sidePanel;
+    };
+  }, []);
+
   // Se cierra con Esc o con un clic fuera (salvo en otra fila de Rally, que abre esa, o en un desplegable).
   const ref = useRef<HTMLElement>(null);
   useEffect(() => {

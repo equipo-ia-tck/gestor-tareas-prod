@@ -19,7 +19,7 @@ export function FeedbackButton() {
   return (
     <>
       <button type="button" onClick={() => { track('feedback-open'); setOpen(true); }} title="Cuéntanos qué no funciona, mejoras, ideas o dudas"
-        className={`fixed right-4 bottom-4 z-20 flex items-center gap-1.5 rounded-full bg-indigo-600 px-3.5 py-2 text-sm font-medium text-white shadow-lg hover:bg-indigo-500 print:hidden ${detailId ? 'xl:right-[436px]' : ''}`}>
+        className={`fixed right-4 bottom-4 z-20 flex items-center gap-1.5 rounded-full bg-indigo-600 px-3.5 py-2 text-sm font-medium text-white shadow-lg hover:bg-indigo-500 print:hidden ${detailId ? 'xl:right-[436px]' : ''} [body[data-side-panel]_&]:right-[496px] [body[data-side-panel]_&]:max-md:hidden`}>
         <MessageSquarePlus className="size-4" />Feedback
       </button>
       {open && <FeedbackDialog taskOpen={!!detailId}
