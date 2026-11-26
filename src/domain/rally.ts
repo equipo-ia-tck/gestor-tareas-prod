@@ -162,6 +162,8 @@ export interface RallyItem {
   tags: string[];
   /** Rank de Rally (DragAndDropRank): el orden de prioridad del backlog. Se compara como texto. */
   rank?: string;
+  /** Último comentario de la discusión: si lo escribió la persona conectada, quién y cuándo (sin discusión, no viene). */
+  lastComment?: { mine: boolean; author: string | null; date: string };
   updatedAt: string;
   url: string;
   /** Solo al mover: comentario que toca dejar en la discusión (lo publica la app tras preguntar por el analista). */

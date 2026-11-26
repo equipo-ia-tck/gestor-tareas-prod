@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { LastCommentIcon } from './LastComment';
 import { ChevronDown, Columns3, ExternalLink, Layers, Plus, RefreshCw, Search, Unplug, Wand2, X } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
 import { ActionButton, Section } from '../../components/TaskList';
@@ -445,7 +446,7 @@ function RallyItems({ user, onDisconnect }: { user: string | null; onDisconnect:
 
       {visible.length > 0 && (
         <div className="-mx-2 mb-1 hidden gap-2 border-b border-zinc-200 px-2 pb-1 text-[11px] font-semibold tracking-wide text-zinc-400 uppercase md:flex dark:border-zinc-700">
-          <span className="w-7" /><span className="relative shrink-0" style={{ width: widths.id }}>ID{resize('id', 'right')}</span><span className="flex-1">Name</span>
+          <span className="w-7" /><span className="relative shrink-0" style={{ width: widths.id }}>ID{resize('id', 'right')}</span><span className="w-4 shrink-0" title="Último comentario: verde = tuyo, ámbar = de otra persona" /><span className="flex-1">Name</span>
           {cols.owner && <span className="relative shrink-0 pl-1" style={{ width: widths.owner }}>{resize('owner', 'left')}Owner</span>}
           {cols.state && <span className="relative shrink-0 text-right" style={{ width: widths.state }}>{resize('state', 'left')}Estado</span>}
           {/* Qué columnas se ven: aquí, en la cabecera de la lista. */}
@@ -482,6 +483,7 @@ function RallyItems({ user, onDisconnect }: { user: string | null; onDisconnect:
                   <a href={it.url} target="_blank" rel="noreferrer" className="inline-flex shrink-0 items-center gap-0.5 truncate font-mono text-xs text-indigo-600 hover:underline" style={{ width: widths.id }} title="Abrir en Rally">
                     {it.id}<ExternalLink className="size-3" />
                   </a>
+                  <span className="flex w-4 shrink-0 justify-center"><LastCommentIcon item={it} /></span>
                   {/* Columnas fijas (ID, Owner, Estado) para que cuadren con la cabecera; lo secundario va debajo del nombre. */}
                   <span className="flex min-w-0 flex-1 flex-col">
                     <span className={cols.wrap ? 'break-words' : 'truncate'} title={it.name}>{it.name}</span>

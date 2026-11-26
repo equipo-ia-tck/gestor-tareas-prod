@@ -79,7 +79,7 @@ const DONE = new Set(['accepted', 'completed', 'released', 'closed', 'pass', 'do
 /** Orden de las columnas cuando no hay FlowState (tablero sin columnas propias). */
 const SCHEDULE = ['idea', 'new', 'submitted', 'defined', 'open', 'in-progress', 'fixed', 'completed', 'accepted', 'released', 'closed'];
 const FETCH = 'FormattedID,Name,FlowState,OrderIndex,ScheduleState,State,LastVerdict,Blocked,Ready,Project,Iteration,Release,'
-  + 'LastUpdateDate,ObjectID,Owner,c_Assignee,Tags,DragAndDropRank';
+  + 'LastUpdateDate,ObjectID,Owner,c_Assignee,Tags,DragAndDropRank,LatestDiscussionAgeInMinutes';
 
 /** Solo servidores de Rally (`https://*.rallydev.com`), sin ruta. */
 export function normalizeBaseUrl(input: unknown): string {
@@ -550,6 +550,7 @@ export class Rally {
     const projectsOnly = ids.length ? joinQuery(ids.map((id) => `(Project.ObjectID = ${id})`), 'OR') : null;
     const inProjects = projectsOnly && tagged ? `(${projectsOnly} AND ${tagged})` : projectsOnly ?? tagged;
     const items: RallyItem[] = [];
+    const discussed = new Set<string>();
     const truncated: { kind: RallyKind; total: number; shown: number }[] = [];
     for (const [type, info] of Object.entries(KINDS)) {
       const query = recent(inProjects ?? (info.assignee ? `(${owner} OR (${ASSIGNEE_FIELD}.ObjectID = ${a.rally_user_id}))` : owner));
@@ -564,8 +565,10 @@ export class Rally {
       for (const r of rows) {
         const item = toRallyItem({ _type: type, ...r }, a.base_url, a.rally_user_id);
         if (item) items.push(item);
+        if (item && r.LatestDiscussionAgeInMinutes != null) discussed.add(item.objectId);
       }
     }
+    await this.addLastComments(a, items, discussed);
     // En el orden de Rally (Rank: la prioridad que se arrastra en el backlog); sin Rank, al final y por fecha.
     return { items: items.sort(byRank), truncated };
   }
@@ -580,6 +583,7 @@ export class Rally {
       .filter((id) => !!kindOfId(id))
       .slice(0, 1000);
     const items: RallyItem[] = [];
+    const discussed = new Set<string>();
     for (const type of Object.keys(KINDS)) {
       const mine = ids.filter((id) => kindOfId(id)?.[0] === type);
       for (let i = 0; i < mine.length; i += 40) {
@@ -587,10 +591,44 @@ export class Rally {
         for (const r of await this.query(a, type, query)) {
           const item = toRallyItem({ _type: type, ...r }, a.base_url, a.rally_user_id);
           if (item) items.push(item);
+          if (item && r.LatestDiscussionAgeInMinutes != null) discussed.add(item.objectId);
         }
       }
     }
+    await this.addLastComments(a, items, discussed);
     return items;
+  }
+
+  /**
+   * Quién escribió el último comentario de la discusión de cada elemento (para el icono «el último en comentar fuiste tú»).
+   * Solo de los que tienen discusión, de 20 en 20 y 4 consultas a la vez, con los comentarios más nuevos primero. Si falla,
+   * los elementos se quedan sin el dato (no se rompe la lista).
+   */
+  private async addLastComments(a: { base_url: string; api_key: string; rally_user_id: string }, items: RallyItem[], discussed: Set<string>) {
+    const ids = items.filter((it) => discussed.has(it.objectId)).map((it) => it.objectId).slice(0, 2000);
+    if (!ids.length) return;
+    const latest = new Map<string, RallyObject>();
+    const groups: string[][] = [];
+    for (let i = 0; i < ids.length; i += 20) groups.push(ids.slice(i, i + 20));
+    let next = 0;
+    const worker = async () => {
+      while (next < groups.length) {
+        const group = groups[next++];
+        const rows = await this.list(a, '/conversationpost', {
+          query: joinQuery(group.map((id) => `(Artifact.ObjectID = ${id})`), 'OR'),
+          fetch: 'Artifact,User,CreationDate', order: 'CreationDate desc', pagesize: '200',
+        }).catch(() => [] as RallyObject[]);
+        for (const p of rows) {
+          const id = refId(p.Artifact);
+          if (id && !latest.has(id)) latest.set(id, p);
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(4, groups.length) }, worker));
+    for (const it of items) {
+      const p = latest.get(it.objectId);
+      if (p) it.lastComment = { mine: refId(p.User) === a.rally_user_id, author: refName(p.User), date: String(p.CreationDate ?? '') };
+    }
   }
 
   /** Columnas del tablero de un proyecto, en caché. */

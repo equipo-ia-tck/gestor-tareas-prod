@@ -559,6 +559,11 @@ Petición de la usuaria (oct 2026): traer Rally al gestor sin tocar el resto (en
   cambie de bloque, `rallyCategory` solo tiene en cuenta Blocked cuando el elemento no tiene FlowState (tareas de Rally).
 - **Mensaje al marcar Ready** (`RallyMessage`, `POST /api/rally/message`, `messageHtml`): las plantillas de «Preparar mensaje»
   con las personas buscadas en Rally; cada «@Nombre» elegido se publica como mención de Rally (avisa). «Etiquetar a» añade más (opcional). Todos los huecos `{?…}` de la plantilla son obligatorios para «Publicar en Rally» (marcados con *; tampoco deja publicar si quedan «<…>» en el texto); «Copiar» no lo exige. Ready se marca en Rally al publicar (justo antes del mensaje) o con «Sin mensaje»; cerrar con la cruz, Esc o clic fuera no lo marca. **Al quitar Ready** (en una US, Ready solo se quita si se envía el comentario: la ventana va antes, cerrarla deja Ready marcado y, si el comentario falla, Ready se vuelve a marcar) se abre la misma ventana que al mover (`askAnalyst`: lápiz, mención del PO cambiable y analista) con «Tengo la lista validada por si la quieres revisar antes de la reunión con PO y PO IT» y se publica con `move-comment`; cerrar no publica (Ready ya está quitado).
+- **¿El último en comentar fui yo?** (feedback, nov 2026; `LastCommentIcon`): `itemsReport` y `lookup` piden
+  `LatestDiscussionAgeInMinutes` y, solo de los elementos con discusión, el último `conversationpost` (`addLastComments`: de 20
+  en 20, 4 a la vez, más nuevos primero; si falla, sin el dato). `RallyItem.lastComment` = { mine, author, date }. Icono en la
+  lista de la pantalla Rally (junto al ID) y en las tarjetas del Tablero enlazadas: verde con ✓ si es tuyo, ámbar con ! si es
+  de otra persona (puede tocar contestar); el título dice quién y cuándo.
 - **Enlaces en la discusión** (feedback, nov 2026): `toPost` pasa el HTML por `keepLinks`, así un `<a>` con otro texto queda
   «aquí (URL)» y no se pierde la dirección; la ficha los pinta pulsables (`LinkedText`, `linkParts`). Los de SharePoint
   tienen además «Ver en Marea» (con la extensión y la pantalla SharePoint activada): `openSharePointLink` + `sharePointTarget`

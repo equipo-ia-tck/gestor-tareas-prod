@@ -27,6 +27,43 @@ function fakeRally(results: Record<string, unknown>[], status = 200) {
   return { fetcher, calls };
 }
 
+describe('Rally: quién escribió el último comentario', () => {
+  it('lo pide solo de los que tienen discusión y marca si fui yo', async () => {
+    const db = new DatabaseSync(':memory:');
+    const api = new Api(db);
+    const marta = api.register({ login: 'marta@vml.com', name: 'Marta', password: 'contraseña-larga', code: api.teamCode }).user;
+    const calls: string[] = [];
+    const posts = [
+      { Artifact: { _ref: `${BASE}/slm/webservice/v2.0/hierarchicalrequirement/111` }, User: { _ref: `${BASE}/slm/webservice/v2.0/user/42`, _refObjectName: 'Marta García' }, CreationDate: '2026-11-25T10:00:00Z' },
+      { Artifact: { _ref: `${BASE}/slm/webservice/v2.0/hierarchicalrequirement/222` }, User: { _ref: `${BASE}/slm/webservice/v2.0/user/7`, _refObjectName: 'Ana Ruiz' }, CreationDate: '2026-11-24T10:00:00Z' },
+      { Artifact: { _ref: `${BASE}/slm/webservice/v2.0/hierarchicalrequirement/111` }, User: { _ref: `${BASE}/slm/webservice/v2.0/user/7`, _refObjectName: 'Ana Ruiz' }, CreationDate: '2026-11-20T10:00:00Z' },
+    ];
+    const rows = [
+      { ...story, LatestDiscussionAgeInMinutes: 30 },
+      { ...story, FormattedID: 'US222', ObjectID: 222, LatestDiscussionAgeInMinutes: 900 },
+      { ...story, FormattedID: 'US333', ObjectID: 333 },
+    ];
+    const fetcher = (async (url: string) => {
+      calls.push(url);
+      const body = url.includes('/user') ? { User: { ObjectID: 42, DisplayName: 'Marta García' } }
+        : { QueryResult: { Errors: [], Results: url.includes('/conversationpost') ? posts : url.includes('hierarchicalrequirement') ? rows : [], TotalResultCount: 3 } };
+      return new Response(JSON.stringify(body));
+    }) as unknown as typeof fetch;
+    const rally = new Rally(db, fetcher);
+    await rally.connect(marta, { apiKey: '_secreta1234' });
+    calls.length = 0;
+    const items = await rally.lookup(marta, { ids: ['US1764574', 'US222', 'US333'] });
+    const byId = Object.fromEntries(items.map((i) => [i.id, i.lastComment]));
+    expect(byId.US1764574).toEqual({ mine: true, author: 'Marta García', date: '2026-11-25T10:00:00Z' });
+    expect(byId.US222).toEqual({ mine: false, author: 'Ana Ruiz', date: '2026-11-24T10:00:00Z' });
+    expect(byId.US333).toBeUndefined(); // sin discusión: ni se pregunta
+    const post = calls.filter((u) => u.includes('/conversationpost'));
+    expect(post).toHaveLength(1);
+    expect(new URL(post[0]).searchParams.get('query')).toBe('((Artifact.ObjectID = 111) OR (Artifact.ObjectID = 222))');
+    expect(new URL(post[0]).searchParams.get('order')).toBe('CreationDate desc');
+  });
+});
+
 describe('Rally: servidor', () => {
   it('convierte los resultados de la WSAPI y descarta los tipos que no usamos', () => {
     expect(toRallyItem(story, BASE)).toEqual({

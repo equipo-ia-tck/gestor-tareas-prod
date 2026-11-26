@@ -12,6 +12,7 @@ import { setDraggedTasks, useTaskDrop } from '../../hooks/useTaskDrop';
 import { parseCapture } from '../../parser/parseCapture';
 import { submitCapture } from '../capture/submitCapture';
 import { useRallyItem, useRallyLookup } from '../rally/rallyStore';
+import { LastCommentIcon } from '../rally/LastComment';
 import { moveToRallyColumn, moveToNeedReview } from '../rally/rallyStates';
 import { useToast } from '../../components/Toast';
 import { isRallyId, RALLY_COLUMNS, rallyColumnOf } from '../../domain/rally';
@@ -304,7 +305,7 @@ function Card({ task, showProject, display }: { task: Task; showProject: boolean
       </p>
       {shows('project') && showProject && project && <p className="mt-1 truncate text-[11px] text-zinc-500">{project.name}</p>}
       {shows('external') && (task.external_id || task.release_id) && (
-        <div className="mt-1.5 flex flex-wrap items-center gap-1.5"><ExternalChip task={task} type={type} /><ReleaseChip releaseId={task.release_id} /></div>
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5"><ExternalChip task={task} type={type} /><ReleaseChip releaseId={task.release_id} />{rally && <LastCommentIcon item={rally} compact />}</div>
       )}
       {(shows('details') || shows('people')) && <div className="mt-2 flex items-center gap-2 text-[11px] text-zinc-500 dark:text-zinc-400">
         {shows('details') && task.due_date && (
