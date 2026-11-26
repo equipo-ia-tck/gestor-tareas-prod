@@ -285,7 +285,12 @@ function PersonDetail({ result, user, onlySince }: { result: Loaded; user: strin
   /** Ficha abierta (se cierra aparte: cerrarla no quita el filtro de la lista). */
   const [panelFor, setPanelFor] = useState<string | null>(null);
   const rows = focus ? d.rows.filter((r) => r.change.artifact === focus) : d.rows;
-  const pick = (artifact: string) => { setFocus(artifact); setPanelFor(artifact); setLimit(30); track('analytics', 'rally-item'); };
+  const clear = () => { setFocus(null); setPanelFor(null); };
+  // Pulsar la que ya está elegida la desmarca (quita el filtro y cierra la ficha).
+  const pick = (artifact: string) => {
+    if (focus === artifact) { clear(); return; }
+    setFocus(artifact); setPanelFor(artifact); setLimit(30); track('analytics', 'rally-item');
+  };
   if (!n) return <p className="text-sm text-zinc-400">Sin cambios en el periodo.</p>;
   const box = 'rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-900';
   const sub = 'mb-2 text-[11px] font-semibold tracking-wide text-zinc-500 uppercase';
@@ -327,10 +332,14 @@ function PersonDetail({ result, user, onlySince }: { result: Loaded; user: strin
       </div>
       {focus && (
         <p className="flex flex-wrap items-center gap-2 text-sm">
-          <span className="rounded-full bg-indigo-100 px-2 py-0.5 font-mono text-xs text-indigo-800 dark:bg-indigo-950 dark:text-indigo-200">Solo {focus}</span>
+          <span className="inline-flex items-center gap-1 rounded-full bg-indigo-100 py-0.5 pr-1 pl-2 font-mono text-xs text-indigo-800 dark:bg-indigo-950 dark:text-indigo-200">
+            Solo {focus}
+            <button type="button" onClick={clear} aria-label={`Quitar el filtro de ${focus}`} title="Quitar el filtro"
+              className="rounded-full p-0.5 hover:bg-indigo-200 dark:hover:bg-indigo-900"><X className="size-3" /></button>
+          </span>
           <span className="text-xs text-zinc-500">{rows.length} {rows.length === 1 ? 'cambio' : 'cambios'} de {user} en este elemento</span>
           {!panelFor && <button type="button" onClick={() => setPanelFor(focus)} className="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">Ver la ficha</button>}
-          <button type="button" onClick={() => { setFocus(null); setPanelFor(null); }} className="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">Ver todos</button>
+          <button type="button" onClick={clear} className="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">Ver todos</button>
         </p>
       )}
       <div className={`${box} overflow-x-auto p-0`}>
@@ -366,7 +375,7 @@ function PersonDetail({ result, user, onlySince }: { result: Loaded; user: strin
 /** El ID de un elemento de Rally que se puede pulsar: abre su ficha al lado y filtra la lista. */
 function ItemLink({ artifact, active, onPick }: { artifact: string; active: boolean; onPick: (artifact: string) => void }) {
   return (
-    <button type="button" data-rally-row onClick={() => onPick(artifact)} title="Ver la ficha y solo sus cambios"
+    <button type="button" data-rally-row onClick={() => onPick(artifact)} title={active ? 'Desmarcar (ver todos los cambios)' : 'Ver la ficha y solo sus cambios'}
       className={`rounded px-1 font-mono text-xs ${active ? 'bg-indigo-600 text-white' : 'text-indigo-700 hover:bg-indigo-50 hover:underline dark:text-indigo-300 dark:hover:bg-indigo-950'}`}>
       {artifact}
     </button>

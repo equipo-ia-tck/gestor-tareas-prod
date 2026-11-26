@@ -989,7 +989,7 @@ Marca en `~/Downloads/marea-brand` (manual, `marea.css`, `tokens.json`, logos). 
   ha tocado y la lista de sus cambios (lo de antes de medir, atenuado). «Cambios» enseña el total (el reparto, en el título).
   Pulsar un ID (en la lista o en «Elementos que más ha tocado») abre a la derecha la ficha de Rally de ese elemento
   (`ItemPanel`: `lookup` + `RallyDetailPanel`, la de la pantalla Rally) y deja en la lista solo sus cambios («Solo US…»);
-  cerrar la ficha no quita el filtro (eso lo hace «Ver todos»).
+  cerrar la ficha no quita el filtro; se desmarca volviendo a pulsar el mismo ID, con la × del aviso o con «Ver todos».
 
 ## Fase 33: otro calendario por enlace ICS (rama `dev`, nov 2026)
 
