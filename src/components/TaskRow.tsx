@@ -73,7 +73,7 @@ export function TaskRow({ task, today, projects, onEdit, hideDate, hideProject: 
       onDragStart={(e) => setDraggedTasks(e, targetsFor(task.id).map((t) => t.id))}
       onClick={onClick}
       onDoubleClick={onDoubleClick}
-      className={`group flex items-start gap-3 border-b border-zinc-100 px-2 py-2 select-none last:border-0 dark:border-zinc-800/80
+      className={`group relative flex items-start gap-3 border-b border-zinc-100 px-2 py-2 select-none last:border-0 dark:border-zinc-800/80
         ${isSelected || detailId === task.id ? 'bg-indigo-50 dark:bg-indigo-950/50' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/40'}
         ${isFocused ? 'shadow-[inset_2px_0_0_0] shadow-indigo-500' : ''}`}
       style={project && !hideProject ? { borderLeft: `3px solid ${project.color}` } : undefined}
@@ -120,7 +120,8 @@ export function TaskRow({ task, today, projects, onEdit, hideDate, hideProject: 
       {task.people.length > 0 && (
         <span data-field="people" className="mt-0.5 shrink-0" title="Doble clic para editar"><AvatarStack names={task.people} /></span>
       )}
-      <div className="flex shrink-0 items-center gap-1 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100">
+      {/* Encima de la fila (no ocupan sitio): así el título no se encoge en listas estrechas, como las tarjetas de Hoy. */}
+      <div className="pointer-events-none absolute top-1 right-1 flex max-w-[calc(100%-0.5rem)] flex-wrap items-center justify-end gap-1 rounded-md bg-zinc-50/95 p-0.5 opacity-0 shadow-sm ring-1 ring-zinc-200 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100 dark:bg-zinc-800/95 dark:ring-zinc-700">
         {extra}
         <button aria-label={task.my_day === today ? 'Quitar de Mi día' : 'Añadir a Mi día'} title={task.my_day === today ? 'Quitar de Mi día (A)' : 'Añadir a Mi día (A)'}
           onClick={() => void toggleMyDay(isSelected ? targetsFor(task.id) : [task], today)}
