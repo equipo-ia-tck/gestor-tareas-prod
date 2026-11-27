@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type DragEvent, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import {
   Activity, ArrowRight, CalendarDays, Check, ClipboardCheck, EyeOff, GripVertical, LayoutGrid, Lock, MessageSquare,
   MessagesSquare, NotebookPen, Paperclip, Plus, RotateCcw, Sun, Columns3, Video,
@@ -154,10 +154,12 @@ export function TodayView() {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-2 xl:grid-cols-3">
+      {/* Como un mosaico: cada tarjeta ocupa solo su alto (filas de 4 px) y `dense` rellena los huecos con las que caben. */}
+      <div className="grid grid-flow-row-dense auto-rows-[4px] grid-cols-1 gap-x-3.5 lg:grid-cols-2 xl:grid-cols-3">
         {shown.filter((c) => !c.hidden).map((c) => (
-          <div key={c.id} {...dragProps(c.id)}
-            className={`min-w-0 ${SPAN[c.span] ?? ''} ${c.span >= 2 ? 'lg:col-span-2' : ''} ${editing ? 'cursor-grab rounded-2xl outline-2 outline-offset-2 outline-dashed outline-violet-400' : ''} ${dragging === c.id ? 'opacity-40' : ''} ${over === c.id && dragging !== c.id ? 'rounded-2xl ring-4 ring-[#F0997B]' : ''}`}>
+          <Tile key={c.id} className={`min-w-0 ${SPAN[c.span] ?? ''} ${c.span >= 2 ? 'lg:col-span-2' : ''}`}>
+          <div {...dragProps(c.id)}
+            className={`${editing ? 'cursor-grab rounded-2xl outline-2 outline-offset-2 outline-dashed outline-violet-400' : ''} ${dragging === c.id ? 'opacity-40' : ''} ${over === c.id && dragging !== c.id ? 'rounded-2xl ring-4 ring-[#F0997B]' : ''}`}>
             {editing && (
               <div className="mb-1 flex items-center gap-1 px-1">
                 <GripVertical className="size-4 text-violet-500" />
@@ -174,12 +176,31 @@ export function TodayView() {
             )}
             <div className={editing ? 'pointer-events-none select-none' : ''}><TodayCard id={c.id as CardId} meetings={meetings} /></div>
           </div>
+          </Tile>
         ))}
       </div>
 
       <div className="mt-6"><StaleBlock /></div>
     </div>
   );
+}
+
+/** Una pieza del mosaico: mide su contenido y ocupa esas filas de 4 px (más el hueco entre tarjetas). */
+const ROW = 4;
+const GAP = 14;
+function Tile({ className, children }: { className: string; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [rows, setRows] = useState(40);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => setRows(Math.ceil((el.getBoundingClientRect().height + GAP) / ROW));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return <div className={className} style={{ gridRowEnd: `span ${rows}` }}><div ref={ref}>{children}</div></div>;
 }
 
 const labelOf = (id: string) => CARDS.find((c) => c.id === id)?.label ?? id;
@@ -212,7 +233,7 @@ function Card({ icon, tone, title, link, children, onDropTasks }: {
 }) {
   const { over, dropProps } = useTaskDrop(onDropTasks);
   return (
-    <section className={`h-full rounded-2xl border border-zinc-200 bg-white px-4 py-3.5 dark:border-zinc-700 dark:bg-zinc-900 ${over ? dropHighlight : ''}`} {...dropProps}>
+    <section className={`@container rounded-2xl border border-zinc-200 bg-white px-4 py-3.5 dark:border-zinc-700 dark:bg-zinc-900 ${over ? dropHighlight : ''}`} {...dropProps}>
       <header className="mb-2.5 flex items-center gap-2.5">
         <span className={`flex size-7 items-center justify-center rounded-lg ${tone}`}>{icon}</span>
         <h2 className="text-[15px] font-medium" style={{ fontFamily: "'Space Grotesk', Inter, sans-serif" }}>{title}</h2>
@@ -381,11 +402,11 @@ function RallyCard() {
       {state.status === 'off' && <p className="px-1 py-2 text-sm text-zinc-500">Conecta Rally en su pantalla para ver aquí los cambios de tus elementos.</p>}
       {state.status === 'error' && !state.events.length && <p className="px-1 py-2 text-sm text-zinc-500">No se ha podido leer Rally ahora. {state.error}</p>}
       {state.status === 'ok' && !state.events.length && <p className="px-1 py-2 text-sm text-zinc-400">Nadie ha tocado tus elementos en los últimos 3 días.</p>}
-      <ul className="grid gap-x-6 sm:grid-cols-2">
+      <ul className="grid gap-x-6 @lg:grid-cols-2">
         {state.events.slice(0, 10).map((e, i) => {
           const task = linked.get(e.id);
           return (
-            <li key={`${e.kind}-${e.id}-${e.at}-${i}`} className="flex items-center gap-2.5 border-t border-zinc-100 py-2 dark:border-zinc-800 [&:nth-child(-n+2)]:sm:border-0 first:border-0">
+            <li key={`${e.kind}-${e.id}-${e.at}-${i}`} className="flex items-center gap-2.5 border-t border-zinc-100 py-2 dark:border-zinc-800 @lg:[&:nth-child(-n+2)]:border-0 first:border-0">
               <span className={`flex size-7 shrink-0 items-center justify-center rounded-full ${EVENT_ICON[e.kind].tone}`}>{EVENT_ICON[e.kind].icon}</span>
               <button type="button" title={e.name} onClick={() => (task ? editTask(task) : (location.hash = routeHref({ view: 'rally' })))}
                 className="min-w-0 flex-1 truncate text-left text-sm hover:underline">{eventText(e)}</button>
@@ -440,7 +461,7 @@ function BoardCard() {
   return (
     <Card icon={<LayoutGrid className="size-4" />} tone="bg-[#E1F5EE] text-[#085041] dark:bg-[#04342C] dark:text-[#9FE1CB]" title="Tu tablero"
       link={{ href: routeHref({ view: 'board' }), label: 'Ir al Tablero' }}>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+      <div className="grid grid-cols-2 gap-2 @md:grid-cols-4 @3xl:grid-cols-7">
         {RALLY_COLUMNS.map((c) => (
           <a key={c.name} href={routeHref({ view: 'board' })}
             className="rounded-xl border-t-4 bg-zinc-50 px-2 py-2.5 text-center hover:bg-zinc-100 dark:bg-zinc-800/60 dark:hover:bg-zinc-800"

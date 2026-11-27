@@ -1433,7 +1433,9 @@ Petición de la usuaria: que Hoy resuma todas las pantallas, más visual y con l
   comentarios y adjuntos (WSAPI), cambios de columna y de Blocked (Lookback API) y elementos nuevos para ti. Al abrir Hoy y
   cada 5 min; en memoria. Sin Rally conectado, la tarjeta lo dice.
 - **Personalizar**: cada persona arrastra las tarjetas, cambia su ancho (1 a 3 columnas) y las oculta o las vuelve a poner;
-  «Restablecer» vuelve al de serie. Se guarda en `settings.today_layout` (sin migración: zod pone null), así se sincroniza
+  «Restablecer» vuelve al de serie. Las tarjetas van en **mosaico**: cada una ocupa solo su alto (`Tile` mide el contenido y
+  pone `grid-row-end: span N` en filas de 4 px, con `grid-auto-flow: dense`), así una pequeña y una mediana rellenan el
+  hueco al lado de una grande. Dentro de cada tarjeta, la distribución va por su ancho (`@container`), no por la pantalla. Se guarda en `settings.today_layout` (sin migración: zod pone null), así se sincroniza
   y entra en las copias. Lógica pura en `domain/todayLayout.ts` (`resolveTodayLayout`, `moveTodayCard`), con tests.
 - **Fuera la Bandeja**: sin entrada en la barra lateral, sin `G B` ni comando, y fuera de Ajustes → Pantallas; `#/inbox`
   lleva a Hoy. Las tareas sin fecha ni proyecto siguen en el Tablero, la búsqueda y la Revisión semanal. En el feedback,
