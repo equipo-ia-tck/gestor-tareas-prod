@@ -225,7 +225,7 @@ function UploadSettings() {
           {stale ? ': hace más de una hora. ¿Está el Mac encendido y el flujo de Power Automate activo?' : '.'}
         </p>
       )}
-      {cloud && looksCapped(cloud.events.length) && (
+      {cloud && looksCapped(cloud.events, cloud.fileAt ?? cloud.uploadedAt) && (
         <p className="mt-1 text-xs font-medium text-amber-700 dark:text-amber-400">
           Es el máximo que deja pasar tu flujo ({OUTLOOK_CAP}): faltan reuniones. Habla con un administrador para cambiarlo a 1000.
         </p>

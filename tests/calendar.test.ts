@@ -130,7 +130,15 @@ describe('oneDriveDirs (Mac y Windows)', () => {
 
 describe('tope del flujo de Power Automate', async () => {
   const { looksCapped } = await import('../src/domain/outlookEvents');
-  it('avisa cerca de 256 reuniones (sin las canceladas), no con menos ni con el flujo a 1000', () => {
-    expect([100, 239, 240, 246, 255, 256, 257, 312, 1000].map(looksCapped)).toEqual([false, false, true, true, true, true, false, false, false]);
+  const at = '2026-11-27T10:00:00Z';
+  const day = (n: number) => new Date(Date.parse(at) + n * 86_400_000).toISOString();
+  /** `count` reuniones repartidas desde 14 días antes hasta `lastDay` días después. */
+  const list = (count: number, lastDay: number) => Array.from({ length: count }, (_, i) => ({ start: day(-14 + ((lastDay + 14) * i) / (count - 1)) }));
+  it('avisa cerca de 256 reuniones si las últimas se quedan cortas, no con menos ni con más', () => {
+    expect([100, 239, 240, 246, 256, 257, 312, 1000].map((n) => looksCapped(list(n, 25), at))).toEqual([false, false, true, true, true, false, false, false]);
+  });
+  it('con el flujo a 1000 y 240 a 256 reuniones que llegan hasta el final, no avisa', () => {
+    expect(looksCapped(list(250, 44), at)).toBe(false);
+    expect(looksCapped(list(250, 30), at)).toBe(true);
   });
 });

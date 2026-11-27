@@ -105,7 +105,7 @@ export function CalendarView({ initial }: { initial?: 'week' | 'month' }) {
   const connected = hasCalendar(outlook.status);
   const extra = hasExtra(outlook) ? outlook.extra : null;
   // Las reuniones llegan justo al tope del flujo de Power Automate (256): faltan las últimas. Se avisa al entrar.
-  const capped = !!outlook.events && looksCapped(outlook.events.length);
+  const capped = !!outlook.events && looksCapped(outlook.events, outlook.fileAt);
 
   return (
     <div className="relative flex h-full overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">

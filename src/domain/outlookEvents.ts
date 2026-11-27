@@ -137,6 +137,19 @@ export function outlookToCalendar(events: OutlookEvent[], from: ISODate, to: ISO
  * ¿Parece que el flujo de Power Automate se ha quedado en su tope? «Obtener vista de calendario de eventos (V3)» devuelve
  * como mucho 256 si no se cambia «Recuento superior» (hay que ponerlo a 1000). Lo subido son las reuniones sin las
  * canceladas, así que un calendario cortado se queda un poco por debajo: de 240 a 256.
+ *
+ * Contar no basta: con el flujo ya a 1000, quien tenga de verdad 240 a 256 reuniones seguiría viendo el aviso. El flujo pide
+ * hasta 45 días después de escribir el archivo (`at`) y, si se corta, faltan las últimas: la última reunión se queda lejos
+ * de ese final. Si llega a menos de `CAP_TAIL_DAYS` del final, el calendario está entero.
  */
 export const OUTLOOK_CAP = 256;
-export const looksCapped = (count: number) => count >= OUTLOOK_CAP - 16 && count <= OUTLOOK_CAP;
+const WINDOW_DAYS = 45;
+const CAP_TAIL_DAYS = 7;
+export function looksCapped(events: Pick<OutlookEvent, 'start'>[], at?: string | null): boolean {
+  const count = events.length;
+  if (count < OUTLOOK_CAP - 16 || count > OUTLOOK_CAP) return false;
+  const ref = at ? Date.parse(at) : NaN;
+  const last = Math.max(...events.map((e) => Date.parse(e.start)).filter((t) => !Number.isNaN(t)));
+  if (Number.isNaN(ref) || !Number.isFinite(last)) return true;
+  return last < ref + (WINDOW_DAYS - CAP_TAIL_DAYS) * 86_400_000;
+}

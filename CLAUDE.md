@@ -780,8 +780,9 @@ En Vercel no hay servidor que lea la carpeta de OneDrive del Mac, así que el Ma
   por las tildes del perfil) y lo arranca al momento; `subida.pid` sirve para pararlo al reinstalar o con `--desinstalar`.
   En PowerShell `~` no vale en los argumentos de node: Ajustes enseña `node "$HOME\Downloads\subir-calendario.mjs" …`.
 - **Tope del flujo** (nov 2026): «Obtener vista de calendario de eventos (V3)» devuelve como mucho 256 reuniones si no se
-  cambia «Recuento superior» («Recompte superior»), en Parámetros avanzados, a 1000. Con 240 a 256 reuniones (`looksCapped`,
-  lo subido va sin canceladas) el Calendario abre al entrar una ventana «Habla con un administrador para cambiar tu flujo a
+  cambia «Recuento superior» («Recompte superior»), en Parámetros avanzados, a 1000. Con 240 a 256 reuniones y la última a
+  más de 7 días del final de la ventana del flujo (+45 días desde que escribió el archivo; `looksCapped(events, fileAt)`: con el
+  flujo a 1000 y de verdad unas 250 reuniones no avisa; lo subido va sin canceladas) el Calendario abre al entrar una ventana «Habla con un administrador para cambiar tu flujo a
   1000 reuniones», y Ajustes lo avisa junto a «N reuniones subidas».
 - Chats y Microsoft List siguen necesitando el servidor local (la Lista escribe en OneDrive).
 
