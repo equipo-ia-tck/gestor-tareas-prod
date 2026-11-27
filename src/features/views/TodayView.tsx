@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type ReactNode } from 'react';
 import {
   Activity, ArrowRight, CalendarDays, Check, ClipboardCheck, EyeOff, GripVertical, LayoutGrid, Lock, MessageSquare,
   MessagesSquare, NotebookPen, Paperclip, Plus, RotateCcw, Sun, Columns3, Video,
@@ -16,7 +16,7 @@ import { reviewDue } from '../../domain/maintenance';
 import { RALLY_COLUMNS } from '../../domain/rally';
 import type { RecentEvent } from '../../domain/rallyActivity';
 import { isHiddenRoute } from '../../domain/screens';
-import { moveTodayCard, resolveTodayLayout, TODAY_CARDS, type TodayCardId } from '../../domain/todayLayout';
+import { pinTodayLayout, placeTodayCards, resolveTodayLayout, TODAY_CARDS, TODAY_COLS, type TodayCardId } from '../../domain/todayLayout';
 import { completedOn, isActive, myDayTasks, overdueTasks, tasksDueOn } from '../../domain/selectors';
 import { TOPIC_TYPE_ID, type Task, type TodayCardLayout } from '../../domain/types';
 import type { CalendarEvent } from '../../domain/ics';
@@ -34,14 +34,13 @@ import { ago, useRallyRecent } from '../today/rallyRecent';
 
 /**
  * Hoy: la portada de Marea. Cabecera con el día y la captura, y una tarjeta por pantalla con lo de hoy (Mi día, Reuniones,
- * Para hablar, Rally, Notas y el Tablero). Cada persona las ordena, ensancha u oculta con «Personalizar»
- * (`settings.today_layout`). Las tarjetas de pantallas ocultas para esa cuenta (Ajustes → Pantallas) no salen.
+ * Para hablar, Rally, Notas y el Tablero). Cada persona las mueve a donde quiera (también a un hueco vacío), ensancha u
+ * oculta con «Personalizar» (`settings.today_layout`, posiciones de `placeTodayCards`). Las tarjetas de pantallas ocultas para esa cuenta (Ajustes → Pantallas) no salen.
  */
 
 type CardId = TodayCardId;
 const CARDS = TODAY_CARDS;
 
-const SPAN = ['', 'xl:col-span-1', 'xl:col-span-2', 'xl:col-span-3'];
 const MIME = 'application/x-marea-today-card';
 
 export function TodayView() {
@@ -51,7 +50,12 @@ export function TodayView() {
   const [editing, setEditing] = useState(false);
   const [seed, setSeed] = useState<{ text: string; n: number } | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
-  const [over, setOver] = useState<string | null>(null);
+  /** Dónde caería la tarjeta que se arrastra (columna y fila de 4 px). */
+  const [target, setTarget] = useState<{ x: number; y: number } | null>(null);
+  const grab = useRef({ dx: 0, dy: 0 });
+  const gridRef = useRef<HTMLDivElement>(null);
+  const wide = useMinWidth(1280);
+  const [heights, setHeights] = useState<Record<string, number>>({});
   const layout = resolveTodayLayout(settings.today_layout);
   const save = (next: TodayCardLayout[] | null) => void repo.updateSettings({ today_layout: next });
 
@@ -80,24 +84,50 @@ export function TodayView() {
   const d = parseISODate(today);
   const first = (user?.name ?? '').split(/\s+/)[0];
 
-  const move = (from: string, to: string, after: boolean) => save(moveTodayCard(layout, from, to, after));
   const patch = (id: string, change: Partial<TodayCardLayout>) => save(layout.map((c) => (c.id === id ? { ...c, ...change } : c)));
 
-  const dragProps = (id: string) => (editing ? {
+  // Mientras se arrastra, la tarjeta ya se ve donde caería y las que estorban bajan; al soltar, todo queda fijo ahí.
+  const visible = shown.filter((c) => !c.hidden);
+  const current = dragging && target ? visible.map((c) => (c.id === dragging ? { ...c, ...target } : c)) : visible;
+  const placed = placeTodayCards(current, heights, dragging && target ? dragging : null);
+  const order = [...visible].sort((a, b) => placed.get(a.id)!.y - placed.get(b.id)!.y || placed.get(a.id)!.x - placed.get(b.id)!.x);
+  const onRows = useCallback((id: string, rows: number) => setHeights((h) => (h[id] === rows ? h : { ...h, [id]: rows })), []);
+
+  const dragProps = (id: string) => (editing && wide ? {
     draggable: true,
-    onDragStart: (e: DragEvent) => { e.dataTransfer.setData(MIME, id); e.dataTransfer.effectAllowed = 'move'; setDragging(id); },
-    onDragEnd: () => { setDragging(null); setOver(null); },
-    onDragOver: (e: DragEvent) => { if (e.dataTransfer.types.includes(MIME)) { e.preventDefault(); setOver(id); } },
-    onDragLeave: () => setOver((o) => (o === id ? null : o)),
-    onDrop: (e: DragEvent) => {
-      const from = e.dataTransfer.getData(MIME);
-      if (!from) return;
-      e.preventDefault();
+    onDragStart: (e: DragEvent) => {
+      e.dataTransfer.setData(MIME, id);
+      e.dataTransfer.effectAllowed = 'move';
       const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-      move(from, id, e.clientX - r.left > r.width / 2);
-      setOver(null);
+      grab.current = { dx: e.clientX - r.left, dy: e.clientY - r.top };
+      setDragging(id);
     },
+    onDragEnd: () => { setDragging(null); setTarget(null); },
   } : {});
+
+  const gridDrop = editing && wide ? {
+    onDragOver: (e: DragEvent) => {
+      if (!dragging || !e.dataTransfer.types.includes(MIME) || !gridRef.current) return;
+      e.preventDefault();
+      const r = gridRef.current.getBoundingClientRect();
+      const step = (r.width + GAP) / TODAY_COLS;
+      const w = visible.find((c) => c.id === dragging)?.span ?? 1;
+      const x = Math.min(TODAY_COLS - w, Math.max(0, Math.round((e.clientX - r.left - grab.current.dx) / step)));
+      let y = Math.max(0, Math.round((e.clientY - r.top - grab.current.dy) / ROW));
+      // Se pega al borde de arriba o al final de otra tarjeta si queda cerca, para que las filas cuadren.
+      const edges = [0, ...[...placed].filter(([id]) => id !== dragging).map(([, p]) => p.y + p.h)];
+      const near = edges.reduce((best, edge) => (Math.abs(edge - y) < Math.abs(best - y) ? edge : best), Infinity);
+      if (Math.abs(near - y) <= 6) y = near;
+      if (!target || target.x !== x || target.y !== y) setTarget({ x, y });
+    },
+    onDrop: (e: DragEvent) => {
+      if (!dragging || !e.dataTransfer.getData(MIME)) return;
+      e.preventDefault();
+      save(pinTodayLayout(layout, placed));
+      setDragging(null);
+      setTarget(null);
+    },
+  } : {};
 
   return (
     <div className="mx-auto max-w-[1400px]">
@@ -133,10 +163,10 @@ export function TodayView() {
       )}
 
       <div className="mt-4 mb-2 flex flex-wrap items-center gap-2">
-        {editing && <span className="text-xs text-zinc-500">Arrastra las tarjetas por el asa · <Columns3 className="inline size-3.5" /> cambia el ancho · <EyeOff className="inline size-3.5" /> la oculta</span>}
+        {editing && <span className="text-xs text-zinc-500">{wide ? 'Arrastra cada tarjeta a donde quieras, también a un hueco vacío' : 'Para mover las tarjetas, usa una ventana más ancha'} · <Columns3 className="inline size-3.5" /> cambia el ancho · <EyeOff className="inline size-3.5" /> la oculta</span>}
         <span className="flex-1" />
         {editing && shown.filter((c) => c.hidden).map((c) => (
-          <button key={c.id} type="button" onClick={() => patch(c.id, { hidden: false })}
+          <button key={c.id} type="button" onClick={() => patch(c.id, { hidden: false, x: null, y: null })}
             className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2.5 py-0.5 text-xs text-violet-800 hover:bg-violet-200 dark:bg-violet-950 dark:text-violet-200 dark:hover:bg-violet-900">
             <Plus className="size-3" />{labelOf(c.id)}
           </button>
@@ -154,30 +184,39 @@ export function TodayView() {
         </button>
       </div>
 
-      {/* Como un mosaico: cada tarjeta ocupa solo su alto (filas de 4 px) y `dense` rellena los huecos con las que caben. */}
-      <div className="grid grid-flow-row-dense auto-rows-[4px] grid-cols-1 gap-x-3.5 lg:grid-cols-2 xl:grid-cols-3">
-        {shown.filter((c) => !c.hidden).map((c) => (
-          <Tile key={c.id} className={`min-w-0 ${SPAN[c.span] ?? ''} ${c.span >= 2 ? 'lg:col-span-2' : ''}`}>
-          <div {...dragProps(c.id)}
-            className={`${editing ? 'cursor-grab rounded-2xl outline-2 outline-offset-2 outline-dashed outline-violet-400' : ''} ${dragging === c.id ? 'opacity-40' : ''} ${over === c.id && dragging !== c.id ? 'rounded-2xl ring-4 ring-[#F0997B]' : ''}`}>
-            {editing && (
-              <div className="mb-1 flex items-center gap-1 px-1">
-                <GripVertical className="size-4 text-violet-500" />
-                <span className="flex-1 text-xs font-medium text-violet-700 dark:text-violet-300">{labelOf(c.id)}</span>
-                <button type="button" title="Cambiar el ancho" onClick={() => patch(c.id, { span: c.span % 3 + 1 })}
-                  className="rounded-md border border-zinc-300 bg-white px-1.5 py-0.5 text-xs hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-900">
-                  <Columns3 className="mr-0.5 inline size-3.5" />{c.span}/3
-                </button>
-                <button type="button" title="Ocultar" onClick={() => patch(c.id, { hidden: true })}
-                  className="rounded-md border border-zinc-300 bg-white px-1.5 py-0.5 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-900">
-                  <EyeOff className="size-3.5" />
-                </button>
+      {/* En pantalla ancha, cada tarjeta en su sitio (columna y filas de 4 px) y con su alto real; en estrecha, una debajo
+          de otra en ese orden, en mosaico. */}
+      <div ref={gridRef} {...gridDrop}
+        className={`grid auto-rows-[4px] gap-x-3.5 ${wide ? 'grid-cols-3' : 'grid-flow-row-dense grid-cols-1 lg:grid-cols-2'} ${editing && wide ? 'min-h-[60vh] rounded-2xl bg-violet-50/50 dark:bg-violet-950/10' : ''}}`}>
+        {order.map((c) => {
+          const p = placed.get(c.id)!;
+          const style = wide
+            ? { gridColumn: `${p.x + 1} / span ${p.w}`, gridRow: `${p.y + 1} / span ${p.h}` }
+            : { gridColumn: c.span >= 2 ? 'span 2 / span 2' : undefined };
+          return (
+            <Tile key={c.id} id={c.id} onRows={onRows} wide={wide} style={style}
+              className="min-w-0">
+              <div {...dragProps(c.id)}
+                className={`${editing ? 'cursor-grab rounded-2xl outline-2 outline-offset-2 outline-dashed outline-violet-400' : ''} ${dragging === c.id ? 'opacity-40 outline-[#D85A30]' : ''}`}>
+                {editing && (
+                  <div className="mb-1 flex items-center gap-1 px-1">
+                    <GripVertical className="size-4 text-violet-500" />
+                    <span className="flex-1 truncate text-xs font-medium text-violet-700 dark:text-violet-300">{labelOf(c.id)}</span>
+                    <button type="button" title="Cambiar el ancho" onClick={() => patch(c.id, { span: c.span % 3 + 1 })}
+                      className="rounded-md border border-zinc-300 bg-white px-1.5 py-0.5 text-xs hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-900">
+                      <Columns3 className="mr-0.5 inline size-3.5" />{c.span}/3
+                    </button>
+                    <button type="button" title="Ocultar" onClick={() => patch(c.id, { hidden: true })}
+                      className="rounded-md border border-zinc-300 bg-white px-1.5 py-0.5 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-900">
+                      <EyeOff className="size-3.5" />
+                    </button>
+                  </div>
+                )}
+                <div className={editing ? 'pointer-events-none select-none' : ''}><TodayCard id={c.id as CardId} meetings={meetings} /></div>
               </div>
-            )}
-            <div className={editing ? 'pointer-events-none select-none' : ''}><TodayCard id={c.id as CardId} meetings={meetings} /></div>
-          </div>
-          </Tile>
-        ))}
+            </Tile>
+          );
+        })}
       </div>
 
       <div className="mt-6"><StaleBlock /></div>
@@ -185,22 +224,42 @@ export function TodayView() {
   );
 }
 
-/** Una pieza del mosaico: mide su contenido y ocupa esas filas de 4 px (más el hueco entre tarjetas). */
+/** Una pieza de Hoy: mide su contenido y ocupa esas filas de 4 px (más el hueco entre tarjetas). */
 const ROW = 4;
 const GAP = 14;
-function Tile({ className, children }: { className: string; children: ReactNode }) {
+function Tile({ id, onRows, wide, className, style, children }: {
+  id: string; onRows: (id: string, rows: number) => void; wide: boolean; className: string; style: CSSProperties; children: ReactNode;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const [rows, setRows] = useState(40);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const measure = () => setRows(Math.ceil((el.getBoundingClientRect().height + GAP) / ROW));
+    const measure = () => {
+      const n = Math.ceil((el.getBoundingClientRect().height + GAP) / ROW);
+      setRows(n);
+      onRows(id, n);
+    };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
-  return <div className={className} style={{ gridRowEnd: `span ${rows}` }}><div ref={ref}>{children}</div></div>;
+  }, [id, onRows]);
+  return <div className={className} style={wide ? style : { ...style, gridRowEnd: `span ${rows}` }}><div ref={ref}>{children}</div></div>;
+}
+
+/** ¿La ventana es al menos así de ancha? (las posiciones libres de Hoy son para tres columnas). */
+function useMinWidth(px: number) {
+  const query = `(min-width: ${px}px)`;
+  const [ok, setOk] = useState(() => typeof matchMedia === 'function' && matchMedia(query).matches);
+  useEffect(() => {
+    const m = matchMedia(query);
+    const on = () => setOk(m.matches);
+    on();
+    m.addEventListener('change', on);
+    return () => m.removeEventListener('change', on);
+  }, [query]);
+  return ok;
 }
 
 const labelOf = (id: string) => CARDS.find((c) => c.id === id)?.label ?? id;
@@ -233,7 +292,7 @@ function Card({ icon, tone, title, link, children, onDropTasks }: {
 }) {
   const { over, dropProps } = useTaskDrop(onDropTasks);
   return (
-    <section className={`@container rounded-2xl border border-zinc-200 bg-white px-4 py-3.5 dark:border-zinc-700 dark:bg-zinc-900 ${over ? dropHighlight : ''}`} {...dropProps}>
+    <section className={`@container min-w-0 overflow-hidden rounded-2xl border border-zinc-200 bg-white px-4 py-3.5 dark:border-zinc-700 dark:bg-zinc-900 ${over ? dropHighlight : ''}`} {...dropProps}>
       <header className="mb-2.5 flex items-center gap-2.5">
         <span className={`flex size-7 items-center justify-center rounded-lg ${tone}`}>{icon}</span>
         <h2 className="text-[15px] font-medium" style={{ fontFamily: "'Space Grotesk', Inter, sans-serif" }}>{title}</h2>
@@ -402,11 +461,11 @@ function RallyCard() {
       {state.status === 'off' && <p className="px-1 py-2 text-sm text-zinc-500">Conecta Rally en su pantalla para ver aquí los cambios de tus elementos.</p>}
       {state.status === 'error' && !state.events.length && <p className="px-1 py-2 text-sm text-zinc-500">No se ha podido leer Rally ahora. {state.error}</p>}
       {state.status === 'ok' && !state.events.length && <p className="px-1 py-2 text-sm text-zinc-400">Nadie ha tocado tus elementos en los últimos 3 días.</p>}
-      <ul className="grid gap-x-6 @lg:grid-cols-2">
+      <ul className="grid grid-cols-1 gap-x-6 @lg:grid-cols-2">
         {state.events.slice(0, 10).map((e, i) => {
           const task = linked.get(e.id);
           return (
-            <li key={`${e.kind}-${e.id}-${e.at}-${i}`} className="flex items-center gap-2.5 border-t border-zinc-100 py-2 dark:border-zinc-800 @lg:[&:nth-child(-n+2)]:border-0 first:border-0">
+            <li key={`${e.kind}-${e.id}-${e.at}-${i}`} className="flex min-w-0 items-center gap-2.5 border-t border-zinc-100 py-2 dark:border-zinc-800 @lg:[&:nth-child(-n+2)]:border-0 first:border-0">
               <span className={`flex size-7 shrink-0 items-center justify-center rounded-full ${EVENT_ICON[e.kind].tone}`}>{EVENT_ICON[e.kind].icon}</span>
               <button type="button" title={e.name} onClick={() => (task ? editTask(task) : (location.hash = routeHref({ view: 'rally' })))}
                 className="min-w-0 flex-1 truncate text-left text-sm hover:underline">{eventText(e)}</button>
@@ -461,12 +520,12 @@ function BoardCard() {
   return (
     <Card icon={<LayoutGrid className="size-4" />} tone="bg-[#E1F5EE] text-[#085041] dark:bg-[#04342C] dark:text-[#9FE1CB]" title="Tu tablero"
       link={{ href: routeHref({ view: 'board' }), label: 'Ir al Tablero' }}>
-      <div className="grid grid-cols-2 gap-2 @md:grid-cols-4 @3xl:grid-cols-7">
+      <div className="grid grid-cols-2 gap-2 @md:grid-cols-4 @3xl:grid-cols-7 [&>a]:min-w-0">
         {RALLY_COLUMNS.map((c) => (
           <a key={c.name} href={routeHref({ view: 'board' })}
             className="rounded-xl border-t-4 bg-zinc-50 px-2 py-2.5 text-center hover:bg-zinc-100 dark:bg-zinc-800/60 dark:hover:bg-zinc-800"
             style={{ borderTopColor: c.color }}>
-            <span className="block text-xs text-zinc-500">{c.name}</span>
+            <span className="block truncate text-xs text-zinc-500">{c.name}</span>
             <span className="block text-2xl font-bold" style={{ fontFamily: "'Space Grotesk', Inter, sans-serif" }}>{counts.get(c.name) ?? 0}</span>
           </a>
         ))}

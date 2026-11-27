@@ -218,11 +218,16 @@ export interface Settings {
   today_layout: TodayCardLayout[] | null;
 }
 
-/** Una tarjeta de Hoy en el diseño de cada persona. `span`: columnas que ocupa (1 a 3). */
+/**
+ * Una tarjeta de Hoy en el diseño de cada persona. `span`: columnas que ocupa (1 a 3). `x`/`y`: dónde se ha dejado en
+ * pantalla ancha (columna 0 a 2 y fila de 4 px); null = colocada sola en el primer hueco.
+ */
 export interface TodayCardLayout {
   id: string;
   span: number;
   hidden: boolean;
+  x: number | null;
+  y: number | null;
 }
 
 /** Plantilla de «Crear con petición»: un nombre y la frase. */

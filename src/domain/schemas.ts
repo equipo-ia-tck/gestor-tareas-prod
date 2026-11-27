@@ -101,7 +101,7 @@ export const settingsSchema = z.object({
     hideDone: z.boolean().default(true),
     q: z.string().default(''),
   })).default([]),
-  today_layout: z.array(z.object({ id: z.string().min(1), span: z.number().int().min(1).max(3).default(1), hidden: z.boolean().default(false) })).nullable().default(null),
+  today_layout: z.array(z.object({ id: z.string().min(1), span: z.number().int().min(1).max(3).default(1), hidden: z.boolean().default(false), x: z.number().int().min(0).max(2).nullable().default(null), y: z.number().int().min(0).nullable().default(null) })).nullable().default(null),
 });
 
 const stateSchema = z.object({

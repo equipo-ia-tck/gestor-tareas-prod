@@ -1432,11 +1432,16 @@ Petición de la usuaria: que Hoy resuma todas las pantallas, más visual y con l
   hecho en los últimos 3 días en tus elementos (los enlazados a tareas del gestor y los que tienes de Assignee u Owner):
   comentarios y adjuntos (WSAPI), cambios de columna y de Blocked (Lookback API) y elementos nuevos para ti. Al abrir Hoy y
   cada 5 min; en memoria. Sin Rally conectado, la tarjeta lo dice.
-- **Personalizar**: cada persona arrastra las tarjetas, cambia su ancho (1 a 3 columnas) y las oculta o las vuelve a poner;
-  «Restablecer» vuelve al de serie. Las tarjetas van en **mosaico**: cada una ocupa solo su alto (`Tile` mide el contenido y
-  pone `grid-row-end: span N` en filas de 4 px, con `grid-auto-flow: dense`), así una pequeña y una mediana rellenan el
-  hueco al lado de una grande. Dentro de cada tarjeta, la distribución va por su ancho (`@container`), no por la pantalla. Se guarda en `settings.today_layout` (sin migración: zod pone null), así se sincroniza
-  y entra en las copias. Lógica pura en `domain/todayLayout.ts` (`resolveTodayLayout`, `moveTodayCard`), con tests.
+- **Personalizar**: cada persona mueve las tarjetas a donde quiera (también a un hueco vacío, sin quitarle el sitio a otra),
+  cambia su ancho (1 a 3 columnas) y las oculta o las vuelve a poner; «Restablecer» vuelve al de serie. En pantalla ancha
+  (≥ 1280 px) cada tarjeta guarda columna y fila (`x`, `y` en filas de 4 px) y ocupa solo su alto real (`Tile` lo mide).
+  `placeTodayCards` las coloca: las que tienen sitio van a él y, si se montan con otra (porque ha crecido), bajan al primer
+  hueco libre; las que no tienen sitio (las de serie, las que se vuelven a mostrar) van al hueco más alto donde caben.
+  Mientras se arrastra, la tarjeta ya se ve donde caería (se pega a los bordes cercanos) y al soltar se fija todo
+  (`pinTodayLayout`). En ventanas estrechas van una debajo de otra en ese orden, en mosaico, y no se arrastran. Dentro de
+  cada tarjeta, la distribución va por su ancho (`@container`) y nada se sale (`overflow-hidden`, textos cortados). Se guarda
+  en `settings.today_layout` (sin migración: zod pone null), así se sincroniza y entra en las copias. Lógica pura en
+  `domain/todayLayout.ts`, con tests.
 - **Fuera la Bandeja**: sin entrada en la barra lateral, sin `G B` ni comando, y fuera de Ajustes → Pantallas; `#/inbox`
   lleva a Hoy. Las tareas sin fecha ni proyecto siguen en el Tablero, la búsqueda y la Revisión semanal. En el feedback,
   la parte de la web «inbox» pasa a llamarse «Captura rápida». Ya no sale el resumen del día (`DailySummary`) en Hoy.
