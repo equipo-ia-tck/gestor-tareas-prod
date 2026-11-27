@@ -1446,6 +1446,10 @@ Petición de la usuaria: que Hoy resuma todas las pantallas, más visual y con l
   lleva a Hoy. Las tareas sin fecha ni proyecto siguen en el Tablero, la búsqueda y la Revisión semanal. En el feedback,
   la parte de la web «inbox» pasa a llamarse «Captura rápida». Ya no sale el resumen del día (`DailySummary`) en Hoy.
 
+- **«En mejora»** (`components/ui/ImprovingBadge.tsx`, nov 2026): etiqueta coral junto al título de todas las pantallas menos
+  Hoy (en `ViewHeader`, el Calendario, la ficha de persona y Notas), con la explicación al pasar el ratón. Se quita con
+  `IMPROVING = false`.
+
 ### Más adelante
 
 - **Electron**: la app es web estática con rutas por hash y datos en IndexedDB, así que se puede empaquetar sin cambios

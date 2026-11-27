@@ -1,4 +1,5 @@
 import { ProjectOptions } from '../../components/ui/ProjectOptions';
+import { ImprovingBadge } from '../../components/ui/ImprovingBadge';
 import { track } from '../usage/track';
 import { DateButton } from '../../components/ui/DatePicker';
 import { lazy, Suspense, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
@@ -91,7 +92,7 @@ export function NotesView({ id }: { id?: string }) {
     <div className="grid h-[calc(100dvh-7rem)] min-h-[480px] grid-cols-[210px_250px_1fr] overflow-hidden rounded-xl border border-zinc-200 bg-white max-lg:h-auto max-lg:grid-cols-1 dark:border-zinc-800 dark:bg-zinc-950">
       {/* Secciones */}
       <nav aria-label="Secciones" className="flex min-h-0 flex-col border-r border-zinc-200 bg-zinc-50/60 dark:border-zinc-800 dark:bg-zinc-900/40">
-        <h2 className="px-3 pt-3 pb-1 text-xs font-semibold tracking-wide text-zinc-500 uppercase">Secciones</h2>
+        <h2 className="flex items-center gap-2 px-3 pt-3 pb-1 text-xs font-semibold tracking-wide text-zinc-500 uppercase">Secciones<ImprovingBadge /></h2>
         <AddSection parent={sectionProject} onCreated={(pid) => selectSection(pid)} />
         <div className="flex-1 overflow-y-auto pb-2">
           <SectionRow label="Todas las notas" color="#a1a1aa" active={section === ALL} count={notes.length} onClick={() => selectSection(ALL)} />

@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { ImprovingBadge } from '../../components/ui/ImprovingBadge';
 import { track, trackState } from '../usage/track';
 import { CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, PanelLeft, Plus, RefreshCw, Rocket } from 'lucide-react';
 import { useApp } from '../../app/AppContext';
@@ -130,7 +131,7 @@ export function CalendarView({ initial }: { initial?: 'week' | 'month' }) {
       )}
       {sidebar && (
         <aside className="hidden w-60 shrink-0 flex-col gap-5 overflow-y-auto border-r border-zinc-200 bg-zinc-50/70 p-3 lg:flex dark:border-zinc-800 dark:bg-zinc-900/40">
-          <h1 className="px-1 text-lg font-semibold">Calendario</h1>
+          <h1 className="flex items-center gap-2 px-1 text-lg font-semibold">Calendario<ImprovingBadge /></h1>
           <MiniMonth selected={mode === 'month' ? [] : days} cursor={cursor} onPick={setCursor} />
           <section>
             <h2 className="mb-1 px-1 text-sm font-semibold">Mis calendarios</h2>

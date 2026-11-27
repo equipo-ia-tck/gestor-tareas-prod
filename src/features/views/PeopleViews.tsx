@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
+import { ImprovingBadge } from '../../components/ui/ImprovingBadge';
 import { track } from '../usage/track';
 import { ArrowDown, ArrowUp, CheckSquare, FileText, FolderPlus, Layers, MessageCircle, MessageSquare, Plus, Quote, Trash2, UserCog, Users } from 'lucide-react';
 import { MenuItem, Popover } from '../../components/ui/Popover';
@@ -161,6 +162,7 @@ export function PersonView({ name }: { name: string }) {
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-2xl font-semibold">{name}</h1>
             <GroupPicker name={name} />
+            <ImprovingBadge />
           </div>
           <RoleField name={name} value={card?.role ?? ''} notes={card?.notes ?? ''} email={card?.email} />
         </div>
