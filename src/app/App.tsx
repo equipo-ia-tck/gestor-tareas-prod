@@ -33,7 +33,6 @@ import { isHiddenRoute } from '../domain/screens';
 import { useSync } from '../data/sync';
 import { BackupReminder } from '../features/backup/BackupReminder';
 import { SettingsView } from '../features/backup/SettingsView';
-import { InboxView } from '../features/views/InboxView';
 import { PeopleView, PersonView } from '../features/views/PeopleViews';
 import { ProjectView } from '../features/project/ProjectPage';
 import { ProjectsView } from '../features/views/ProjectsView';
@@ -69,7 +68,6 @@ function View({ route }: { route: Route }) {
     case 'asistente': return <AssistantView />;
     case 'sharepoint': return <SharePointView />;
     case 'projects': return <ProjectsView />; // el título «Proyectos» de la barra lateral, como el de Grupos
-    case 'inbox': return <InboxView />;
     case 'project': return <ProjectView key={route.id} id={route.id} />;
     case 'people': return <PeopleView />;
     case 'person': return <PersonView key={route.name} name={route.name} />;

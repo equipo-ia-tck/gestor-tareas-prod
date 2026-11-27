@@ -15,7 +15,6 @@ export type Route =
   | { view: 'lista' }
   | { view: 'asistente' }
   | { view: 'sharepoint' }
-  | { view: 'inbox' }
   | { view: 'projects' }
   | { view: 'project'; id: string }
   | { view: 'people' }
@@ -41,7 +40,7 @@ export function parseHash(hash: string): Route {
     case 'lista': return { view: 'lista' };
     case 'asistente': return { view: 'asistente' };
     case 'sharepoint': return { view: 'sharepoint' };
-    case 'inbox': return { view: 'inbox' };
+    case 'inbox': return { view: 'today' }; // la Bandeja se quitó (nov 2026): su guía de captura está en Hoy
     case 'projects': return { view: 'projects' };
     case 'project': return arg ? { view: 'project', id: decodeURIComponent(arg) } : { view: 'projects' };
     case 'people': return { view: 'people' };

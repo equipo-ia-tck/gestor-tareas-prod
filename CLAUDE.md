@@ -1414,6 +1414,31 @@ que los documentos (también los de CaixaBank) salgan del ordenador. RAG **local
   ventana pasa a estar «cerrada»). Se probó y se quitó (nov 2026). Enviar la pregunta sola tampoco: pulsar Enter con un
   script iría contra las condiciones de claude.ai; lo totalmente automático sería la API de Anthropic, de pago.
 
+## Fase 40: Hoy como portada (rama `dev`, nov 2026)
+
+Petición de la usuaria: que Hoy resuma todas las pantallas, más visual y con los colores de Marea.
+
+- **Cabecera** azul marino (`#1B2B4B`): día, saludo con el nombre de pila, cifras (para hoy, en curso, atrasadas,
+  reuniones, temas) y anillo coral de lo hecho hoy. Dentro, la captura de siempre (`QuickAdd`, con fecha de hoy) y debajo la
+  guía «Cómo escribir una tarea» de la Bandeja, **plegada** por defecto (`CaptureGuide` con `storageKey`
+  `today-capture-guide`; sus ejemplos se escriben en la captura).
+- **Tarjetas** (`features/views/TodayView.tsx`): **Mi día** (atrasadas con su bloque, Mi día y lo que vence hoy, y «En
+  curso»: grupo `doing`; sin los temas; se pueden soltar tareas), **Reuniones** de hoy en línea de tiempo (`useMeetings`; la
+  de ahora en coral con «Unirse», las pasadas atenuadas), **Para hablar** (temas pendientes por persona), **Rally · últimos
+  cambios en lo tuyo**, **Últimas notas** (por `updated_at`) y **Tu tablero** (solo cuántas hay en cada una de las 7
+  columnas, con `rallyBoardColumns` de `Board.tsx`, la misma cuenta que el Tablero). Las tarjetas de pantallas ocultas
+  para esa cuenta no salen.
+- **Rally** (`rally.recent`, `POST /api/rally/recent`, `features/today/rallyRecent.ts`): lo que **otras personas** han
+  hecho en los últimos 3 días en tus elementos (los enlazados a tareas del gestor y los que tienes de Assignee u Owner):
+  comentarios y adjuntos (WSAPI), cambios de columna y de Blocked (Lookback API) y elementos nuevos para ti. Al abrir Hoy y
+  cada 5 min; en memoria. Sin Rally conectado, la tarjeta lo dice.
+- **Personalizar**: cada persona arrastra las tarjetas, cambia su ancho (1 a 3 columnas) y las oculta o las vuelve a poner;
+  «Restablecer» vuelve al de serie. Se guarda en `settings.today_layout` (sin migración: zod pone null), así se sincroniza
+  y entra en las copias. Lógica pura en `domain/todayLayout.ts` (`resolveTodayLayout`, `moveTodayCard`), con tests.
+- **Fuera la Bandeja**: sin entrada en la barra lateral, sin `G B` ni comando, y fuera de Ajustes → Pantallas; `#/inbox`
+  lleva a Hoy. Las tareas sin fecha ni proyecto siguen en el Tablero, la búsqueda y la Revisión semanal. En el feedback,
+  la parte de la web «inbox» pasa a llamarse «Captura rápida». Ya no sale el resumen del día (`DailySummary`) en Hoy.
+
 ### Más adelante
 
 - **Electron**: la app es web estática con rutas por hash y datos en IndexedDB, así que se puede empaquetar sin cambios

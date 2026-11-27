@@ -128,6 +128,8 @@ export async function rallyRoute(rally: Rally, user: TeamUser, method: string, p
       return rally.formOptions(user, params.get('kind'), params.get('project'), params.getAll('rule'));
     case 'GET /api/rally/detail':
       return rally.detail(user, params.get('kind'), params.get('id'));
+    case 'POST /api/rally/recent':
+      return rally.recent(user, await readBody());
     case 'GET /api/rally/activity':
       return rally.activity(user, Object.fromEntries(params));
     case 'GET /api/rally/items': {

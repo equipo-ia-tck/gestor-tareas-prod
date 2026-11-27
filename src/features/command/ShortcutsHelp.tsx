@@ -39,7 +39,7 @@ const GROUPS: { title: string; items: [string, string][] }[] = [
       ['Clic', 'Abrir el panel de la tarea'],
       [`${MOD} clic  ·  ⇧ clic`, 'Añadir · rango'],
       ['Doble clic', 'Editar el campo'],
-      ['Arrastrar', 'A un día, proyecto, Hoy o Bandeja'],
+      ['Arrastrar', 'A un día, proyecto o Hoy'],
     ],
   },
   {
@@ -47,7 +47,6 @@ const GROUPS: { title: string; items: [string, string][] }[] = [
     items: [
       ['G  H', 'Hoy'],
       ['G  S', 'Calendario: semana'],
-      ['G  B', 'Bandeja'],
       ['G  T', 'Tablero (todo, con filtros)'],
       ['G  N', 'Notas'],
       ['G  C', 'Calendario'],

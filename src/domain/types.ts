@@ -214,6 +214,15 @@ export interface Settings {
   sharepoint_folders: SharePointFolder[];
   /** Vistas guardadas de la pantalla Lista (filtros, agrupar y ordenar con un nombre). */
   lista_views: ListaSavedView[];
+  /** Diseño de Hoy elegido con «Personalizar»: orden, ancho y ocultas de cada tarjeta. null = el de serie. */
+  today_layout: TodayCardLayout[] | null;
+}
+
+/** Una tarjeta de Hoy en el diseño de cada persona. `span`: columnas que ocupa (1 a 3). */
+export interface TodayCardLayout {
+  id: string;
+  span: number;
+  hidden: boolean;
 }
 
 /** Plantilla de «Crear con petición»: un nombre y la frase. */
@@ -261,6 +270,7 @@ export const DEFAULT_SETTINGS: Settings = {
   brand_colors_done: false,
   sharepoint_folders: [],
   lista_views: [],
+  today_layout: null,
 };
 
 export type NewTask = Partial<Omit<Task, 'id' | 'created_at' | 'updated_at' | 'last_touched_at'>> & {

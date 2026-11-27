@@ -1,6 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { commentsFor, type MoveStep } from '../src/domain/rallyComments.ts';
-import type { RallyActivity, RallyChange, RallyChangeKind } from '../src/domain/rallyActivity.ts';
+import type { RallyActivity, RallyChange, RallyChangeKind, RecentEvent } from '../src/domain/rallyActivity.ts';
 import type { RallyCategory, RallyDetail, RallyEditValues, RallyFormOptions, RallyItem, RallyKind, RallyPick, RallyProject, RallyRef, RallyStatus } from '../src/domain/rally.ts';
 import { ApiError } from './api.ts';
 import type { TeamUser } from './auth.ts';
@@ -1673,6 +1673,96 @@ export class Rally {
       errors.push({ kinds: ['flow', 'ready', 'blocked', 'create'], message: `Historial de Rally (Lookback API): ${why(e)}` });
     }
     return { changes: changes.sort((x, y) => x.at.localeCompare(y.at)), errors, truncated };
+  }
+
+  /**
+   * Hoy: lo que **otras personas** han hecho en los últimos `days` días (máx. 14) en tus elementos: los de `ids` (las
+   * tareas enlazadas del gestor, máx. 300) y los que tienes de Assignee u Owner. Comentarios y adjuntos (WSAPI), cambios de
+   * columna y de Blocked (Lookback API) y elementos nuevos para ti. Lo que falla se deja fuera sin romper el resto.
+   */
+  async recent(user: TeamUser, input: { ids?: unknown; days?: unknown }): Promise<{ events: RecentEvent[] }> {
+    const a = await this.connected(user);
+    const days = Math.min(Math.max(Number(input.days) || 3, 1), 14);
+    const since = new Date(Date.now() - days * 86_400_000).toISOString();
+    const me = a.rally_user_id;
+    const wanted = [...new Set((Array.isArray(input.ids) ? input.ids : []).map((id) => String(id).replace(/-/g, '').toUpperCase()))]
+      .filter((id) => !!kindOfId(id)).slice(0, 300);
+    const items = new Map<string, { id: string; name: string; ws: string | null }>();
+    const events: RecentEvent[] = [];
+    const add = (r: RallyObject) => {
+      const id = String(r.FormattedID ?? '');
+      if (id && r.ObjectID) items.set(String(r.ObjectID), { id, name: String(r.Name ?? ''), ws: refId(r.Workspace) });
+    };
+    const fetch = 'FormattedID,Name,ObjectID,Workspace,CreationDate,CreatedBy';
+    for (const [type, info] of Object.entries(KINDS)) {
+      if (info.kind === 'TC' || info.kind === 'FE') continue;
+      const mine = wanted.filter((id) => kindOfId(id)?.[0] === type);
+      for (let i = 0; i < mine.length; i += 40) {
+        const rows = await this.list(a, `/${type}`, { query: joinQuery(mine.slice(i, i + 40).map((id) => `(FormattedID = "${id}")`), 'OR'), fetch }).catch(() => []);
+        rows.forEach(add);
+      }
+      // Nuevos para ti: creados por otra persona en el periodo con tu Assignee u Owner.
+      const owner = `(Owner.ObjectID = ${me})`;
+      const who = info.assignee ? `(${owner} OR (${ASSIGNEE_FIELD}.ObjectID = ${me}))` : owner;
+      const fresh = await this.list(a, `/${type}`, { query: `(${who} AND (CreationDate >= "${since}"))`, fetch, pagesize: '50' })
+        .catch(() => (info.assignee ? this.list(a, `/${type}`, { query: `(${owner} AND (CreationDate >= "${since}"))`, fetch, pagesize: '50' }) : []))
+        .catch(() => []);
+      for (const r of fresh) {
+        add(r);
+        if (refId(r.CreatedBy) === me) continue;
+        events.push({ kind: 'create', id: String(r.FormattedID ?? ''), name: String(r.Name ?? ''), user: refName(r.CreatedBy) ?? '', at: String(r.CreationDate ?? '') });
+      }
+    }
+    const objectIds = [...items.keys()];
+    if (!objectIds.length) return { events: [] };
+    const groups: string[][] = [];
+    for (let i = 0; i < objectIds.length; i += 20) groups.push(objectIds.slice(i, i + 20));
+    const posts = async (path: '/conversationpost' | '/attachment', kind: 'comment' | 'attachment') => {
+      for (const g of groups) {
+        const rows = await this.list(a, path, {
+          query: `((CreationDate >= "${since}") AND ${joinQuery(g.map((id) => `(Artifact.ObjectID = ${id})`), 'OR')})`,
+          fetch: 'Artifact,User,CreationDate,Name', order: 'CreationDate desc', pagesize: '100',
+        }).catch(() => [] as RallyObject[]);
+        for (const p of rows) {
+          const it = items.get(refId(p.Artifact) ?? '');
+          if (!it || refId(p.User) === me) continue;
+          events.push({ kind, id: it.id, name: it.name, user: refName(p.User) ?? '', at: String(p.CreationDate ?? ''), ...(kind === 'attachment' ? { to: String(p.Name ?? '') } : {}) });
+        }
+      }
+    };
+    await Promise.all([posts('/conversationpost', 'comment'), posts('/attachment', 'attachment')]);
+    // Cambios de columna y de Blocked (historial de Rally), por workspace.
+    try {
+      const byWs = new Map<string, string[]>();
+      for (const [oid, it] of items) if (it.ws) byWs.set(it.ws, [...(byWs.get(it.ws) ?? []), oid]);
+      const snaps: { oid: string; user: string; at: string; flow?: string | null; blocked?: boolean }[] = [];
+      for (const [ws, oids] of byWs) {
+        const { rows } = await this.lookback(a, ws, {
+          ObjectID: { $in: oids.map(Number) }, _ValidFrom: { $gte: since },
+          $or: [{ '_PreviousValues.FlowState': { $exists: true } }, { '_PreviousValues.Blocked': { $exists: true } }],
+        }, ['ObjectID', 'FlowState', 'Blocked', '_User', '_ValidFrom', '_PreviousValues.FlowState', '_PreviousValues.Blocked']);
+        for (const r of rows) {
+          const prev = (r._PreviousValues ?? {}) as RallyObject;
+          const base = { oid: String(r.ObjectID), user: String(r._User ?? ''), at: String(r._ValidFrom ?? '') };
+          if (base.user === me) continue;
+          if ('FlowState' in prev) snaps.push({ ...base, flow: r.FlowState == null ? null : String(r.FlowState) });
+          else if ('Blocked' in prev) snaps.push({ ...base, blocked: r.Blocked === true });
+        }
+      }
+      const names = await this.userNames(a, [...new Set(snaps.map((x) => x.user))]);
+      const flows = await this.flowStateNames(a, snaps.filter((x) => x.flow).map((x) => x.flow!));
+      for (const x of snaps) {
+        const it = items.get(x.oid);
+        if (!it) continue;
+        const common = { id: it.id, name: it.name, user: names.get(x.user) ?? '', at: new Date(x.at).toISOString() };
+        events.push(x.blocked !== undefined
+          ? { kind: 'blocked', ...common, to: x.blocked ? 'true' : 'false' }
+          : { kind: 'flow', ...common, to: x.flow ? flows.get(x.flow) ?? null : null });
+      }
+    } catch {
+      // Sin el Lookback API, sin cambios de columna.
+    }
+    return { events: events.filter((e) => e.id && e.at).sort((x, y) => y.at.localeCompare(x.at)).slice(0, 40) };
   }
 
   /** ObjectID del workspace de un proyecto (para el Lookback API). */

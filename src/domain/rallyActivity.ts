@@ -194,3 +194,19 @@ export function personActivity(changes: RallyChange[], fromTool: boolean[], user
     rows,
   };
 }
+
+/**
+ * Hoy → «Rally · últimos cambios en lo tuyo»: lo que otras personas han hecho en tus elementos (los enlazados a tareas del
+ * gestor y los que tienes de Assignee u Owner) en los últimos días. `create` = elemento nuevo para ti.
+ */
+export type RecentKind = 'comment' | 'attachment' | 'flow' | 'blocked' | 'create';
+export interface RecentEvent {
+  kind: RecentKind;
+  /** FormattedID (US123…). */
+  id: string;
+  name: string;
+  user: string;
+  at: string;
+  /** Columna nueva (`flow`), nombre del archivo (`attachment`) o true/false (`blocked`). */
+  to?: string | null;
+}

@@ -66,6 +66,23 @@ function boardable(t: Task, today: string) {
 
 const moveLabel = (n: number, to: string) => (n === 1 ? `Movida a ${to}` : `${n} tareas movidas a ${to}`);
 
+/**
+ * Columna del Tablero «Como en Rally» de cada tarea visible (la usa también Hoy para contar). Los elementos de la Lista van
+ * por su estado (backlog → New, in progress → In-Progress, dependencia → Need Review, completada → Accepted); el resto, por
+ * Rally o por su grupo. La columna elegida al soltar (tareas que no están en Rally) vale mientras la tarea siga en el grupo
+ * de esa columna.
+ */
+export function rallyBoardColumns(tasks: Task[], itemTypes: ItemType[], today: string, rallyOf: (id: string | null) => { state?: string } | undefined) {
+  const visible = tasks.filter((t) => boardable(t, today));
+  const chosen = (t: Task) => {
+    const col = RALLY_COLUMNS.find((c) => c.name === t.board_column);
+    return col && stateForCategory(findType(itemTypes, t.type_id), col.category).id === stateOf(itemTypes, t).id ? col.name : null;
+  };
+  const columnFor = (t: Task) => (t.type_id === LIST_TYPE_ID && listBoardColumn(stateOf(itemTypes, t).name))
+    || rallyColumnOf(rallyOf(t.external_id)?.state, stateOf(itemTypes, t).category, chosen(t));
+  return { visible, columnOf: new Map(visible.map((t) => [t.id, columnFor(t)])) };
+}
+
 /** Tablero de un tipo: una columna por cada estado de su flujo. */
 export function Board({ tasks, type, defaults, showProject = true }: Props) {
   const { itemTypes, today } = useApp();
@@ -121,17 +138,7 @@ export function RallyBoard({ tasks, defaults, showProject = true }: Omit<Props, 
   const rallyOf = useRallyLookup();
   const toast = useToast();
   const columns = useMemo<ColumnDef[]>(() => {
-    const visible = tasks.filter((t) => boardable(t, today));
-    // La columna elegida al soltar (tareas que no están en Rally) vale mientras la tarea siga en el grupo de esa columna.
-    const chosen = (t: Task) => {
-      const col = RALLY_COLUMNS.find((c) => c.name === t.board_column);
-      return col && stateForCategory(findType(itemTypes, t.type_id), col.category).id === stateOf(itemTypes, t).id ? col.name : null;
-    };
-    // Los elementos de la Lista van por su estado (backlog → New, in progress → In-Progress, dependencia → Need Review,
-    // completada → Accepted); el resto, por Rally o por su grupo.
-    const columnFor = (t: Task) => (t.type_id === LIST_TYPE_ID && listBoardColumn(stateOf(itemTypes, t).name))
-      || rallyColumnOf(rallyOf(t.external_id)?.state, stateOf(itemTypes, t).category, chosen(t));
-    const columnOf = new Map(visible.map((t) => [t.id, columnFor(t)]));
+    const { visible, columnOf } = rallyBoardColumns(tasks, itemTypes, today, rallyOf);
     return RALLY_COLUMNS.map(({ name, category, color }) => ({
       id: name,
       label: name,

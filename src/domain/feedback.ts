@@ -69,7 +69,7 @@ export const FEEDBACK_IMPACTS: { id: FeedbackImpact; label: string; priority: Pr
  */
 export const FEEDBACK_AREAS: { id: string; label: string; screen?: string; admin?: boolean }[] = [
   { id: 'today', label: 'Hoy y Mi día' },
-  { id: 'inbox', label: 'Bandeja y captura rápida', screen: 'inbox' },
+  { id: 'inbox', label: 'Captura rápida' },
   { id: 'board', label: 'Tablero', screen: 'board' },
   { id: 'calendar', label: 'Calendario y Outlook', screen: 'calendar' },
   { id: 'notes', label: 'Notas y actas', screen: 'notes' },

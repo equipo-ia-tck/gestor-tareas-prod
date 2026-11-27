@@ -14,10 +14,12 @@ const ROWS: { what: string; how: string; example: string }[] = [
 ];
 
 /** Guía de la sintaxis de captura: qué se puede escribir y un ejemplo de cada cosa que se prueba con un clic. */
-export function CaptureGuide({ onExample }: { onExample: (text: string) => void }) {
-  const [open, setOpen] = usePersistentState('capture-guide-open', true);
+export function CaptureGuide({ onExample, storageKey = 'capture-guide-open', defaultOpen = true, className = 'mb-5' }: {
+  onExample: (text: string) => void; storageKey?: string; defaultOpen?: boolean; className?: string;
+}) {
+  const [open, setOpen] = usePersistentState(storageKey, defaultOpen);
   return (
-    <section className="mb-5 rounded-lg border border-amber-200 bg-amber-50/60 dark:border-amber-900/60 dark:bg-amber-950/20">
+    <section className={`${className} rounded-lg border border-amber-200 bg-amber-50/60 dark:border-amber-900/60 dark:bg-amber-950/20`}>
       <button type="button" onClick={() => setOpen(!open)} aria-expanded={open}
         className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-amber-900 dark:text-amber-200">
         <Lightbulb className="size-4" />Cómo escribir una tarea

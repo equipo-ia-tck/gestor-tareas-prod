@@ -6,7 +6,6 @@ import type { Route } from '../app/router';
  * barra lateral y no deja abrirla, pero no cambia qué datos ve nadie.
  */
 export const SCREENS: { id: string; label: string; hint?: string }[] = [
-  { id: 'inbox', label: 'Bandeja' },
   { id: 'board', label: 'Tablero' },
   { id: 'calendar', label: 'Calendario', hint: 'también la semana' },
   { id: 'notes', label: 'Notas' },

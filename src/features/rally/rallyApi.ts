@@ -1,7 +1,7 @@
 import type { RallyCategory, RallyCc, RallyCreatableKind, RallyCreateInput, RallyDetail, RallyFormOptions, RallyItem, RallyKind, RallyPick, RallyProject, RallyRef, RallyStatus, RallyUpdateInput } from '../../domain/rally';
 import { LOCAL_SERVER, serverCall as call } from '../../data/serverApi';
 import { sync } from '../../data/sync';
-import { artifactHash, type RallyActivity, type ToolEventKind } from '../../domain/rallyActivity';
+import { artifactHash, type RallyActivity, type RecentEvent, type ToolEventKind } from '../../domain/rallyActivity';
 import { track } from '../usage/track';
 
 /**
@@ -31,6 +31,7 @@ export const rallyApi = {
       id, category, ...(opts.dryRun ? { dryRun: true } : {}), ...(opts.blockedReason ? { blockedReason: opts.blockedReason } : {}),
       ...(opts.flow ? { flow: opts.flow } : {}),
     }).then((r) => { if (!opts.dryRun) { track('rally-move', category); mark(id, 'change'); } return r.item; }),
+  recent: (ids: string[], days = 3) => call<{ events: RecentEvent[] }>('POST', '/api/rally/recent', { ids, days }).then((r) => r.events),
   lookup: (ids: string[]) => call<{ items: RallyItem[] }>('POST', '/api/rally/lookup', { ids }).then((r) => r.items),
   detail: (item: RallyItem) => call<RallyDetail>('GET', `/api/rally/detail?kind=${item.kind}&id=${item.objectId}`),
   create: (input: RallyCreateInput | { kind: 'TA'; name: string; parentId: string; assignToMe: boolean }) =>

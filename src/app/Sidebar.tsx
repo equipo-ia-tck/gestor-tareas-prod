@@ -1,6 +1,6 @@
 import { MareaLogo } from '../components/ui/MareaLogo';
 import { useState, type FormEvent, type ReactNode } from 'react';
-import { BarChart3, Calendar, ChevronDown, ChevronRight, ClipboardCheck, FolderOpen, History, MessageSquarePlus, Plus, Inbox, KanbanSquare, Layers, ListChecks, FolderTree, MessagesSquare, NotebookPen, Settings, Sun, Users, type LucideIcon } from 'lucide-react';
+import { BarChart3, Calendar, ChevronDown, ChevronRight, ClipboardCheck, FolderOpen, History, MessageSquarePlus, Plus, KanbanSquare, Layers, ListChecks, FolderTree, MessagesSquare, NotebookPen, Settings, Sun, Users, type LucideIcon } from 'lucide-react';
 import { Avatar } from '../components/ui/Badges';
 import { useApp } from './AppContext';
 import { repo } from '../data/services';
@@ -15,7 +15,7 @@ import { createGroup, movePersonToGroup, setDraggedPerson, usePersonDrop } from 
 import { useRallyOwners } from '../features/rally/rallyStore';
 import { dropHighlight, useTaskDrop } from '../hooks/useTaskDrop';
 import { routeHref, type Route } from './router';
-import { inboxTasks, myDayTasks, overdueTasks, tasksDueOn } from '../domain/selectors';
+import { myDayTasks, overdueTasks, tasksDueOn } from '../domain/selectors';
 import { isActive } from '../domain/selectors';
 
 function NavItem({ href, active, children, count, dot, icon: Icon, lead, onDropTasks, indent = 0 }: {
@@ -146,8 +146,6 @@ export function Sidebar({ route }: { route: Route }) {
       <section className="mr-side-section" aria-label="Vistas">
       <NavItem icon={Sun} href={routeHref({ view: 'today' })} active={is('today')} count={new Set([...tasksDueOn(tasks, today), ...overdueTasks(tasks, today), ...myDayTasks(tasks, today)].map((t) => t.id)).size}
         onDropTasks={(ids) => void moveIds(ids, { due_date: today }, 'Movida a hoy')}>Hoy</NavItem>
-      {see('inbox') && <NavItem icon={Inbox} href={routeHref({ view: 'inbox' })} active={is('inbox')} count={inboxTasks(tasks).length}
-        onDropTasks={(ids) => void moveIds(ids, { due_date: null, project_id: null }, 'Movida a la bandeja')}>Bandeja</NavItem>}
       {see('board') && <NavItem icon={KanbanSquare} href={routeHref({ view: 'board' })} active={is('board') || is('all')}>Tablero</NavItem>}
       {see('calendar') && <NavItem icon={Calendar} href={routeHref({ view: 'calendar' })} active={is('calendar') || is('week')}>Calendario</NavItem>}
       {see('notes') && <NavItem icon={NotebookPen} href={routeHref({ view: 'notes' })} active={is('notes')}>Notas</NavItem>}
